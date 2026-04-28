@@ -6,6 +6,7 @@ import shlex
 import time
 import socket
 import urllib.request
+import requests
 from urllib.parse import urlparse, quote
 from werkzeug.utils import secure_filename
 
@@ -29,7 +30,7 @@ current_playing = {
     "station_name": "La Voix Divine",
     "station_subtitle": "Internet Stream",
     "stream_url": "http://162.244.81.219:8020/live",
-    "website": "https://radiolavoixdivine.com",
+    "website": "radiolavoixdivine.com",
     "logo": "🎧",
 }
 
@@ -42,7 +43,7 @@ def is_public_website():
     return host in PUBLIC_HOSTS or host.endswith(".onrender.com")
 
 TEST_STREAMS = [
-    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "https://radiolavoixdivine.com", "url": "http://162.244.81.219:8020/live", "logo": "🎧"},
+    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "http://162.244.81.219:8020/live", "logo": "🎧"},
     {"name": "181 FM The Buzz", "subtitle": "https://www.181.fm", "website": "https://www.181.fm", "url": "http://listen.181fm.com/181-buzz_128k.mp3", "logo": "📻"},
 ]
 
@@ -383,18 +384,32 @@ def local_stations():
 
 @app.route("/stream")
 def stream_proxy():
-    # Browser-friendly proxy for the public website. This helps avoid mixed-content blocks
-    # when the original Icecast stream is HTTP but the site is HTTPS.
+    # Browser-friendly proxy for the public website.
+    # It keeps the HTTP Icecast stream playing through this HTTPS domain.
     stream_url = request.args.get("url") or MAIN_STREAM_URL
+
     def generate():
-        req = urllib.request.Request(stream_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=10) as upstream:
-            while True:
-                chunk = upstream.read(8192)
-                if not chunk:
-                    break
-                yield chunk
-    return Response(generate(), mimetype="audio/mpeg")
+        with requests.get(
+            stream_url,
+            stream=True,
+            timeout=(5, None),
+            headers={"User-Agent": "LaVoixDivineRadio/1.0"},
+        ) as upstream:
+            upstream.raise_for_status()
+            for chunk in upstream.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+
+    return Response(
+        generate(),
+        mimetype="audio/mpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 @app.route("/qr")
 def qr_image():
@@ -737,8 +752,7 @@ def admin_pending():
 
 @app.route('/admin/stations', methods=['GET'])
 def admin_stations():
-    store = load_station_store()
-    return render_template('admin_stations.html', approved=store.get('custom_stations', []))
+    return redirect('/admin/pending')
 
 @app.route('/admin/approve/<int:index>', methods=['POST', 'GET'])
 def admin_approve(index):
@@ -777,14 +791,14 @@ def admin_delete_station(index):
         custom.pop(index)
         store['custom_stations'] = custom
         save_station_store(store)
-    return redirect('/admin/stations')
+    return redirect('/admin/pending')
 
 @app.route('/admin/edit/<int:index>', methods=['GET', 'POST'])
 def admin_edit_station(index):
     store = load_station_store()
     custom = store.get('custom_stations', [])
     if index < 0 or index >= len(custom):
-        return redirect('/admin/stations')
+        return redirect('/admin/pending')
     station = normalize_station(custom[index])
     error = ''
     if request.method == 'POST':
@@ -806,7 +820,7 @@ def admin_edit_station(index):
             custom[index] = station
             store['custom_stations'] = custom
             save_station_store(store)
-            return redirect('/admin/stations')
+            return redirect('/admin/pending')
     return render_template('edit_station.html', station=station, index=index, error=error)
 
 @app.route('/api/admin/stations', methods=['GET'])

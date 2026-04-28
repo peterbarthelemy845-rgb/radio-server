@@ -8,11 +8,8 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><h1>Pending Stations</h1><div class="sub">Approve or reject stations submitted from the Add Station page. Auto-refreshes every 30 seconds.</div></div>
+  <div class="top"><h1>Pending Stations</h1><div class="sub">Approve or reject submitted stations.</div></div>
   <div class="card actions">
-    <a class="btn link" href="/add-station">+ Add Station</a>
-    <a class="btn link" href="/">Radio Home</a>
-    <a class="btn link" href="/admin/stations">Manage Approved Stations</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
   </div>
   <div class="card">
@@ -37,8 +34,17 @@
   <div class="card">
     <h2>Approved custom stations</h2>
     {% if approved %}
-      <p><a class="btn link" href="/admin/stations">Edit or delete approved stations</a></p>
-      {% for s in approved[:5] %}<div class="station"><b>{{ s.name }}</b><div class="url">{{ s.url }}</div></div>{% endfor %}
+      {% for s in approved %}
+      <div class="station">
+        <div class="name">{{ s.name }}</div>
+        <div class="url">{{ s.url }}</div>
+        <div>{{ s.website or s.subtitle }}</div>
+        <div class="actions">
+          <a class="btn link" href="/admin/edit/{{ loop.index0 }}">Edit</a>
+          <form method="post" action="/admin/delete/{{ loop.index0 }}"><button class="btn reject">Delete</button></form>
+        </div>
+      </div>
+      {% endfor %}
     {% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}
   </div>
 </div>

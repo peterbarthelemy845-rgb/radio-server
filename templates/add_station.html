@@ -19,7 +19,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
     <p class="sub">Save a radio stream from your phone to the device.</p>
   </section>
   <section class="card">
-    <div class="pill">Wi‑Fi {{ ssid }}</div>
+    {% if message %}<div class="msg {% if status == 'error' %}err{% else %}ok{% endif %}">{{ message }}</div>{% endif %}
     <form method="post" action="/api/add-station" enctype="multipart/form-data">
       <div class="row">
         <label for="name">Station name</label>
@@ -40,9 +40,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
       </div>
       <button class="btn" type="submit">Save Station</button>
     </form>
-    {% if message %}<div class="msg {% if status == 'error' %}err{% else %}ok{% endif %}">{{ message }}</div>{% endif %}
   </section>
-  <div class="footer">Panik Radio Device Setup</div>
 </main>
 </body>
 </html>
