@@ -1,1 +1,45 @@
-<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="30"><title>Pending Stations</title><style>:root{--bg:#071642;--card:#fff;--text:#0f172a;--muted:#64748b;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--line:#dbe4f0}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#102a78,#071642);color:var(--text);min-height:100vh;padding:22px}.wrap{max-width:900px;margin:0 auto}.top{color:#fff;margin-bottom:18px}h1{margin:0;font-size:34px}.sub{opacity:.8;margin-top:6px}.card{background:var(--card);border-radius:22px;padding:20px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.22)}.station{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.name{font-weight:900;font-size:20px}.url{color:var(--muted);font-size:14px;word-break:break-all;margin:8px 0}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:12px;padding:12px 16px;color:#fff;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block}.approve{background:var(--green)}.reject{background:var(--red)}.link{background:var(--blue)}.empty{color:var(--muted);font-weight:700;padding:12px 0}@media(max-width:520px){body{padding:12px}h1{font-size:28px}.btn{width:100%;text-align:center}}</style></head><body><div class="wrap"><div class="top"><h1>Pending Stations</h1><div class="sub">Approve or reject stations. Auto-refreshes every 30 seconds.</div></div><div class="card actions"><a class="btn link" href="/add-station">+ Add Station</a><a class="btn link" href="/admin/stations">Manage Approved Stations</a><a class="btn reject" href="/admin/logout">Logout</a></div><div class="card"><h2>Waiting for approval</h2>{% if pending %}{% for s in pending %}<div class="station"><div class="name">{{ s.name }}</div><div class="url">{{ s.url }}</div><div>{{ s.website or s.subtitle }}</div><div class="actions"><form method="post" action="/admin/approve/{{ loop.index0 }}"><button class="btn approve">Approve</button></form><form method="post" action="/admin/reject/{{ loop.index0 }}"><button class="btn reject">Reject</button></form></div></div>{% endfor %}{% else %}<div class="empty">No pending stations.</div>{% endif %}</div><div class="card"><h2>Approved custom stations</h2><p><a class="btn link" href="/admin/stations">Edit or delete approved stations</a></p>{% if approved %}{% for s in approved[:5] %}<div class="station"><b>{{ s.name }}</b><div class="url">{{ s.url }}</div></div>{% endfor %}{% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}</div></div></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="30">
+<title>Pending Stations</title><style>:root{--bg:#071642;--card:#fff;--text:#0f172a;--muted:#64748b;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--line:#dbe4f0}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#102a78,#071642);color:var(--text);min-height:100vh;padding:22px}.wrap{max-width:900px;margin:0 auto}.top{color:#fff;margin-bottom:18px}h1{margin:0;font-size:34px}.sub{opacity:.8;margin-top:6px}.card{background:var(--card);border-radius:22px;padding:20px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.22)}.station{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.name{font-weight:900;font-size:20px}.url{color:var(--muted);font-size:14px;word-break:break-all;margin:8px 0}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:12px;padding:12px 16px;color:#fff;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block}.approve{background:var(--green)}.reject{background:var(--red)}.link{background:var(--blue)}.empty{color:var(--muted);font-weight:700;padding:12px 0}.thumb{width:60px;height:60px;border-radius:14px;object-fit:cover;float:right;margin-left:12px}.field{margin:14px 0}label{font-weight:900;display:block;margin-bottom:7px}input{width:100%;min-height:52px;border:2px solid #dbe4f0;border-radius:14px;padding:12px 14px;font-size:17px}.error{background:#fee2e2;color:#991b1b;padding:12px;border-radius:12px;font-weight:900}@media(max-width:520px){body{padding:12px}h1{font-size:28px}.card{padding:16px;border-radius:18px}.btn{width:100%;text-align:center}.thumb{float:none;margin:0 0 10px 0}}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><h1>Pending Stations</h1><div class="sub">Approve or reject stations submitted from the Add Station page. Auto-refreshes every 30 seconds.</div></div>
+  <div class="card actions">
+    <a class="btn link" href="/add-station">+ Add Station</a>
+    <a class="btn link" href="/">Radio Home</a>
+    <a class="btn link" href="/admin/stations">Manage Approved Stations</a>
+    <a class="btn reject" href="/admin/logout">Logout</a>
+  </div>
+  <div class="card">
+    <h2>Waiting for approval</h2>
+    {% if pending %}
+      {% for s in pending %}
+      <div class="station">
+        {% if s.logo_url or s.wallpaper %}<img class="thumb" src="{{ s.logo_url or s.wallpaper }}">{% endif %}
+        <div class="name">{{ s.name }}</div>
+        <div class="url">{{ s.url }}</div>
+        <div>{{ s.website or s.subtitle }}</div>
+        <div class="actions">
+          <form method="post" action="/admin/approve/{{ loop.index0 }}"><button class="btn approve">Approve</button></form>
+          <form method="post" action="/admin/reject/{{ loop.index0 }}"><button class="btn reject">Reject</button></form>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">No pending stations.</div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Approved custom stations</h2>
+    {% if approved %}
+      <p><a class="btn link" href="/admin/stations">Edit or delete approved stations</a></p>
+      {% for s in approved[:5] %}<div class="station"><b>{{ s.name }}</b><div class="url">{{ s.url }}</div></div>{% endfor %}
+    {% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}
+  </div>
+</div>
+</body></html>

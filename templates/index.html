@@ -1,75 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>La Voix Divine Radio</title>
-  <link rel="stylesheet" href="/static/style.css" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+*{box-sizing:border-box;user-select:none}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial;background:#06143a;color:white}
+.screen{width:100vw;height:100vh;position:relative;background:radial-gradient(circle at top,#1d4ed8,#07143a 70%);background-size:cover;background-position:center}
+.screen::before{content:"";position:absolute;inset:0;background:linear-gradient(rgba(0,20,70,.35),rgba(3,8,30,.65));pointer-events:none}
+.page,.top-bar,.bottom-nav{position:absolute}.page{display:none;inset:0;z-index:2}.page.active{display:block}
+.top-bar{top:16px;left:16px;right:16px;display:flex;justify-content:space-between;z-index:20}.top-left{display:flex;gap:10px}
+.icon-box{min-width:58px;height:48px;border-radius:14px;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:white;border:0}.vol-btn{min-width:72px;height:58px;border-radius:16px;background:rgba(255,255,255,.15);color:white;border:0;font-size:18px;font-weight:900}.connection{position:absolute;top:76px;left:18px;font-size:15px;font-weight:700;opacity:.85;z-index:20}
+.radio-main{position:absolute;top:145px;left:0;right:0;text-align:center;padding:0 20px}.stream-label{font-size:22px;letter-spacing:4px;font-weight:800;margin-bottom:12px}.station-name{font-size:54px;font-weight:900;line-height:1.05;margin-bottom:8px}.station-url{font-size:24px;font-weight:800;margin-bottom:18px;opacity:.9}.station-logo{font-size:42px;margin-bottom:8px}.fav-btn{position:absolute;right:26px;top:112px;z-index:22;width:58px;height:50px;border:0;border-radius:16px;background:rgba(255,255,255,.16);color:white;font-size:26px}.fav-on{color:#ffd166}.card .row{display:flex;align-items:center;gap:12px}.station-icon{font-size:26px}.station-icon img{width:42px;height:42px;border-radius:12px;object-fit:cover;display:block}.station-text{flex:1}.favorite-star{font-size:24px;color:#ffd166}.sync-note{font-size:12px;opacity:.65;margin-top:10px}.status-line{font-size:26px;font-weight:900;color:#ff6b6b;margin-bottom:28px}.controls{display:flex;align-items:center;justify-content:center;gap:36px}.control-btn{width:72px;height:72px;border:0;background:transparent;color:white;font-size:44px;font-weight:900}.play-btn{width:110px;height:110px;border-radius:26px;border:0;background:linear-gradient(#40c7ff,#216cff);color:white;font-size:54px;font-weight:900;box-shadow:0 12px 30px rgba(0,70,255,.45)}
+.bottom-nav{left:12px;right:12px;bottom:12px;height:120px;border-radius:28px;background:rgba(255,255,255,.13);display:flex;align-items:center;justify-content:space-around;z-index:30}.nav-item{flex:1;height:100%;border:0;background:transparent;color:white;font-size:20px;font-weight:900;display:flex;align-items:center;justify-content:center}.nav-item.active{color:#9fd1ff;background:rgba(255,255,255,.08);border-radius:22px}
+.subpage{position:absolute;inset:0;padding:34px 28px 150px;overflow:hidden}.header{display:flex;align-items:center;margin-bottom:24px}.title{font-size:52px;font-weight:900}.card-list{max-height:calc(100vh - 220px);overflow-y:auto;padding-right:6px}.card{width:100%;background:rgba(255,255,255,.1);border-radius:20px;padding:20px;margin-bottom:14px;font-size:26px;font-weight:800;border:0;color:white;text-align:left}.small{font-size:18px;opacity:.85;font-weight:700;margin-top:6px}.connect{float:right;background:#1e90ff;color:white;border:0;border-radius:14px;padding:10px 14px;font-size:18px;font-weight:900}.slider{width:100%;height:44px}input[type=text],input[type=url],input[type=password],input[type=file]{width:100%;padding:16px;margin:8px 0 16px;border:0;border-radius:16px;font-size:22px}.save-btn{width:100%;padding:18px;border:0;border-radius:20px;background:linear-gradient(#40c7ff,#216cff);color:white;font-size:26px;font-weight:900}.msg{font-size:22px;font-weight:900;margin-top:14px}.ok{color:#8ef58e}.err{color:#ff8a8a}
+</style>
 </head>
 <body>
-  <main class="radio-card">
-    <div class="eyebrow">Internet Stream</div>
-    <h1>La Voix Divine</h1>
-    <p class="site">radiolavoixdivine.com</p>
-
-    <div id="status" class="status stopped">● STOPPED</div>
-
-    <audio id="player" preload="none" src="{{ stream_url }}"></audio>
-
-    <div class="controls">
-      <button id="playBtn" class="play" onclick="togglePlay()" aria-label="Play radio">▶</button>
-      <button class="stop" onclick="stopAudio()" aria-label="Stop radio">■ STOP</button>
-    </div>
-
-    <p id="message" class="message">Tap play to start the live stream.</p>
-  </main>
-
-  <script>
-    const player = document.getElementById("player");
-    const playBtn = document.getElementById("playBtn");
-    const statusText = document.getElementById("status");
-    const message = document.getElementById("message");
-
-    async function togglePlay() {
-      if (!player.paused) {
-        player.pause();
-        setStopped("Paused");
-        return;
-      }
-
-      try {
-        message.textContent = "Connecting...";
-        await player.play();
-        setPlaying();
-      } catch (err) {
-        setStopped("Could not start audio. Tap play again or refresh the page.");
-        console.error(err);
-      }
-    }
-
-    function stopAudio() {
-      player.pause();
-      player.currentTime = 0;
-      setStopped("Stopped");
-    }
-
-    function setPlaying() {
-      statusText.textContent = "● PLAYING";
-      statusText.className = "status playing";
-      playBtn.textContent = "❚❚";
-      message.textContent = "Live now.";
-    }
-
-    function setStopped(text = "Stopped") {
-      statusText.textContent = "● STOPPED";
-      statusText.className = "status stopped";
-      playBtn.textContent = "▶";
-      message.textContent = text;
-    }
-
-    player.addEventListener("playing", setPlaying);
-    player.addEventListener("pause", () => setStopped("Paused"));
-    player.addEventListener("error", () => setStopped("Stream error. Please try again."));
-  </script>
+<audio id="webAudio" preload="none" playsinline></audio>
+<script>window.PUBLIC_WEB = {{ "true" if public_web else "false" }}; window.WEB_STREAM_URL = {{ web_stream_url|tojson }};</script>
+<div class="screen" id="screen">
+<div id="radioPage" class="page active">
+  <div class="top-bar"><div class="top-left"><button class="icon-box" onclick="showPage('wifiPage')">WiFi</button></div><button class="vol-btn" onclick="showPage('soundPage')">VOL</button></div>
+  <div class="connection" id="connectionText">Connected...</div>
+  <button class="fav-btn" id="favoriteBtn" onclick="toggleFavorite()">☆</button><div class="radio-main"><div class="stream-label">INTERNET STREAM</div><div class="station-logo" id="stationLogo">🎧</div><div class="station-name" id="stationName">La Voix Divine</div><div class="station-url" id="stationWebsite">radiolavoixdivine.com</div><div class="status-line" id="networkStatus">● STOPPED</div><div class="controls"><button class="control-btn" onclick="prevPreset()">⏮</button><button class="play-btn" id="playBtn" onclick="togglePlayback()">▶</button><button class="control-btn" onclick="nextPreset()">⏭</button></div></div>
+</div>
+<div id="libraryPage" class="page"><div class="subpage"><div class="header"><div class="title">Library</div></div><div id="libraryList" class="card-list"><div class="card">Loading stations...</div></div></div></div>
+<div id="adsPage" class="page"><div class="subpage"><div class="header"><div class="title">Ads</div></div><div class="card">Ad space ready</div></div></div>
+<div id="settingsPage" class="page"><div class="subpage"><div class="header"><div class="title">Settings</div></div><button class="card" onclick="showPage('wifiPage')">WiFi</button><button class="card" onclick="showPage('bluetoothPage')">Bluetooth</button><button class="card" onclick="showPage('soundPage')">Sound</button><div class="card">Contact Us<br><span class="small">radiolavoixdivine.com</span></div></div></div>
+<div id="wifiPage" class="page"><div class="subpage"><div class="header"><div class="title">WiFi</div></div><button class="card" onclick="scanWifi()">Scan WiFi Networks</button><div class="card-list" id="wifiInfo"><div class="card">Loading WiFi...</div></div></div></div>
+<div id="bluetoothPage" class="page"><div class="subpage"><div class="header"><div class="title">Bluetooth</div></div><button class="card" onclick="scanBluetooth()">Scan Bluetooth Devices</button><div class="card-list" id="btInfo"><div class="card">Loading Bluetooth...</div></div></div></div>
+<div id="soundPage" class="page"><div class="subpage"><div class="header"><div class="title">Sound</div></div><div class="card">Volume: <span id="volumeValue">50</span></div><input class="slider" id="volumeSlider" type="range" min="0" max="100" value="50" oninput="setVolume(this.value)"></div></div>
+<div id="addPage" class="page"><div class="subpage"><div class="header"><div class="title">Add</div></div><div class="card-list" style="align-items:center;text-align:center"><div class="card" style="width:100%;text-align:center"><h2 style="margin:0 0 12px">Scan to Add Station</h2><img src="/qr" style="width:240px;max-width:80%;background:white;padding:12px;border-radius:18px"><div style="margin-top:12px;font-size:14px;opacity:.85">Scan QR from phone to add a station to this radio.</div><div style="margin-top:8px;font-size:12px;opacity:.65">/add-station</div></div></div></div></div>
+<div class="bottom-nav"><button class="nav-item active" onclick="showPage('radioPage',this)">Radio</button><button class="nav-item" onclick="showPage('libraryPage',this);renderLibrary()">Library</button><button class="nav-item" onclick="showPage('adsPage',this)">Ads</button><button class="nav-item" onclick="showPage('settingsPage',this)">Settings</button><button class="nav-item" onclick="showPage('addPage',this)">Add</button></div>
+</div>
+<script>
+let appState={presets:[],preset_index:0,playing:false,volume:50,station_name:"La Voix Divine",station_website:"",logo:"🎧",wallpaper:""};
+let favorites=JSON.parse(localStorage.getItem('radioFavorites')||'[]');
+function stationKey(p){return (p&&p.url)||((p&&p.name)||'')}
+function isFavorite(p){return favorites.includes(stationKey(p))}
+function saveFavorites(){localStorage.setItem('radioFavorites',JSON.stringify(favorites))}
+function toggleFavorite(){let p=currentPreset();let k=stationKey(p);if(!k)return;if(isFavorite(p)){favorites=favorites.filter(x=>x!==k)}else{favorites.push(k)}saveFavorites();updateUI();renderLibrary()}
+function showPage(id,btn){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');if(btn){document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));btn.classList.add('active')}if(id==='wifiPage')loadWifi();if(id==='bluetoothPage')loadBluetooth();}
+function currentPreset(){if(appState.preset_index<0||appState.preset_index>=appState.presets.length){appState.preset_index=0}return appState.presets[appState.preset_index]||null}
+function applyWallpaper(w){let s=document.getElementById('screen');if(w){s.style.backgroundImage=`linear-gradient(rgba(0,20,70,.45),rgba(3,8,30,.72)),url('${w}')`;s.style.backgroundSize='cover';s.style.backgroundPosition='center'}else{s.style.backgroundImage='radial-gradient(circle at top,#1d4ed8,#07143a 70%)'}}
+async function loadState(){try{let r=await fetch('/api/state?ts='+Date.now(),{cache:'no-store'});let d=await r.json();appState.presets=d.presets||[];appState.preset_index=d.preset_index||0;appState.volume=typeof d.volume==='number'?d.volume:50;let p=currentPreset();appState.station_name=(p&&p.name)||d.station_name||'La Voix Divine';appState.station_website=(p&&(p.website||p.subtitle))||d.station_website||'';appState.logo=(p&&p.logo)||'🎧';appState.logo_url=(p&&p.logo_url)||'';appState.wallpaper=(p&&p.wallpaper)||'';appState.playing=!!(d.playing&&d.playing.is_playing);updateUI();if(document.getElementById('libraryPage').classList.contains('active'))renderLibrary()}catch(e){console.log(e)}}
+function updateUI(){let p=currentPreset();document.getElementById('stationName').innerText=appState.station_name||'La Voix Divine';document.getElementById('stationWebsite').innerText=appState.station_website||'';let logoEl=document.getElementById('stationLogo'); if(appState.logo_url){logoEl.innerHTML=`<img src="${appState.logo_url}" style="width:64px;height:64px;border-radius:18px;object-fit:cover">`;}else{logoEl.innerText=appState.logo||'🎧';}let fav=document.getElementById('favoriteBtn');fav.innerText=isFavorite(p)?'★':'☆';fav.classList.toggle('fav-on',isFavorite(p));document.getElementById('playBtn').innerText=appState.playing?'⏸':'▶';document.getElementById('networkStatus').innerText=appState.playing?'● PLAYING':'● STOPPED';document.getElementById('networkStatus').style.color=appState.playing?'#67e86f':'#ff6b6b';document.getElementById('volumeSlider').value=appState.volume;document.getElementById('volumeValue').innerText=appState.volume;applyWallpaper(appState.wallpaper)}
+async function loadNetwork(){if(window.PUBLIC_WEB){let s=document.getElementById('networkStatus');s.innerText=appState.playing?'● LIVE':'● STOPPED';s.style.color=appState.playing?'#67e86f':'#ff6b6b';return;}try{let r=await fetch('/api/network-status');let d=await r.json();let s=document.getElementById('networkStatus');if(d.connected&&d.playing){s.innerText='● LIVE';s.style.color='#67e86f'}else if(d.connected){s.innerText='● STOPPED';s.style.color='#ffd166'}else{s.innerText='● NO NETWORK';s.style.color='#ff6b6b'}}catch(e){}}
+async function playPreset(p){if(!p||!p.url){await loadState();p=currentPreset();if(!p||!p.url)return;}if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');a.src='/stream?url='+encodeURIComponent(p.url);await a.play();}else{await fetch('/api/play-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:p.url,name:p.name,subtitle:p.subtitle||'Internet Stream',website:p.website||'',logo:p.logo||'🎧'})});}appState.playing=true;appState.station_name=p.name;appState.station_website=p.website||p.subtitle||'';appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();loadNetwork()}
+async function togglePlayback(){if(appState.playing){if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');a.pause();a.currentTime=0;}else{await fetch('/api/stop-stream',{method:'POST'});}appState.playing=false;updateUI();loadNetwork()}else{await playPreset(currentPreset())}}
+async function nextPreset(){if(!appState.presets.length)return;appState.preset_index=(appState.preset_index+1)%appState.presets.length;await playPreset(currentPreset())}
+async function prevPreset(){if(!appState.presets.length)return;appState.preset_index=(appState.preset_index-1+appState.presets.length)%appState.presets.length;await playPreset(currentPreset())}
+async function setVolume(v){appState.volume=parseInt(v);updateUI();await fetch('/api/volume',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({volume:appState.volume})})}
+function renderLibrary(){let box=document.getElementById('libraryList');if(!appState.presets.length){box.innerHTML='<div class="card">No stations found</div>';return}let favs=appState.presets.map((p,i)=>({p,i})).filter(x=>isFavorite(x.p));let others=appState.presets.map((p,i)=>({p,i})).filter(x=>!isFavorite(x.p));let ordered=[...favs,...others];box.innerHTML='';ordered.forEach(({p,i})=>{let b=document.createElement('button');b.className='card';let star=isFavorite(p)?'★':'';let logoHtml=p.logo_url?`<img src="${p.logo_url}">`:(p.logo||'🎧');b.innerHTML=`<div class="row"><div class="station-icon">${logoHtml}</div><div class="station-text">${p.name}<div class="small">${p.website||p.subtitle||'Internet Stream'}</div></div><div class="favorite-star">${star}</div></div>`;b.onclick=async()=>{appState.preset_index=i;showPage('radioPage');await playPreset(p)};box.appendChild(b)});let note=document.createElement('div');note.className='sync-note';note.innerText='Auto-refreshes every 30 seconds';box.appendChild(note)}
+async function loadWifi(){try{let r=await fetch('/api/wifi-status');let d=await r.json();document.getElementById('connectionText').innerText=d.connected?'Connected to '+d.ssid:'No connection';document.getElementById('wifiInfo').innerHTML=`<div class="card">${d.connected?'Connected to '+d.ssid:'No connection'}<div class="small">IP: ${d.ip||''}</div></div>`}catch(e){}}
+async function scanWifi(){let box=document.getElementById('wifiInfo');box.innerHTML='<div class="card">Scanning...</div>';try{let r=await fetch('/api/wifi-scan');let d=await r.json();let nets=d.networks||[];if(!nets.length){box.innerHTML='<div class="card">No networks found</div>';return}box.innerHTML='';nets.forEach(n=>{let ssid=typeof n==='string'?n:n.ssid;let sig=typeof n==='string'?'':(n.signal||'');let div=document.createElement('div');div.className='card';div.innerHTML=`${ssid}<button class="connect">Connect</button><div class="small">Signal ${sig}</div>`;div.querySelector('button').onclick=()=>connectWifi(ssid);box.appendChild(div)})}catch(e){box.innerHTML='<div class="card">WiFi scan failed</div>'}}
+async function connectWifi(ssid){let password=prompt('Password for '+ssid+' (leave blank for open/saved network)')||'';let r=await fetch('/api/wifi-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid,password})});let d=await r.json();alert(d.message||d.status);loadWifi()}
+async function loadBluetooth(){try{let r=await fetch('/api/bluetooth-status');let d=await r.json();document.getElementById('btInfo').innerHTML=`<div class="card">Bluetooth ${d.powered?'On':'Off'}<div class="small">${d.connected_device_name||'No connected device'}</div></div>`}catch(e){}}
+async function scanBluetooth(){let box=document.getElementById('btInfo');box.innerHTML='<div class="card">Scanning Bluetooth...</div>';try{let r=await fetch('/api/bluetooth-scan');let d=await r.json();let devs=d.devices||[];if(!devs.length){box.innerHTML='<div class="card">No Bluetooth devices found</div>';return}box.innerHTML='';devs.forEach(dev=>{let div=document.createElement('div');div.className='card';div.innerHTML=`${dev.name}<button class="connect">${dev.connected?'Connected':'Connect'}</button><div class="small">${dev.mac}</div>`;div.querySelector('button').onclick=()=>connectBluetooth(dev.mac);box.appendChild(div)})}catch(e){box.innerHTML='<div class="card">Bluetooth scan failed</div>'}}
+async function connectBluetooth(mac){let r=await fetch('/api/bluetooth-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac})});let d=await r.json();alert(d.message||d.status);loadBluetooth()}
+const addStationForm=document.getElementById('addStationForm');
+if(addStationForm){addStationForm.addEventListener('submit',async e=>{e.preventDefault();let msg=document.getElementById('addMsg');msg.innerText='Saving...';msg.className='msg';try{let fd=new FormData(e.target);let r=await fetch('/api/add-station',{method:'POST',body:fd});let d=await r.json().catch(()=>({status:r.ok?'ok':'error',message:r.ok?'Station saved':'Save failed'}));if(r.ok&&d.status==='ok'){msg.innerText='Station saved';msg.className='msg ok';e.target.reset();await loadState();renderLibrary()}else{msg.innerText=d.message||'Save failed';msg.className='msg err'}}catch(err){msg.innerText='Save failed';msg.className='msg err'}})}
+loadState();loadNetwork();loadWifi();setInterval(loadNetwork,5000);setInterval(loadState,30000);
+</script>
 </body>
 </html>

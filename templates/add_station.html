@@ -1,1 +1,48 @@
-<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Add Station</title><style>:root{--bg:#071642;--card:#fff;--text:#0f172a;--muted:#64748b;--blue:#2563eb}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#13348c,#071642);min-height:100vh;color:var(--text);padding:22px}.wrap{max-width:620px;margin:0 auto}.brand{text-align:center;color:#fff;margin:20px 0}.brand h1{font-size:42px;margin:10px 0 6px}.sub{opacity:.82;font-size:18px}.card{background:var(--card);border-radius:26px;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.3)}.pill{display:inline-flex;gap:8px;background:#eff6ff;color:#1d4ed8;padding:9px 13px;border-radius:999px;font-weight:900;margin-bottom:18px}.pill:before{content:"•";color:#22c55e;font-size:22px;line-height:0}label{display:block;font-weight:900;margin:14px 0 8px}input{width:100%;min-height:56px;border:2px solid #dbe4f0;border-radius:17px;padding:14px 16px;font-size:17px}.hint{font-size:13px;color:var(--muted);margin-top:6px}.btn{width:100%;margin-top:20px;min-height:60px;border:0;border-radius:18px;background:linear-gradient(135deg,#38bdf8,#2563eb);color:#fff;font-size:20px;font-weight:900}.msg{margin-top:16px;padding:14px;border-radius:14px;font-weight:900}.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}.footer{text-align:center;color:rgba(255,255,255,.65);font-size:13px;margin:16px 0}</style></head><body><main class="wrap"><section class="brand"><div style="font-size:48px">📻</div><h1>Add Station</h1><div class="sub">Submit a stream to the public server for approval.</div></section><section class="card"><div class="pill">Public Server</div><form method="post" action="/api/add-station"><label>Station name</label><input name="name" required value="{{ form.name if form else '' }}" placeholder="Example: Test Radio"><label>Stream URL</label><input name="url" type="url" required value="{{ form.url if form else '' }}" placeholder="https://example.com/stream.mp3"><div class="hint">MP3 stream links work best.</div><label>Website / subtitle optional</label><input name="subtitle" value="{{ form.subtitle if form else 'Custom Station' }}" placeholder="radiostation.com"><button class="btn">Save Station</button></form>{% if message %}<div class="msg {% if status == 'error' %}err{% else %}ok{% endif %}">{{ message }}</div>{% endif %}</section><div class="footer">La Voix Divine Radio Setup</div></main></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Add Station</title>
+<style>
+:root{--bg:#071642;--bg2:#102a78;--card:rgba(255,255,255,.96);--text:#0f172a;--muted:#64748b;--blue:#2563eb;--blue2:#38bdf8;--green:#16a34a;--red:#dc2626}
+*{box-sizing:border-box}html,body{min-height:100%;margin:0}body{font-family:Arial,Helvetica,sans-serif;background:radial-gradient(circle at top,#1d4ed8 0,#0b1f5b 38%,#071642 100%);color:var(--text);padding:clamp(14px,4vw,28px);-webkit-font-smoothing:antialiased}
+.wrap{width:100%;max-width:620px;margin:0 auto;padding-top:max(8px,env(safe-area-inset-top))}.brand{text-align:center;color:#fff;margin:16px 0 22px}.brand .icon{width:70px;height:70px;margin:0 auto 12px;border-radius:24px;background:linear-gradient(135deg,var(--blue2),var(--blue));display:grid;place-items:center;font-size:34px;box-shadow:0 18px 45px rgba(0,0,0,.28)}
+h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;letter-spacing:-1px}.sub{font-size:clamp(15px,4vw,18px);line-height:1.4;margin:10px auto 0;max-width:420px;color:rgba(255,255,255,.82)}.card{background:var(--card);border-radius:28px;padding:clamp(20px,5vw,34px);box-shadow:0 24px 70px rgba(0,0,0,.35);backdrop-filter:blur(12px)}.pill{display:inline-flex;align-items:center;gap:8px;background:#eff6ff;color:#1d4ed8;padding:10px 14px;border-radius:999px;font-size:14px;font-weight:800;margin-bottom:18px}.pill:before{content:"•";font-size:22px;color:#22c55e;line-height:0}.row{margin-bottom:16px}label{display:block;margin:0 0 8px;font-weight:900;font-size:15px;color:#1e293b}input{width:100%;min-height:54px;padding:15px 16px;border-radius:17px;border:2px solid #dbe4f0;background:#fff;font-size:17px;outline:none;transition:.15s ease}input:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(37,99,235,.14)}input[type=file]{padding:13px;background:#f8fafc}.hint{font-size:13px;color:var(--muted);margin-top:7px;line-height:1.35}.btn{width:100%;min-height:58px;margin-top:8px;border:none;border-radius:18px;padding:16px;background:linear-gradient(135deg,#38bdf8,#2563eb);color:#fff;font-size:19px;font-weight:900;box-shadow:0 14px 30px rgba(37,99,235,.35);cursor:pointer}.btn:active{transform:scale(.99)}.msg{margin-top:18px;padding:14px 16px;border-radius:16px;font-weight:900;line-height:1.35}.msg.ok{background:#dcfce7;color:#166534}.msg.err{background:#fee2e2;color:#991b1b}.footer{text-align:center;color:rgba(255,255,255,.65);font-size:13px;margin:18px 0 4px}@media(max-width:430px){body{padding:12px}.brand{margin-top:10px}.brand .icon{width:62px;height:62px;border-radius:21px}.card{border-radius:24px;padding:20px}input{font-size:16px}.hide-mobile{display:none}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section class="brand">
+    <div class="icon">📻</div>
+    <h1>Add Station</h1>
+    <p class="sub">Save a radio stream from your phone to the device.</p>
+  </section>
+  <section class="card">
+    <div class="pill">Wi‑Fi {{ ssid }}</div>
+    <form method="post" action="/api/add-station" enctype="multipart/form-data">
+      <div class="row">
+        <label for="name">Station name</label>
+        <input id="name" name="name" type="text" required value="{{ form.name if form else '' }}" placeholder="Example: Test Radio" autocomplete="off">
+      </div>
+      <div class="row">
+        <label for="url">Stream URL</label>
+        <input id="url" name="url" type="url" required value="{{ form.url if form else '' }}" placeholder="https://example.com/stream.mp3" inputmode="url" autocomplete="off">
+        <div class="hint">Tip: MP3 stream links work best.</div>
+      </div>
+      <div class="row">
+        <label for="subtitle">Website / subtitle optional</label>
+        <input id="subtitle" name="subtitle" type="text" value="{{ form.subtitle if form else 'Custom Station' }}" placeholder="radiostation.com" autocomplete="off">
+      </div>
+      <div class="row hide-mobile">
+        <label for="wallpaper">Logo / wallpaper optional</label>
+        <input id="wallpaper" name="wallpaper" type="file" accept="image/*">
+      </div>
+      <button class="btn" type="submit">Save Station</button>
+    </form>
+    {% if message %}<div class="msg {% if status == 'error' %}err{% else %}ok{% endif %}">{{ message }}</div>{% endif %}
+  </section>
+  <div class="footer">Panik Radio Device Setup</div>
+</main>
+</body>
+</html>
