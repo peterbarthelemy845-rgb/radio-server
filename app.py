@@ -35,7 +35,7 @@ current_playing = {
 
 
 PUBLIC_HOSTS = {"www.radiolavoixdivine.com", "radiolavoixdivine.com", "radio-server-z0hb.onrender.com"}
-MAIN_STREAM_URL = "http://162.244.81.219:8020/live"
+MAIN_STREAM_URL = "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream"
 
 def is_public_website():
     host = (request.host or "").split(":", 1)[0].lower()
