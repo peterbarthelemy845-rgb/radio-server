@@ -16,9 +16,44 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;font-family:Arial;back
 
 .add-panel{display:grid;grid-template-columns:1fr 360px;gap:18px;align-items:start}.add-card label{display:block;font-size:18px;font-weight:900;margin-top:8px}.qr-card{text-align:center}
 @media (max-width: 700px){html,body{overflow:auto}.screen{min-height:100vh;height:auto}.page{min-height:100vh}.radio-main{top:110px;bottom:120px}.station-name{font-size:42px}.station-url{font-size:28px}.stream-label{font-size:24px}.controls{gap:24px}.play-btn{width:132px;height:132px;font-size:64px;border-radius:32px}.control-btn{width:82px;height:82px;font-size:50px}.bottom-nav{height:96px;left:0;right:0;bottom:0;border-radius:24px 24px 0 0}.nav-item{font-size:20px}.subpage{padding:34px 18px 120px}.title{font-size:48px}.card-list{max-height:none;overflow:visible}.add-panel{display:block}.card{font-size:24px}.qr-card img{width:210px!important}}
+/* Web/mobile fullscreen cleanup: hide Pi-only controls on public website */
+body.public-web .top-bar,
+body.public-web .connection { display:none !important; }
+
+@media (max-width: 700px){
+  body.public-web{height:100dvh;overflow:hidden;}
+  body.public-web .screen{height:100dvh;min-height:100dvh;overflow:hidden;}
+  body.public-web .page{height:100dvh;min-height:0;overflow:hidden;}
+  body.public-web #radioPage{overflow:hidden;}
+  body.public-web .radio-main{top:8px;bottom:94px;padding:0 14px;justify-content:center;}
+  body.public-web .fav-btn{right:14px;top:18px;width:62px;height:56px;font-size:28px;}
+  body.public-web .stream-label{font-size:19px;letter-spacing:4px;margin-bottom:8px;}
+  body.public-web .station-logo{font-size:34px;margin-bottom:4px;}
+  body.public-web .station-name{font-size:44px;line-height:1.02;margin-bottom:4px;}
+  body.public-web .station-url{font-size:27px;margin-bottom:12px;}
+  body.public-web .status-line{font-size:30px;margin-bottom:16px;}
+  body.public-web .controls{gap:34px;margin:0;}
+  body.public-web .play-btn{width:132px;height:132px;font-size:62px;border-radius:34px;}
+  body.public-web .control-btn{width:70px;height:70px;font-size:48px;}
+  body.public-web .bottom-nav{height:82px;left:0;right:0;bottom:0;border-radius:22px 22px 0 0;}
+  body.public-web .nav-item{font-size:24px;}
+  body.public-web .subpage{padding:24px 16px 96px;overflow-y:auto;}
+  body.public-web .title{font-size:42px;}
+}
+
+@media (max-width: 390px){
+  body.public-web .station-name{font-size:38px;}
+  body.public-web .station-url{font-size:23px;}
+  body.public-web .stream-label{font-size:17px;}
+  body.public-web .play-btn{width:118px;height:118px;font-size:56px;}
+  body.public-web .control-btn{width:62px;height:62px;font-size:42px;}
+  body.public-web .bottom-nav{height:76px;}
+  body.public-web .nav-item{font-size:21px;}
+}
+
 </style>
 </head>
-<body>
+<body class="{{ 'public-web' if public_web else '' }}">
 <audio id="webAudio" preload="none" playsinline></audio>
 <script>window.PUBLIC_WEB = {{ "true" if public_web else "false" }};</script>
 <div class="screen" id="screen">
