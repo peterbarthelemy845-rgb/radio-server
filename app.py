@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, session, url_for, Response
+from flask import Flask, render_template, request, jsonify, redirect, session, url_for
 import json
 import os
 import subprocess
@@ -6,7 +6,6 @@ import shlex
 import time
 import socket
 import urllib.request
-import requests
 from urllib.parse import urlparse, quote
 from werkzeug.utils import secure_filename
 
@@ -382,35 +381,6 @@ def local_stations():
     return jsonify(get_all_streams())
 
 
-@app.route("/stream")
-def stream_proxy():
-    # Browser-friendly proxy for the public website.
-    # It keeps the HTTP Icecast stream playing through this HTTPS domain.
-    stream_url = request.args.get("url") or MAIN_STREAM_URL
-
-    def generate():
-        with requests.get(
-            stream_url,
-            stream=True,
-            timeout=(5, None),
-            headers={"User-Agent": "LaVoixDivineRadio/1.0"},
-        ) as upstream:
-            upstream.raise_for_status()
-            for chunk in upstream.iter_content(chunk_size=8192):
-                if chunk:
-                    yield chunk
-
-    return Response(
-        generate(),
-        mimetype="audio/mpeg",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
-
 @app.route("/qr")
 def qr_image():
     data = get_add_station_url()
@@ -418,7 +388,7 @@ def qr_image():
 
 @app.route("/")
 def index():
-    return render_template("index.html", public_web=is_public_website(), web_stream_url="/stream")
+    return render_template("index.html", public_web=is_public_website())
 
 @app.route("/api/state", methods=["GET"])
 def get_state():

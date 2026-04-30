@@ -13,13 +13,13 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
 </head>
 <body>
 <main class="wrap">
+  {% if message %}<div class="msg {% if status == 'error' %}err{% else %}ok{% endif %}" style="margin-bottom:14px;text-align:center">{{ message }}</div>{% endif %}
   <section class="brand">
     <div class="icon">📻</div>
     <h1>Add Station</h1>
-    <p class="sub">Save a radio stream from your phone to the device.</p>
+    <p class="sub">Save a radio stream from your phone.</p>
   </section>
   <section class="card">
-    {% if message %}<div class="msg {% if status == 'error' %}err{% else %}ok{% endif %}">{{ message }}</div>{% endif %}
     <form method="post" action="/api/add-station" enctype="multipart/form-data">
       <div class="row">
         <label for="name">Station name</label>
