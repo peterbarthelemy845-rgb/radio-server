@@ -28,7 +28,7 @@ current_playing = {
     "is_playing": False,
     "station_name": "La Voix Divine",
     "station_subtitle": "Internet Stream",
-    "stream_url": "http://162.244.81.219:8020/live",
+    "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream",
     "website": "radiolavoixdivine.com",
     "logo": "🎧",
 }
@@ -42,7 +42,7 @@ def is_public_website():
     return host in PUBLIC_HOSTS or host.endswith(".onrender.com")
 
 TEST_STREAMS = [
-    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "http://162.244.81.219:8020/live", "logo": "🎧"},
+    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream", "logo": "🎧"},
     {"name": "181 FM The Buzz", "subtitle": "https://www.181.fm", "website": "https://www.181.fm", "url": "http://listen.181fm.com/181-buzz_128k.mp3", "logo": "📻"},
 ]
 
@@ -200,7 +200,7 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         default_config = {
             "station_name": "La Voix Divine",
-            "stream_url": "http://162.244.81.219:8020/live",
+            "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream",
             "volume": 80,
             "preset_index": 0,
             "custom_stations": [],
@@ -344,7 +344,7 @@ def build_state():
         "version": get_config_version(),
         "station_name": current.get("name", "La Voix Divine"),
         "station_website": current.get("website", ""),
-        "stream_url": current.get("url", "http://162.244.81.219:8020/live"),
+        "stream_url": current.get("url", "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream"),
         "volume": config.get("volume", 80),
         "preset_index": preset_index,
         "custom_stations": config.get("custom_stations", []),
