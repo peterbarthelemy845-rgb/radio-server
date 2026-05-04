@@ -61,9 +61,9 @@ body.public-web .connection { display:none !important; }
 @media (max-width:700px){.bio-photo{width:140px;height:140px}.bio-card{font-size:18px}.bio-heading{font-size:26px}.bio-scripture{font-size:18px}}
 
 /* Bio page as main page + desktop scrolling fix */
-#adsPage .bio-subpage{overflow-y:auto;overflow-x:hidden;height:100vh;padding-bottom:160px;}
+#adsPage .bio-subpage{overflow-y:auto;overflow-x:hidden;height:100vh;padding-bottom:160px;-webkit-overflow-scrolling:touch;}
 #adsPage .bio-card{max-width:1100px;margin:0 auto 20px;}
-@media (min-width:701px){#adsPage .bio-subpage{padding-top:34px;}body.public-web #adsPage .bio-subpage{overflow-y:auto;height:100vh;}}
+@media (min-width:701px){ #adsPage .bio-subpage{padding-top:34px;} body.public-web #adsPage .bio-subpage{overflow-y:auto;height:100vh;} }
 
 </style>
 </head>
