@@ -28,21 +28,21 @@ current_playing = {
     "is_playing": False,
     "station_name": "La Voix Divine",
     "station_subtitle": "Internet Stream",
-    "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream",
+    "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live",
     "website": "radiolavoixdivine.com",
     "logo": "🎧",
 }
 
 
 PUBLIC_HOSTS = {"www.radiolavoixdivine.com", "radiolavoixdivine.com", "radio-server-z0hb.onrender.com"}
-MAIN_STREAM_URL = "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream"
+MAIN_STREAM_URL = "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live"
 
 def is_public_website():
     host = (request.host or "").split(":", 1)[0].lower()
     return host in PUBLIC_HOSTS or host.endswith(".onrender.com")
 
 TEST_STREAMS = [
-    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream", "logo": "🎧"},
+    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live", "logo": "🎧"},
     {"name": "181 FM The Buzz", "subtitle": "https://www.181.fm", "website": "https://www.181.fm", "url": "http://listen.181fm.com/181-buzz_128k.mp3", "logo": "📻"},
 ]
 
@@ -200,7 +200,7 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         default_config = {
             "station_name": "La Voix Divine",
-            "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream",
+            "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live",
             "volume": 80,
             "preset_index": 0,
             "custom_stations": [],
@@ -220,8 +220,8 @@ def stop_player():
     global player_process
     if player_process and player_process.poll() is None:
         try:
-            player_process.terminate()
-            player_process.wait(timeout=3)
+            player_process.kill()
+            player_process.wait(timeout=0.5)
         except Exception:
             try:
                 player_process.kill()
@@ -344,7 +344,7 @@ def build_state():
         "version": get_config_version(),
         "station_name": current.get("name", "La Voix Divine"),
         "station_website": current.get("website", ""),
-        "stream_url": current.get("url", "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream"),
+        "stream_url": current.get("url", "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live"),
         "volume": config.get("volume", 80),
         "preset_index": preset_index,
         "custom_stations": config.get("custom_stations", []),
@@ -423,6 +423,10 @@ def play_stream():
             "mpv",
             "--no-video",
             "--volume=100",
+            "--cache=yes",
+            "--cache-secs=2",
+            "--demuxer-readahead-secs=1",
+            "--network-timeout=5",
             stream_url,
         ]
         sink_check = run_command("pactl list short sinks")

@@ -1,6 +1,6 @@
 {
   "station_name": "La Voix Divine",
-  "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/?mp=/stream",
+  "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live",
   "volume": 64,
   "custom_stations": [],
   "preset_index": 0
