@@ -110,6 +110,7 @@ def normalize_station(station):
         "logo": station.get("logo") or station_logo(station.get("name")),
         "logo_url": station.get("logo_url", ""),
         "wallpaper": station.get("wallpaper", ""),
+        "bio": (station.get("bio") or station.get("description") or "").strip(),
         "submitted_at": station.get("submitted_at"),
     }
 
@@ -690,21 +691,22 @@ def api_add_station():
     url = (data.get('url') or '').strip()
     subtitle = (data.get('subtitle') or 'Custom Station').strip()
     website = (data.get('website') or subtitle).strip()
+    bio = (data.get('bio') or '').strip()[:250]
     image_path = ""
     if not is_json:
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             wifi = get_wifi_status_data()
-            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle}), 400
+            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio}), 400
     if not name or not url:
         message = "Station name and stream URL are required"
         if is_json:
             return jsonify({"status": "error", "message": message}), 400
         wifi = get_wifi_status_data()
-        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle}), 400
+        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio}), 400
     store = load_station_store()
     pending = store.get('pending_stations', [])
-    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "wallpaper": image_path, "logo_url": image_path, "submitted_at": int(time.time())})
+    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "wallpaper": image_path, "logo_url": image_path, "submitted_at": int(time.time())})
     for i, item in enumerate(pending):
         if (item.get('url') or '').strip() == url:
             pending[i] = station
@@ -717,7 +719,7 @@ def api_add_station():
     if is_json:
         return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "version": get_config_version()})
     wifi = get_wifi_status_data()
-    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":"","url":"","subtitle":"Custom Station"})
+    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":"","url":"","subtitle":"Custom Station","bio":""})
 
 @app.route('/admin/pending', methods=['GET'])
 def admin_pending():
@@ -780,13 +782,14 @@ def admin_edit_station(index):
         url = (request.form.get('url') or '').strip()
         subtitle = (request.form.get('subtitle') or 'Custom Station').strip()
         website = (request.form.get('website') or subtitle).strip()
+        bio = (request.form.get('bio') or '').strip()[:250]
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             error = image_error
         elif not name or not url:
             error = 'Station name and stream URL are required'
         else:
-            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website})
+            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio})
             if image_path:
                 station['wallpaper'] = image_path
                 station['logo_url'] = image_path
