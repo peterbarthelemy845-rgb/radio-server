@@ -429,18 +429,11 @@ def get_haitian_times_items():
     if news_cache["items"] and now - news_cache["fetched_at"] < NEWS_CACHE_TTL_SECONDS:
         return news_cache["items"]
     try:
-        items = []
-        sources = [
-            ("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, lambda: get_rss_items("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, 1)),
-            ("LE NOUVELLISTE", LE_NOUVELLISTE_URL, lambda: get_homepage_items("LE NOUVELLISTE", LE_NOUVELLISTE_URL, 1)),
-            ("HAITILIBRE", HAITILIBRE_URL, lambda: get_rss_items("HAITILIBRE", HAITILIBRE_RSS_URL, 1) or get_homepage_items("HAITILIBRE", HAITILIBRE_URL, 1)),
-        ]
-        for source_name, source_url, loader in sources:
-            source_items = loader()
-            if source_items:
-                items.append(source_items[0])
-            else:
-                items.append({"source": source_name, "title": "Latest headlines", "link": source_url, "published": "", "image": ""})
+        candidates = []
+        candidates.extend(get_rss_items("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, 10))
+        candidates.extend(get_rss_items("HAITILIBRE", HAITILIBRE_RSS_URL, 5))
+        candidates.extend(get_homepage_items("LE NOUVELLISTE", LE_NOUVELLISTE_URL, 5))
+        items = [item for item in candidates if item.get("image")][:8]
         news_cache["items"] = items
         news_cache["fetched_at"] = now
         return items
