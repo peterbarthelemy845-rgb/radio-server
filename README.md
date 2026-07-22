@@ -15,6 +15,23 @@ A custom frontend wrapper and automated setup script for running a lightweight, 
 
 ---
 
+## Admin Login Security
+
+Set `ADMIN_PASSWORD` to change the admin password. The login page does not show the default password hint.
+
+To enable text-message verification, add these environment variables:
+
+```bash
+ADMIN_MFA_PHONE=+15551234567
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_FROM_NUMBER=+15557654321
+```
+
+When those SMS settings are present, admin login requires the password first, then a 6-digit text verification code.
+
+---
+
 ## 🚀 Installation Guide
 
 ### Step 1: Base Volumio Setup

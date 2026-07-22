@@ -35,6 +35,15 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
         <input id="subtitle" name="subtitle" type="text" value="{{ form.subtitle if form else 'Custom Station' }}" placeholder="radiostation.com" autocomplete="off">
       </div>
       <div class="row">
+        <label for="language">Language / flag</label>
+        <select id="language" name="language" style="width:100%;min-height:54px;padding:15px 16px;border-radius:17px;border:2px solid #dbe4f0;background:#fff;font-size:17px">
+          <option value="en" {% if form and form.language == 'en' %}selected{% endif %}>🇺🇸 English</option>
+          <option value="es" {% if form and form.language == 'es' %}selected{% endif %}>🇪🇸 Spanish</option>
+          <option value="ht" {% if not form or form.language == 'ht' %}selected{% endif %}>🇭🇹 Haitian Creole</option>
+          <option value="fr" {% if form and form.language == 'fr' %}selected{% endif %}>🇫🇷 French</option>
+        </select>
+      </div>
+      <div class="row">
         <label for="bio">Small bio optional</label>
         <textarea id="bio" name="bio" maxlength="250" placeholder="Short station bio. 250 characters max." oninput="document.getElementById('bioCount').innerText=this.value.length + '/250'">{{ form.bio if form else '' }}</textarea>
         <div class="hint"><span id="bioCount">0/250</span> characters</div>

@@ -10,6 +10,7 @@
 <div class="wrap">
   <div class="top"><h1>Pending Stations</h1><div class="sub">Approve or reject submitted stations.</div></div>
   <div class="card actions">
+    <a class="btn link" href="/admin/reports">Reports</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
   </div>
   <div class="card">
@@ -18,7 +19,7 @@
       {% for s in pending %}
       <div class="station">
         {% if s.logo_url or s.wallpaper %}<img class="thumb" src="{{ s.logo_url or s.wallpaper }}">{% endif %}
-        <div class="name">{{ s.name }}</div>
+        <div class="name">{{ s.flag or '🇭🇹' }} {{ s.name }}</div>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
         <div class="actions">
@@ -36,7 +37,7 @@
     {% if approved %}
       {% for s in approved %}
       <div class="station">
-        <div class="name">{{ s.name }}</div>
+        <div class="name">{{ s.flag or '🇭🇹' }} {{ s.name }}</div>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
         <div class="actions">

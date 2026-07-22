@@ -5,15 +5,23 @@ import subprocess
 import shlex
 import time
 import socket
+import secrets
 import urllib.request
+import requests
 from urllib.parse import urlparse, quote
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
+ADMIN_MFA_PHONE = os.environ.get("ADMIN_MFA_PHONE", "").strip()
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
+MFA_CODE_TTL_SECONDS = 300
 CONFIG_FILE = "config.json"
 STATIONS_FILE = "stations.json"
+REPORTS_FILE = "reports.json"
 SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiolavoixdivine.com/api/stations")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wallpapers")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -101,13 +109,35 @@ def save_station_store(data):
     os.replace(tmp, STATIONS_FILE)
 
 
+def load_reports():
+    if os.path.exists(REPORTS_FILE):
+        try:
+            with open(REPORTS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, list) else []
+        except Exception as e:
+            print("Reports load failed:", e)
+    return []
+
+
+def save_reports(reports):
+    tmp = REPORTS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(reports, f, indent=2)
+    os.replace(tmp, REPORTS_FILE)
+
+
 def normalize_station(station):
+    language = (station.get("language") or "ht").strip().lower()
+    flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
     return {
         "name": (station.get("name") or "").strip(),
         "url": (station.get("url") or station.get("stream_url") or "").strip(),
         "subtitle": (station.get("subtitle") or station.get("website") or "Custom Station").strip(),
         "website": (station.get("website") or station.get("subtitle") or "").strip(),
         "logo": station.get("logo") or station_logo(station.get("name")),
+        "language": language,
+        "flag": station.get("flag") or flags.get(language, "🇭🇹"),
         "logo_url": station.get("logo_url", ""),
         "wallpaper": station.get("wallpaper", ""),
         "bio": (station.get("bio") or station.get("description") or "").strip(),
@@ -152,7 +182,11 @@ def get_remote_streams():
                     "website": website,
                     "url": url,
                     "logo": station.get("logo") or station_logo(name),
+                    "language": station.get("language", "ht"),
+                    "flag": station.get("flag", "🇭🇹"),
+                    "logo_url": station.get("logo_url", ""),
                     "wallpaper": station.get("wallpaper", ""),
+                    "bio": station.get("bio") or station.get("description") or "",
                 })
         if streams:
             return streams
@@ -188,6 +222,13 @@ def get_all_streams():
     clean = []
     seen = set()
     for s in streams:
+        if not s.get("flag"):
+            language = (s.get("language") or "ht").strip().lower()
+            s["flag"] = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}.get(language, "🇭🇹")
+        if (s.get("name") or "").lower() == "la voix divine":
+            s["flag"] = "🇭🇹"
+            s["language"] = "ht"
+            s["logo"] = s.get("logo") or "🇭🇹"
         key = (s.get("url") or s.get("name") or "").strip().lower()
         if key and key not in seen:
             seen.add(key)
@@ -196,6 +237,32 @@ def get_all_streams():
 
 def run_command(cmd: str) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+def is_mfa_configured():
+    return all([ADMIN_MFA_PHONE, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER])
+
+def send_admin_mfa_code(code):
+    if not is_mfa_configured():
+        return False, "Text verification is not configured on this server."
+
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json"
+    try:
+        response = requests.post(
+            url,
+            data={
+                "To": ADMIN_MFA_PHONE,
+                "From": TWILIO_FROM_NUMBER,
+                "Body": f"Your Radio Divine admin verification code is {code}. It expires in 5 minutes.",
+            },
+            auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN),
+            timeout=10,
+        )
+        if response.status_code in (200, 201):
+            return True, ""
+        return False, "Could not send the verification text. Check your SMS settings."
+    except Exception as e:
+        print("MFA text failed:", e)
+        return False, "Could not send the verification text. Try again."
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -364,13 +431,53 @@ def require_admin_login():
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
     error = ''
+    step = request.args.get('step') or 'password'
     if request.method == 'POST':
+        action = (request.form.get('action') or 'password').strip()
+        if action == 'verify':
+            code = (request.form.get('code') or '').strip()
+            expires_at = int(session.get('admin_mfa_expires_at') or 0)
+            expected = session.get('admin_mfa_code')
+            attempts = int(session.get('admin_mfa_attempts') or 0)
+            if not expected or time.time() > expires_at:
+                error = 'Verification code expired. Please log in again.'
+                session.pop('admin_mfa_code', None)
+                session.pop('admin_mfa_expires_at', None)
+                session.pop('admin_mfa_attempts', None)
+                return render_template('admin_login.html', error=error, step='password')
+            if attempts >= 5:
+                error = 'Too many attempts. Please log in again.'
+                session.pop('admin_mfa_code', None)
+                session.pop('admin_mfa_expires_at', None)
+                session.pop('admin_mfa_attempts', None)
+                return render_template('admin_login.html', error=error, step='password')
+            if code == expected:
+                session.pop('admin_mfa_code', None)
+                session.pop('admin_mfa_expires_at', None)
+                session.pop('admin_mfa_attempts', None)
+                session['admin_logged_in'] = True
+                return redirect(session.pop('admin_next', None) or '/admin/pending')
+            session['admin_mfa_attempts'] = attempts + 1
+            error = 'Wrong verification code'
+            return render_template('admin_login.html', error=error, step='verify')
+
         password = (request.form.get('password') or '').strip()
         if password == ADMIN_PASSWORD:
+            session['admin_next'] = request.args.get('next') or '/admin/pending'
+            if is_mfa_configured():
+                code = f"{secrets.randbelow(1000000):06d}"
+                session['admin_mfa_code'] = code
+                session['admin_mfa_expires_at'] = int(time.time() + MFA_CODE_TTL_SECONDS)
+                session['admin_mfa_attempts'] = 0
+                sent, message = send_admin_mfa_code(code)
+                if sent:
+                    return render_template('admin_login.html', error='', step='verify')
+                error = message
+                return render_template('admin_login.html', error=error, step='password')
             session['admin_logged_in'] = True
-            return redirect(request.args.get('next') or '/admin/pending')
+            return redirect(session.pop('admin_next', None) or '/admin/pending')
         error = 'Wrong password'
-    return render_template('admin_login.html', error=error)
+    return render_template('admin_login.html', error=error, step=step)
 
 @app.route('/admin/logout')
 def admin_logout():
@@ -692,21 +799,26 @@ def api_add_station():
     subtitle = (data.get('subtitle') or 'Custom Station').strip()
     website = (data.get('website') or subtitle).strip()
     bio = (data.get('bio') or '').strip()[:250]
+    language = (data.get('language') or 'ht').strip().lower()
+    flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
+    if language not in flags:
+        language = "ht"
+    flag = flags[language]
     image_path = ""
     if not is_json:
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             wifi = get_wifi_status_data()
-            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio}), 400
+            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio,"language":language}), 400
     if not name or not url:
         message = "Station name and stream URL are required"
         if is_json:
             return jsonify({"status": "error", "message": message}), 400
         wifi = get_wifi_status_data()
-        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio}), 400
+        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio,"language":language}), 400
     store = load_station_store()
     pending = store.get('pending_stations', [])
-    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "wallpaper": image_path, "logo_url": image_path, "submitted_at": int(time.time())})
+    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": image_path, "submitted_at": int(time.time())})
     for i, item in enumerate(pending):
         if (item.get('url') or '').strip() == url:
             pending[i] = station
@@ -719,7 +831,27 @@ def api_add_station():
     if is_json:
         return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "version": get_config_version()})
     wifi = get_wifi_status_data()
-    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":"","url":"","subtitle":"Custom Station","bio":""})
+    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":"","url":"","subtitle":"Custom Station","bio":"","language":"ht"})
+
+@app.route('/api/report-station', methods=['POST'])
+def api_report_station():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    url = (data.get('url') or '').strip()
+    reason = (data.get('reason') or 'Station issue').strip()[:300]
+    if not name and not url:
+        return jsonify({"status": "error", "message": "Station is required"}), 400
+    reports = load_reports()
+    reports.append({
+        "name": name,
+        "url": url,
+        "website": (data.get('website') or '').strip(),
+        "reason": reason,
+        "reported_at": int(time.time()),
+        "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+    })
+    save_reports(reports[-500:])
+    return jsonify({"status": "ok", "message": "Report sent. Thank you."})
 
 @app.route('/admin/pending', methods=['GET'])
 def admin_pending():
@@ -729,6 +861,11 @@ def admin_pending():
 @app.route('/admin/stations', methods=['GET'])
 def admin_stations():
     return redirect('/admin/pending')
+
+@app.route('/admin/reports', methods=['GET'])
+def admin_reports():
+    reports = list(reversed(load_reports()))
+    return render_template('reports.html', reports=reports)
 
 @app.route('/admin/approve/<int:index>', methods=['POST', 'GET'])
 def admin_approve(index):
@@ -783,13 +920,17 @@ def admin_edit_station(index):
         subtitle = (request.form.get('subtitle') or 'Custom Station').strip()
         website = (request.form.get('website') or subtitle).strip()
         bio = (request.form.get('bio') or '').strip()[:250]
+        language = (request.form.get('language') or station.get('language') or 'ht').strip().lower()
+        flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
+        if language not in flags:
+            language = "ht"
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             error = image_error
         elif not name or not url:
             error = 'Station name and stream URL are required'
         else:
-            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio})
+            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio, 'language': language, 'flag': flags[language]})
             if image_path:
                 station['wallpaper'] = image_path
                 station['logo_url'] = image_path
