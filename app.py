@@ -9,6 +9,7 @@ import secrets
 import urllib.request
 import requests
 import xml.etree.ElementTree as ET
+import re
 from urllib.parse import urlparse, quote
 from werkzeug.utils import secure_filename
 
@@ -345,6 +346,27 @@ def text_from_xml(node, name):
     child = node.find(name)
     return (child.text or "").strip() if child is not None else ""
 
+def image_from_rss_item(item):
+    namespaces = {
+        "media": "http://search.yahoo.com/mrss/",
+        "content": "http://purl.org/rss/1.0/modules/content/",
+    }
+    media = item.find("media:content", namespaces) or item.find("media:thumbnail", namespaces)
+    if media is not None and media.get("url"):
+        return media.get("url")
+    enclosure = item.find("enclosure")
+    if enclosure is not None and enclosure.get("url") and "image" in (enclosure.get("type") or ""):
+        return enclosure.get("url")
+    for field in ("description", "content:encoded"):
+        html = text_from_xml(item, field) if ":" not in field else ""
+        if field == "content:encoded":
+            child = item.find(field, namespaces)
+            html = (child.text or "").strip() if child is not None else ""
+        match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html or "", re.I)
+        if match:
+            return match.group(1)
+    return ""
+
 def get_haitian_times_items():
     now = time.time()
     if news_cache["items"] and now - news_cache["fetched_at"] < NEWS_CACHE_TTL_SECONDS:
@@ -362,8 +384,9 @@ def get_haitian_times_items():
             title = text_from_xml(item, "title")
             link = text_from_xml(item, "link")
             published = text_from_xml(item, "pubDate")
+            image = image_from_rss_item(item)
             if title:
-                items.append({"title": title, "link": link, "published": published})
+                items.append({"title": title, "link": link, "published": published, "image": image})
         news_cache["items"] = items
         news_cache["fetched_at"] = now
         return items
