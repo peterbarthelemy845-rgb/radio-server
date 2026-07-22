@@ -27,7 +27,8 @@ STATIONS_FILE = "stations.json"
 REPORTS_FILE = "reports.json"
 HAITIAN_TIMES_RSS_URL = os.environ.get("HAITIAN_TIMES_RSS_URL", "https://haitiantimes.com/feed/")
 LE_NOUVELLISTE_URL = os.environ.get("LE_NOUVELLISTE_URL", "https://lenouvelliste.com/")
-RADIO_TELE_CARAIBES_URL = os.environ.get("RADIO_TELE_CARAIBES_URL", "https://www.radiotelecaraibes.com/")
+HAITILIBRE_URL = os.environ.get("HAITILIBRE_URL", "https://www.haitilibre.com/")
+HAITILIBRE_RSS_URL = os.environ.get("HAITILIBRE_RSS_URL", "https://www.haitilibre.com/rss-flash-en.php")
 NEWS_CACHE_TTL_SECONDS = 900
 SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiolavoixdivine.com/api/stations")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wallpapers")
@@ -432,7 +433,7 @@ def get_haitian_times_items():
         sources = [
             ("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, lambda: get_rss_items("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, 1)),
             ("LE NOUVELLISTE", LE_NOUVELLISTE_URL, lambda: get_homepage_items("LE NOUVELLISTE", LE_NOUVELLISTE_URL, 1)),
-            ("RADIO TELE CARAIBES", RADIO_TELE_CARAIBES_URL, lambda: get_homepage_items("RADIO TELE CARAIBES", RADIO_TELE_CARAIBES_URL, 1)),
+            ("HAITILIBRE", HAITILIBRE_URL, lambda: get_rss_items("HAITILIBRE", HAITILIBRE_RSS_URL, 1) or get_homepage_items("HAITILIBRE", HAITILIBRE_URL, 1)),
         ]
         for source_name, source_url, loader in sources:
             source_items = loader()
