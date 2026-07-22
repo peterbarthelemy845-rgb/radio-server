@@ -8,6 +8,7 @@ import socket
 import secrets
 import urllib.request
 import requests
+import xml.etree.ElementTree as ET
 from urllib.parse import urlparse, quote
 from werkzeug.utils import secure_filename
 
@@ -22,6 +23,8 @@ MFA_CODE_TTL_SECONDS = 300
 CONFIG_FILE = "config.json"
 STATIONS_FILE = "stations.json"
 REPORTS_FILE = "reports.json"
+HAITIAN_TIMES_RSS_URL = os.environ.get("HAITIAN_TIMES_RSS_URL", "https://haitiantimes.com/feed/")
+NEWS_CACHE_TTL_SECONDS = 900
 SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiolavoixdivine.com/api/stations")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wallpapers")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -40,6 +43,7 @@ current_playing = {
     "website": "radiolavoixdivine.com",
     "logo": "🎧",
 }
+news_cache = {"items": [], "fetched_at": 0}
 
 
 PUBLIC_HOSTS = {"www.radiolavoixdivine.com", "radiolavoixdivine.com", "radio-server-z0hb.onrender.com"}
@@ -337,6 +341,36 @@ def get_add_station_url():
             return f"http://{ip}:5000/add-station"
     return request.host_url.rstrip("/") + "/add-station"
 
+def text_from_xml(node, name):
+    child = node.find(name)
+    return (child.text or "").strip() if child is not None else ""
+
+def get_haitian_times_items():
+    now = time.time()
+    if news_cache["items"] and now - news_cache["fetched_at"] < NEWS_CACHE_TTL_SECONDS:
+        return news_cache["items"]
+    try:
+        req = urllib.request.Request(
+            HAITIAN_TIMES_RSS_URL,
+            headers={"User-Agent": "RadioLaVoixDivine/1.0 (+https://radiolavoixdivine.com)"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as response:
+            raw = response.read()
+        root = ET.fromstring(raw)
+        items = []
+        for item in root.findall("./channel/item")[:8]:
+            title = text_from_xml(item, "title")
+            link = text_from_xml(item, "link")
+            published = text_from_xml(item, "pubDate")
+            if title:
+                items.append({"title": title, "link": link, "published": published})
+        news_cache["items"] = items
+        news_cache["fetched_at"] = now
+        return items
+    except Exception as e:
+        print("Haitian Times RSS unavailable:", e)
+        return news_cache["items"]
+
 def get_saved_wifi_networks():
     result = run_command("nmcli -t -f NAME,TYPE connection show")
     networks = []
@@ -487,6 +521,10 @@ def admin_logout():
 @app.route("/api/stations", methods=["GET"])
 def local_stations():
     return jsonify(get_all_streams())
+
+@app.route("/api/haitian-times", methods=["GET"])
+def haitian_times_news():
+    return jsonify({"status": "ok", "items": get_haitian_times_items()})
 
 
 @app.route("/qr")
