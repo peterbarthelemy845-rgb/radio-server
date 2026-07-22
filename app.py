@@ -10,7 +10,8 @@ import urllib.request
 import requests
 import xml.etree.ElementTree as ET
 import re
-from urllib.parse import urlparse, quote
+from html import unescape
+from urllib.parse import urlparse, quote, urljoin
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -25,6 +26,8 @@ CONFIG_FILE = "config.json"
 STATIONS_FILE = "stations.json"
 REPORTS_FILE = "reports.json"
 HAITIAN_TIMES_RSS_URL = os.environ.get("HAITIAN_TIMES_RSS_URL", "https://haitiantimes.com/feed/")
+LE_NOUVELLISTE_URL = os.environ.get("LE_NOUVELLISTE_URL", "https://lenouvelliste.com/")
+RADIO_TELE_CARAIBES_URL = os.environ.get("RADIO_TELE_CARAIBES_URL", "https://www.radiotelecaraibes.com/")
 NEWS_CACHE_TTL_SECONDS = 900
 SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiolavoixdivine.com/api/stations")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wallpapers")
@@ -367,31 +370,81 @@ def image_from_rss_item(item):
             return match.group(1)
     return ""
 
+def clean_news_text(value):
+    value = re.sub(r"<[^>]+>", " ", value or "")
+    value = unescape(value)
+    return re.sub(r"\s+", " ", value).strip()
+
+def fetch_url(url):
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "RadioLaVoixDivine/1.0 (+https://radiolavoixdivine.com)"},
+    )
+    with urllib.request.urlopen(req, timeout=8) as response:
+        return response.read().decode("utf-8", errors="ignore")
+
+def get_rss_items(source_name, rss_url, limit=1):
+    try:
+        raw = fetch_url(rss_url)
+        root = ET.fromstring(raw.encode("utf-8"))
+        items = []
+        for item in root.findall("./channel/item")[:limit]:
+            title = clean_news_text(text_from_xml(item, "title"))
+            link = text_from_xml(item, "link")
+            published = text_from_xml(item, "pubDate")
+            image = image_from_rss_item(item)
+            if title:
+                items.append({"source": source_name, "title": title, "link": link, "published": published, "image": image})
+        return items
+    except Exception as e:
+        print(f"{source_name} RSS unavailable:", e)
+        return []
+
+def get_homepage_items(source_name, home_url, limit=1):
+    try:
+        html = fetch_url(home_url)
+        article_matches = re.findall(r"<article[\s\S]*?</article>", html, re.I) or [html]
+        items = []
+        seen = set()
+        for block in article_matches:
+            link_match = re.search(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', block, re.I)
+            title_match = re.search(r"<h[1-4][^>]*>([\s\S]*?)</h[1-4]>", block, re.I)
+            image_match = re.search(r'<img[^>]+(?:src|data-src|data-lazy-src)=["\']([^"\']+)["\']', block, re.I)
+            link = urljoin(home_url, link_match.group(1)) if link_match else home_url
+            title = clean_news_text(title_match.group(1) if title_match else (link_match.group(2) if link_match else ""))
+            image = urljoin(home_url, image_match.group(1)) if image_match else ""
+            if title and link not in seen and len(title) > 12:
+                seen.add(link)
+                items.append({"source": source_name, "title": title, "link": link, "published": "", "image": image})
+                if len(items) >= limit:
+                    break
+        return items
+    except Exception as e:
+        print(f"{source_name} homepage unavailable:", e)
+        return []
+
 def get_haitian_times_items():
     now = time.time()
     if news_cache["items"] and now - news_cache["fetched_at"] < NEWS_CACHE_TTL_SECONDS:
         return news_cache["items"]
     try:
-        req = urllib.request.Request(
-            HAITIAN_TIMES_RSS_URL,
-            headers={"User-Agent": "RadioLaVoixDivine/1.0 (+https://radiolavoixdivine.com)"},
-        )
-        with urllib.request.urlopen(req, timeout=8) as response:
-            raw = response.read()
-        root = ET.fromstring(raw)
         items = []
-        for item in root.findall("./channel/item")[:8]:
-            title = text_from_xml(item, "title")
-            link = text_from_xml(item, "link")
-            published = text_from_xml(item, "pubDate")
-            image = image_from_rss_item(item)
-            if title:
-                items.append({"title": title, "link": link, "published": published, "image": image})
+        sources = [
+            ("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, lambda: get_rss_items("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, 1)),
+            ("LE NOUVELLISTE", LE_NOUVELLISTE_URL, lambda: get_homepage_items("LE NOUVELLISTE", LE_NOUVELLISTE_URL, 1)),
+            ("RADIO TELE CARAIBES", RADIO_TELE_CARAIBES_URL, lambda: get_homepage_items("RADIO TELE CARAIBES", RADIO_TELE_CARAIBES_URL, 1)),
+        ]
+        for source_name, source_url, loader in sources:
+            source_items = loader()
+            if source_items:
+                items.append(source_items[0])
+            else:
+                items.append({"source": source_name, "title": "Latest headlines", "link": source_url, "published": "", "image": ""})
         news_cache["items"] = items
         news_cache["fetched_at"] = now
         return items
     except Exception as e:
-        print("Haitian Times RSS unavailable:", e)
+        print("News feeds unavailable:", e)
         return news_cache["items"]
 
 def get_saved_wifi_networks():
