@@ -268,9 +268,19 @@ def send_admin_mfa_code(code):
         )
         if response.status_code in (200, 201):
             return True, ""
+        try:
+            details = response.json()
+        except Exception:
+            details = response.text
+        print("Twilio MFA send failed:", {
+            "status_code": response.status_code,
+            "to": ADMIN_MFA_PHONE,
+            "from": TWILIO_FROM_NUMBER,
+            "response": details,
+        }, flush=True)
         return False, "Could not send the verification text. Check your SMS settings."
     except Exception as e:
-        print("MFA text failed:", e)
+        print("MFA text failed:", e, flush=True)
         return False, "Could not send the verification text. Try again."
 
 def load_config():
