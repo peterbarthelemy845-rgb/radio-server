@@ -12,14 +12,14 @@
   <form class="card" method="post">
     <h1>Admin Locked</h1>
     {% if step == 'verify' %}
-    <div class="sub">Enter the 6-digit verification code sent to your phone.</div>
+    <div class="sub">Enter the 6-digit code from Google Authenticator.</div>
     {% else %}
     <div class="sub">Enter your admin password to approve or reject submitted stations.</div>
     {% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
     {% if step == 'verify' %}
     <input type="hidden" name="action" value="verify">
-    <label for="code">Verification Code</label>
+    <label for="code">Authenticator Code</label>
     <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" autofocus>
     <button type="submit">Verify Code</button>
     {% else %}

@@ -13,6 +13,7 @@ import re
 from html import unescape
 from urllib.parse import urlparse, quote, urljoin
 from werkzeug.utils import secure_filename
+import pyotp
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
@@ -21,6 +22,7 @@ ADMIN_MFA_PHONE = os.environ.get("ADMIN_MFA_PHONE", "").strip()
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
 TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
+ADMIN_TOTP_SECRET = os.environ.get("ADMIN_TOTP_SECRET", "").replace(" ", "").strip()
 MFA_CODE_TTL_SECONDS = 300
 CONFIG_FILE = "config.json"
 STATIONS_FILE = "stations.json"
@@ -249,6 +251,18 @@ def run_command(cmd: str) -> subprocess.CompletedProcess:
 
 def is_mfa_configured():
     return all([ADMIN_MFA_PHONE, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER])
+
+def is_totp_configured():
+    return bool(ADMIN_TOTP_SECRET)
+
+def verify_admin_totp(code):
+    if not is_totp_configured():
+        return False
+    try:
+        return pyotp.TOTP(ADMIN_TOTP_SECRET).verify((code or "").strip().replace(" ", ""), valid_window=1)
+    except Exception as e:
+        print("Authenticator verification failed:", e, flush=True)
+        return False
 
 def send_admin_mfa_code(code):
     if not is_mfa_configured():
@@ -550,44 +564,31 @@ def admin_login():
         action = (request.form.get('action') or 'password').strip()
         if action == 'verify':
             code = (request.form.get('code') or '').strip()
-            expires_at = int(session.get('admin_mfa_expires_at') or 0)
-            expected = session.get('admin_mfa_code')
-            attempts = int(session.get('admin_mfa_attempts') or 0)
-            if not expected or time.time() > expires_at:
-                error = 'Verification code expired. Please log in again.'
-                session.pop('admin_mfa_code', None)
-                session.pop('admin_mfa_expires_at', None)
-                session.pop('admin_mfa_attempts', None)
+            if not session.get('admin_password_ok'):
+                error = 'Please enter your password first.'
                 return render_template('admin_login.html', error=error, step='password')
+            attempts = int(session.get('admin_totp_attempts') or 0)
             if attempts >= 5:
                 error = 'Too many attempts. Please log in again.'
-                session.pop('admin_mfa_code', None)
-                session.pop('admin_mfa_expires_at', None)
-                session.pop('admin_mfa_attempts', None)
+                session.pop('admin_password_ok', None)
+                session.pop('admin_totp_attempts', None)
                 return render_template('admin_login.html', error=error, step='password')
-            if code == expected:
-                session.pop('admin_mfa_code', None)
-                session.pop('admin_mfa_expires_at', None)
-                session.pop('admin_mfa_attempts', None)
+            if verify_admin_totp(code):
+                session.pop('admin_password_ok', None)
+                session.pop('admin_totp_attempts', None)
                 session['admin_logged_in'] = True
                 return redirect(session.pop('admin_next', None) or '/admin/pending')
-            session['admin_mfa_attempts'] = attempts + 1
-            error = 'Wrong verification code'
+            session['admin_totp_attempts'] = attempts + 1
+            error = 'Wrong authenticator code'
             return render_template('admin_login.html', error=error, step='verify')
 
         password = (request.form.get('password') or '').strip()
         if password == ADMIN_PASSWORD:
             session['admin_next'] = request.args.get('next') or '/admin/pending'
-            if is_mfa_configured():
-                code = f"{secrets.randbelow(1000000):06d}"
-                session['admin_mfa_code'] = code
-                session['admin_mfa_expires_at'] = int(time.time() + MFA_CODE_TTL_SECONDS)
-                session['admin_mfa_attempts'] = 0
-                sent, message = send_admin_mfa_code(code)
-                if sent:
-                    return render_template('admin_login.html', error='', step='verify')
-                error = message
-                return render_template('admin_login.html', error=error, step='password')
+            if is_totp_configured():
+                session['admin_password_ok'] = True
+                session['admin_totp_attempts'] = 0
+                return render_template('admin_login.html', error='', step='verify')
             session['admin_logged_in'] = True
             return redirect(session.pop('admin_next', None) or '/admin/pending')
         error = 'Wrong password'
