@@ -138,6 +138,19 @@ def save_reports(reports):
     os.replace(tmp, REPORTS_FILE)
 
 
+def find_custom_station_index(custom, url="", name=""):
+    url = (url or "").strip().lower()
+    name = (name or "").strip().lower()
+    for i, station in enumerate(custom):
+        station_url = (station.get("url") or station.get("stream_url") or "").strip().lower()
+        station_name = (station.get("name") or "").strip().lower()
+        if url and station_url == url:
+            return i
+        if name and station_name == name:
+            return i
+    return -1
+
+
 def normalize_station(station):
     language = (station.get("language") or "ht").strip().lower()
     flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
@@ -153,6 +166,9 @@ def normalize_station(station):
         "wallpaper": station.get("wallpaper", ""),
         "bio": (station.get("bio") or station.get("description") or "").strip(),
         "submitted_at": station.get("submitted_at"),
+        "suspended": bool(station.get("suspended")),
+        "suspended_at": station.get("suspended_at"),
+        "suspend_reason": (station.get("suspend_reason") or "").strip(),
     }
 
 
@@ -220,7 +236,7 @@ def get_all_streams():
         store = load_station_store()
         for raw in store.get("custom_stations", []):
             station = normalize_station(raw)
-            if station.get("name") and station.get("url"):
+            if station.get("name") and station.get("url") and not station.get("suspended"):
                 streams.append(station)
     except Exception as e:
         print("Saved custom station load failed:", e)
@@ -984,7 +1000,43 @@ def admin_stations():
 @app.route('/admin/reports', methods=['GET'])
 def admin_reports():
     reports = list(reversed(load_reports()))
-    return render_template('reports.html', reports=reports)
+    store = load_station_store()
+    approved = [normalize_station(s) for s in store.get('custom_stations', [])]
+    return render_template('reports.html', reports=reports, approved=approved)
+
+@app.route('/admin/suspend-station', methods=['POST'])
+def admin_suspend_station():
+    url = (request.form.get('url') or '').strip()
+    name = (request.form.get('name') or '').strip()
+    reason = (request.form.get('reason') or 'Suspended from report').strip()[:300]
+    if name.lower() == 'la voix divine':
+        return redirect('/admin/reports')
+    store = load_station_store()
+    custom = store.get('custom_stations', [])
+    index = find_custom_station_index(custom, url=url, name=name)
+    if index >= 0:
+        station = normalize_station(custom[index])
+        station['suspended'] = True
+        station['suspended_at'] = int(time.time())
+        station['suspend_reason'] = reason
+        custom[index] = station
+        store['custom_stations'] = custom
+        save_station_store(store)
+    return redirect('/admin/reports')
+
+@app.route('/admin/restore/<int:index>', methods=['POST', 'GET'])
+def admin_restore_station(index):
+    store = load_station_store()
+    custom = store.get('custom_stations', [])
+    if 0 <= index < len(custom):
+        station = normalize_station(custom[index])
+        station['suspended'] = False
+        station.pop('suspended_at', None)
+        station.pop('suspend_reason', None)
+        custom[index] = station
+        store['custom_stations'] = custom
+        save_station_store(store)
+    return redirect('/admin/pending')
 
 @app.route('/admin/approve/<int:index>', methods=['POST', 'GET'])
 def admin_approve(index):
