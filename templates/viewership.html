@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Station Viewership</title>
+<style>:root{--bg:#071642;--card:#fff;--text:#0f172a;--muted:#64748b;--blue:#2563eb;--red:#dc2626;--green:#16a34a;--line:#dbe4f0}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#102a78,#071642);color:var(--text);min-height:100vh;padding:22px}.wrap{max-width:1000px;margin:0 auto}.top{color:#fff;margin-bottom:18px}h1{margin:0;font-size:34px}.sub{opacity:.8;margin-top:6px}.card{background:var(--card);border-radius:22px;padding:20px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.22)}.station{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.name{font-weight:900;font-size:20px}.url{color:var(--muted);font-size:14px;word-break:break-all;margin:8px 0}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:12px;padding:12px 16px;color:#fff;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block;background:var(--blue)}.danger{background:var(--red)}.ok{background:var(--green)}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.metric{background:#f1f5f9;border-radius:14px;padding:12px}.metric strong{display:block;font-size:22px}.metric span{display:block;color:var(--muted);font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.empty{color:var(--muted);font-weight:700;padding:12px 0}.recent{display:grid;grid-template-columns:1.4fr 1fr .5fr;gap:10px;border-top:1px solid var(--line);padding:10px 0;font-size:14px}.recent:first-child{border-top:0}@media(max-width:680px){body{padding:12px}h1{font-size:28px}.card{padding:16px;border-radius:18px}.btn,.actions form{width:100%;text-align:center}.actions{display:block}.actions form{margin-top:8px}.metrics{grid-template-columns:repeat(2,1fr)}.recent{grid-template-columns:1fr}.recent div{word-break:break-word}}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><h1>Station Viewership</h1><div class="sub">Listening time tracked while users play a station.</div></div>
+  <div class="card actions">
+    <a class="btn" href="/admin/pending">Back to Admin</a>
+    <a class="btn ok" href="/admin/reports">Reports</a>
+    {% if totals or recent %}
+    <form method="post" action="/admin/viewership/clear" onsubmit="return confirm('Clear all viewership data?')">
+      <button class="btn danger" type="submit">Clear Viewership</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Totals by station</h2>
+    {% if totals %}
+      {% for s in totals %}
+      <div class="station">
+        <div class="name">{{ s.name }}</div>
+        <div class="url">{{ s.url }}</div>
+        {% if s.website %}<div class="url">{{ s.website }}</div>{% endif %}
+        <div class="metrics">
+          <div class="metric"><strong>{{ s.duration }}</strong><span>Total time</span></div>
+          <div class="metric"><strong>{{ s.hours }}</strong><span>Hours</span></div>
+          <div class="metric"><strong>{{ s.minutes }}</strong><span>Minutes</span></div>
+          <div class="metric"><strong>{{ s.heartbeats }}</strong><span>Updates</span></div>
+        </div>
+        <div class="url">Last listened: {{ s.last_listened_at }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">No listening time recorded yet.</div>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h2>Recent listening</h2>
+    {% if recent %}
+      {% for e in recent %}
+      <div class="recent">
+        <div><strong>{{ e.name }}</strong><div class="url">{{ e.url }}</div></div>
+        <div>{{ e.listened_at }}{% if e.ip %}<div class="url">{{ e.ip }}</div>{% endif %}</div>
+        <div><strong>{{ e.duration }}</strong></div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">No recent listening events yet.</div>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

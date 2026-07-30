@@ -3,12 +3,20 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Station Reports</title>
-<style>:root{--bg:#071642;--card:#fff;--text:#0f172a;--muted:#64748b;--blue:#2563eb;--red:#dc2626;--line:#dbe4f0}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#102a78,#071642);color:var(--text);min-height:100vh;padding:22px}.wrap{max-width:900px;margin:0 auto}.top{color:#fff;margin-bottom:18px}h1{margin:0;font-size:34px}.sub{opacity:.8;margin-top:6px}.card{background:var(--card);border-radius:22px;padding:20px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.22)}.report{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.name{font-weight:900;font-size:20px}.url{color:var(--muted);font-size:14px;word-break:break-all;margin:8px 0}.reason{font-weight:800;margin-top:8px}.btn{border:0;border-radius:12px;padding:12px 16px;color:#fff;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block;background:var(--blue)}.empty{color:var(--muted);font-weight:700;padding:12px 0}@media(max-width:520px){body{padding:12px}h1{font-size:28px}.card{padding:16px;border-radius:18px}.btn{width:100%;text-align:center}}</style>
+<style>:root{--bg:#071642;--card:#fff;--text:#0f172a;--muted:#64748b;--blue:#2563eb;--red:#dc2626;--green:#16a34a;--line:#dbe4f0}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#102a78,#071642);color:var(--text);min-height:100vh;padding:22px}.wrap{max-width:900px;margin:0 auto}.top{color:#fff;margin-bottom:18px}h1{margin:0;font-size:34px}.sub{opacity:.8;margin-top:6px}.card{background:var(--card);border-radius:22px;padding:20px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.22)}.report{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.name{font-weight:900;font-size:20px}.url{color:var(--muted);font-size:14px;word-break:break-all;margin:8px 0}.reason{font-weight:800;margin-top:8px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:12px;padding:12px 16px;color:#fff;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block;background:var(--blue)}.danger{background:var(--red)}.ok{background:var(--green)}.badge{display:inline-block;border-radius:999px;padding:6px 10px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:900;margin-top:8px}.empty{color:var(--muted);font-weight:700;padding:12px 0}@media(max-width:520px){body{padding:12px}h1{font-size:28px}.card{padding:16px;border-radius:18px}.btn,.actions form{width:100%;text-align:center}.actions{display:block}.actions form{margin-top:8px}}</style>
 </head>
 <body>
 <div class="wrap">
   <div class="top"><h1>Station Reports</h1><div class="sub">User-submitted station problems.</div></div>
-  <div class="card"><a class="btn" href="/admin/pending">Back to Admin</a></div>
+  <div class="card actions">
+    <a class="btn" href="/admin/pending">Back to Admin</a>
+    <a class="btn ok" href="/admin/viewership">Viewership</a>
+    {% if reports %}
+    <form method="post" action="/admin/reports/clear" onsubmit="return confirm('Delete all reports?')">
+      <button class="btn danger" type="submit">Clear All Reports</button>
+    </form>
+    {% endif %}
+  </div>
   <div class="card">
     {% if reports %}
       {% for r in reports %}
@@ -16,8 +24,35 @@
         <div class="name">{{ r.name or 'Unknown station' }}</div>
         <div class="url">{{ r.url }}</div>
         {% if r.website %}<div>{{ r.website }}</div>{% endif %}
+        {% if r.contact_email %}<div class="url">Station contact: {{ r.contact_email }}{% if r.email_sent %} - report email sent{% else %} - report email not sent{% endif %}</div>{% endif %}
         <div class="reason">{{ r.reason }}</div>
         <div class="url">Reported: {{ r.reported_at }}{% if r.ip %} from {{ r.ip }}{% endif %}</div>
+        {% set match = namespace(found=false, suspended=false) %}
+        {% for s in approved %}
+          {% if (r.url and s.url == r.url) or (r.name and s.name == r.name) %}
+            {% set match.found = true %}
+            {% set match.suspended = s.suspended %}
+          {% endif %}
+        {% endfor %}
+        {% if match.suspended %}
+          <div class="badge">Station is suspended</div>
+        {% elif match.found %}
+          <div class="actions">
+            <form method="post" action="/admin/suspend-station" onsubmit="return confirm('Suspend this station? It will disappear from the public Radio and Library pages.')">
+              <input type="hidden" name="name" value="{{ r.name }}">
+              <input type="hidden" name="url" value="{{ r.url }}">
+              <input type="hidden" name="reason" value="{{ r.reason }}">
+              <button class="btn danger" type="submit">Suspend Station</button>
+            </form>
+          </div>
+        {% else %}
+          <div class="url">No approved custom station matched this report.</div>
+        {% endif %}
+        <div class="actions">
+          <form method="post" action="/admin/report/delete/{{ r.index }}" onsubmit="return confirm('Delete this report?')">
+            <button class="btn" type="submit">Delete Report</button>
+          </form>
+        </div>
       </div>
       {% endfor %}
     {% else %}

@@ -10,6 +10,13 @@
 .wrap{width:100%;max-width:620px;margin:0 auto;padding-top:max(8px,env(safe-area-inset-top))}.brand{text-align:center;color:#fff;margin:16px 0 22px}.brand .icon{width:70px;height:70px;margin:0 auto 12px;border-radius:24px;background:linear-gradient(135deg,var(--blue2),var(--blue));display:grid;place-items:center;font-size:34px;box-shadow:0 18px 45px rgba(0,0,0,.28)}
 h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;letter-spacing:-1px}.sub{font-size:clamp(15px,4vw,18px);line-height:1.4;margin:10px auto 0;max-width:420px;color:rgba(255,255,255,.82)}.card{background:var(--card);border-radius:28px;padding:clamp(20px,5vw,34px);box-shadow:0 24px 70px rgba(0,0,0,.35);backdrop-filter:blur(12px)}.pill{display:inline-flex;align-items:center;gap:8px;background:#eff6ff;color:#1d4ed8;padding:10px 14px;border-radius:999px;font-size:14px;font-weight:800;margin-bottom:18px}.pill:before{content:"•";font-size:22px;color:#22c55e;line-height:0}.row{margin-bottom:16px}label{display:block;margin:0 0 8px;font-weight:900;font-size:15px;color:#1e293b}input,textarea{width:100%;min-height:54px;padding:15px 16px;border-radius:17px;border:2px solid #dbe4f0;background:#fff;font-size:17px;outline:none;transition:.15s ease}textarea{min-height:118px;resize:vertical;font-family:Arial,Helvetica,sans-serif;line-height:1.35}input:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(37,99,235,.14)}input[type=file]{padding:13px;background:#f8fafc}.hint{font-size:13px;color:var(--muted);margin-top:7px;line-height:1.35}.stream-helper{background:#eff6ff;border:1px solid #dbeafe;border-radius:18px;padding:14px;margin-top:10px}.stream-helper summary{cursor:pointer;color:#1d4ed8;font-size:15px;font-weight:900;list-style:none}.stream-helper summary::-webkit-details-marker{display:none}.stream-helper-grid{display:grid;grid-template-columns:1fr 96px;gap:10px;margin-top:12px}.stream-helper select{width:100%;min-height:54px;padding:14px;border-radius:17px;border:2px solid #dbe4f0;background:#fff;font-size:16px}.stream-helper .build-btn{width:100%;min-height:50px;margin-top:10px;border:0;border-radius:16px;background:#1d4ed8;color:white;font-size:16px;font-weight:900}.btn{width:100%;min-height:58px;margin-top:8px;border:none;border-radius:18px;padding:16px;background:linear-gradient(135deg,#38bdf8,#2563eb);color:#fff;font-size:19px;font-weight:900;box-shadow:0 14px 30px rgba(37,99,235,.35);cursor:pointer}.btn:active{transform:scale(.99)}.msg{margin-top:18px;padding:14px 16px;border-radius:16px;font-weight:900;line-height:1.35}.msg.ok{background:#dcfce7;color:#166534}.msg.err{background:#fee2e2;color:#991b1b}.footer{text-align:center;color:rgba(255,255,255,.65);font-size:13px;margin:18px 0 4px}@media(max-width:430px){body{padding:12px}.brand{margin-top:10px}.brand .icon{width:62px;height:62px;border-radius:21px}.card{border-radius:24px;padding:20px}input{font-size:16px}.hide-mobile{display:none}.stream-helper-grid{grid-template-columns:1fr}}
 </style>
+<style>
+.terms-box{background:#f8fafc;border:1px solid #dbe4f0;border-radius:18px;padding:14px;margin:12px 0 16px}
+.terms-box ul{margin:8px 0 0 20px;padding:0;color:#334155;font-size:13px;line-height:1.35}
+.terms-check{display:flex;gap:10px;align-items:flex-start;font-size:14px;font-weight:800;color:#1e293b}
+.terms-check input{width:22px;min-height:22px;margin:0;flex:0 0 22px}
+.terms-check a{color:#1d4ed8}
+</style>
 </head>
 <body>
 <main class="wrap">
@@ -49,6 +56,11 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
         <input id="subtitle" name="subtitle" type="text" value="{{ form.subtitle if form else 'Custom Station' }}" placeholder="radiostation.com" autocomplete="off">
       </div>
       <div class="row">
+        <label for="contact_email" data-i18n="emailLabel">Contact email</label>
+        <input id="contact_email" name="contact_email" type="email" required value="{{ form.contact_email if form else '' }}" placeholder="owner@example.com" autocomplete="email">
+        <div class="hint" data-i18n="emailHint">Used for station reports or approval questions. This email is not shown publicly.</div>
+      </div>
+      <div class="row">
         <label for="language" data-i18n="languageFlagLabel">Language / flag</label>
         <select id="language" name="language" onchange="setLanguage(this.value)" style="width:100%;min-height:54px;padding:15px 16px;border-radius:17px;border:2px solid #dbe4f0;background:#fff;font-size:17px">
           <option value="en" {% if form and form.language == 'en' %}selected{% endif %}>🇺🇸 English</option>
@@ -65,6 +77,17 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
       <div class="row hide-mobile">
         <label for="wallpaper">Logo / wallpaper optional</label>
         <input id="wallpaper" name="wallpaper" type="file" accept="image/*">
+      </div>
+      <div class="terms-box">
+        <label class="terms-check">
+          <input type="checkbox" name="terms_agreed" value="1" required>
+          <span>I agree to the <a href="/terms" target="_blank">station submission terms</a>. I am responsible for my station content, stream, music rights, images, and website. Radio La Voix Divine may reject, suspend, or remove my station for copyright issues, illegal content, hate, abuse, misleading information, or other reported violations.</span>
+        </label>
+        <ul>
+          <li>Only submit content and streams you have permission to use.</li>
+          <li>No copyright-infringing music, hate speech, threats, scams, or illegal content.</li>
+          <li>Reported stations may be removed while reviewed.</li>
+        </ul>
       </div>
       <button class="btn" type="submit" data-i18n="saveStation">Save Station</button>
     </form>

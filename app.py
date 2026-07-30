@@ -6,10 +6,12 @@ import shlex
 import time
 import socket
 import secrets
+import smtplib
 import urllib.request
 import requests
 import xml.etree.ElementTree as ET
 import re
+from email.message import EmailMessage
 from html import unescape
 from urllib.parse import urlparse, quote, urljoin
 from werkzeug.utils import secure_filename
@@ -23,10 +25,16 @@ TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
 TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
 ADMIN_TOTP_SECRET = os.environ.get("ADMIN_TOTP_SECRET", "").replace(" ", "").strip()
+SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or 587)
+SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "").strip()
+SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", SMTP_USERNAME).strip()
 MFA_CODE_TTL_SECONDS = 300
 CONFIG_FILE = "config.json"
 STATIONS_FILE = "stations.json"
 REPORTS_FILE = "reports.json"
+ANALYTICS_FILE = "analytics.json"
 HAITIAN_TIMES_RSS_URL = os.environ.get("HAITIAN_TIMES_RSS_URL", "https://haitiantimes.com/feed/")
 LE_NOUVELLISTE_URL = os.environ.get("LE_NOUVELLISTE_URL", "https://lenouvelliste.com/")
 HAITILIBRE_URL = os.environ.get("HAITILIBRE_URL", "https://www.haitilibre.com/")
@@ -39,6 +47,22 @@ ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 
 def allowed_image(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
+
+
+def is_valid_email(value):
+    value = (value or "").strip()
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value))
+
+
+def station_submission_form(name="", url="", subtitle="Custom Station", bio="", language="ht", contact_email=""):
+    return {
+        "name": name,
+        "url": url,
+        "subtitle": subtitle,
+        "bio": bio,
+        "language": language,
+        "contact_email": contact_email,
+    }
 
 
 player_process = None
@@ -138,6 +162,97 @@ def save_reports(reports):
     os.replace(tmp, REPORTS_FILE)
 
 
+def find_station_for_report(name="", url=""):
+    name = (name or "").strip().lower()
+    url = (url or "").strip().lower()
+    try:
+        store = load_station_store()
+        for raw in store.get("custom_stations", []):
+            station = normalize_station(raw)
+            station_url = (station.get("url") or "").strip().lower()
+            station_name = (station.get("name") or "").strip().lower()
+            if url and station_url == url:
+                return station
+            if name and station_name == name:
+                return station
+    except Exception as e:
+        print("Report station lookup failed:", e)
+    return None
+
+
+def send_report_email(station, report):
+    to_email = (station or {}).get("contact_email", "")
+    if not is_valid_email(to_email) or not SMTP_HOST or not SMTP_FROM_EMAIL:
+        return False
+    try:
+        message = EmailMessage()
+        message["Subject"] = f"Station report: {report.get('name') or 'Radio station'}"
+        message["From"] = SMTP_FROM_EMAIL
+        message["To"] = to_email
+        message.set_content(
+            "A listener submitted a report about your station on Radio La Voix Divine.\n\n"
+            f"Station: {report.get('name') or ''}\n"
+            f"Stream URL: {report.get('url') or ''}\n"
+            f"Website: {report.get('website') or ''}\n"
+            f"Report: {report.get('reason') or ''}\n\n"
+            "Please review your stream and content. Stations that violate the terms, copyright rules, or community standards may be removed."
+        )
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
+            smtp.starttls()
+            if SMTP_USERNAME or SMTP_PASSWORD:
+                smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
+            smtp.send_message(message)
+        return True
+    except Exception as e:
+        print("Report email failed:", e, flush=True)
+        return False
+
+
+def load_analytics():
+    default = {"sessions": [], "totals": {}}
+    if os.path.exists(ANALYTICS_FILE):
+        try:
+            with open(ANALYTICS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return default
+            data.setdefault("sessions", [])
+            data.setdefault("totals", {})
+            if not isinstance(data["sessions"], list):
+                data["sessions"] = []
+            if not isinstance(data["totals"], dict):
+                data["totals"] = {}
+            return data
+        except Exception as e:
+            print("Analytics load failed:", e)
+    return default
+
+
+def save_analytics(data):
+    data.setdefault("sessions", [])
+    data.setdefault("totals", {})
+    tmp = ANALYTICS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, ANALYTICS_FILE)
+
+
+def analytics_station_key(name, url):
+    return (url or name or "unknown").strip().lower()
+
+
+def format_duration(seconds):
+    seconds = max(0, int(seconds or 0))
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
 def find_custom_station_index(custom, url="", name=""):
     url = (url or "").strip().lower()
     name = (name or "").strip().lower()
@@ -165,6 +280,9 @@ def normalize_station(station):
         "logo_url": station.get("logo_url", ""),
         "wallpaper": station.get("wallpaper", ""),
         "bio": (station.get("bio") or station.get("description") or "").strip(),
+        "contact_email": (station.get("contact_email") or station.get("email") or "").strip(),
+        "terms_agreed": bool(station.get("terms_agreed")),
+        "terms_agreed_at": station.get("terms_agreed_at"),
         "submitted_at": station.get("submitted_at"),
         "suspended": bool(station.get("suspended")),
         "suspended_at": station.get("suspended_at"),
@@ -924,9 +1042,14 @@ def add_station_page():
     add_url = get_add_station_url()
     return render_template('add_station.html', add_url=add_url, ssid=wifi.get("ssid", ""))
 
+@app.route('/terms', methods=['GET'])
+def terms_page():
+    return render_template('terms.html')
+
 @app.route('/api/add-station', methods=['POST'])
 def api_add_station():
     is_json = request.is_json
+    wants_json = is_json or request.headers.get("X-Requested-With") == "fetch"
     data = request.get_json(silent=True) if is_json else request.form
     data = data or {}
     name = (data.get('name') or '').strip()
@@ -934,26 +1057,43 @@ def api_add_station():
     subtitle = (data.get('subtitle') or 'Custom Station').strip()
     website = (data.get('website') or subtitle).strip()
     bio = (data.get('bio') or '').strip()[:250]
+    contact_email = (data.get('contact_email') or data.get('email') or '').strip()
+    terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
     language = (data.get('language') or 'ht').strip().lower()
+    form = station_submission_form(name, url, subtitle, bio, language, contact_email)
     flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
     if language not in flags:
         language = "ht"
+        form["language"] = language
     flag = flags[language]
     image_path = ""
     if not is_json:
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             wifi = get_wifi_status_data()
-            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio,"language":language}), 400
+            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
     if not name or not url:
         message = "Station name and stream URL are required"
-        if is_json:
+        if wants_json:
             return jsonify({"status": "error", "message": message}), 400
         wifi = get_wifi_status_data()
-        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio,"language":language}), 400
+        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
+    if not is_valid_email(contact_email):
+        message = "A valid contact email is required"
+        if wants_json:
+            return jsonify({"status": "error", "message": message}), 400
+        wifi = get_wifi_status_data()
+        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
+    if not terms_agreed:
+        message = "You must agree to the station submission terms"
+        if wants_json:
+            return jsonify({"status": "error", "message": message}), 400
+        wifi = get_wifi_status_data()
+        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
     store = load_station_store()
     pending = store.get('pending_stations', [])
-    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": image_path, "submitted_at": int(time.time())})
+    now = int(time.time())
+    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
     for i, item in enumerate(pending):
         if (item.get('url') or '').strip() == url:
             pending[i] = station
@@ -963,10 +1103,10 @@ def api_add_station():
     store['pending_stations'] = pending
     save_station_store(store)
     message = "Station submitted. Waiting for approval."
-    if is_json:
+    if wants_json:
         return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "version": get_config_version()})
     wifi = get_wifi_status_data()
-    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":"","url":"","subtitle":"Custom Station","bio":"","language":"ht"})
+    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
 
 @app.route('/api/report-station', methods=['POST'])
 def api_report_station():
@@ -977,16 +1117,66 @@ def api_report_station():
     if not name and not url:
         return jsonify({"status": "error", "message": "Station is required"}), 400
     reports = load_reports()
-    reports.append({
+    station = find_station_for_report(name=name, url=url)
+    report = {
         "name": name,
         "url": url,
         "website": (data.get('website') or '').strip(),
+        "contact_email": (station or {}).get("contact_email", ""),
         "reason": reason,
         "reported_at": int(time.time()),
         "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
-    })
+    }
+    report["email_sent"] = send_report_email(station, report)
+    reports.append(report)
     save_reports(reports[-500:])
     return jsonify({"status": "ok", "message": "Report sent. Thank you."})
+
+@app.route('/api/listen-heartbeat', methods=['POST'])
+def api_listen_heartbeat():
+    data = request.get_json(silent=True) or {}
+    session_id = (data.get('session_id') or '').strip()[:80]
+    name = (data.get('name') or 'Unknown station').strip()[:120]
+    url = (data.get('url') or '').strip()[:500]
+    website = (data.get('website') or '').strip()[:300]
+    try:
+        seconds = int(float(data.get('seconds') or 0))
+    except Exception:
+        seconds = 0
+    seconds = max(0, min(seconds, 60))
+    if not session_id or not url or seconds < 5:
+        return jsonify({"status": "ok", "ignored": True})
+
+    now = int(time.time())
+    analytics = load_analytics()
+    key = analytics_station_key(name, url)
+    totals = analytics["totals"].setdefault(key, {
+        "name": name,
+        "url": url,
+        "website": website,
+        "seconds": 0,
+        "heartbeats": 0,
+        "last_listened_at": now,
+    })
+    totals["name"] = name or totals.get("name") or "Unknown station"
+    totals["url"] = url or totals.get("url") or ""
+    totals["website"] = website or totals.get("website") or ""
+    totals["seconds"] = int(totals.get("seconds") or 0) + seconds
+    totals["heartbeats"] = int(totals.get("heartbeats") or 0) + 1
+    totals["last_listened_at"] = now
+
+    analytics["sessions"].append({
+        "session_id": session_id,
+        "name": name,
+        "url": url,
+        "website": website,
+        "seconds": seconds,
+        "listened_at": now,
+        "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
+    })
+    analytics["sessions"] = analytics["sessions"][-10000:]
+    save_analytics(analytics)
+    return jsonify({"status": "ok", "seconds": seconds})
 
 @app.route('/admin/pending', methods=['GET'])
 def admin_pending():
@@ -999,10 +1189,56 @@ def admin_stations():
 
 @app.route('/admin/reports', methods=['GET'])
 def admin_reports():
-    reports = list(reversed(load_reports()))
+    raw_reports = load_reports()
+    reports = []
+    for original_index, report in reversed(list(enumerate(raw_reports))):
+        item = dict(report)
+        item["index"] = original_index
+        reports.append(item)
     store = load_station_store()
     approved = [normalize_station(s) for s in store.get('custom_stations', [])]
     return render_template('reports.html', reports=reports, approved=approved)
+
+@app.route('/admin/report/delete/<int:index>', methods=['POST', 'GET'])
+def admin_delete_report(index):
+    reports = load_reports()
+    if 0 <= index < len(reports):
+        reports.pop(index)
+        save_reports(reports)
+    return redirect('/admin/reports')
+
+@app.route('/admin/reports/clear', methods=['POST'])
+def admin_clear_reports():
+    save_reports([])
+    return redirect('/admin/reports')
+
+@app.route('/admin/viewership', methods=['GET'])
+def admin_viewership():
+    analytics = load_analytics()
+    totals = []
+    for item in analytics.get("totals", {}).values():
+        seconds = int(item.get("seconds") or 0)
+        totals.append({
+            "name": item.get("name") or "Unknown station",
+            "url": item.get("url") or "",
+            "website": item.get("website") or "",
+            "seconds": seconds,
+            "duration": format_duration(seconds),
+            "hours": round(seconds / 3600, 2),
+            "minutes": round(seconds / 60, 1),
+            "heartbeats": int(item.get("heartbeats") or 0),
+            "last_listened_at": item.get("last_listened_at") or "",
+        })
+    totals.sort(key=lambda x: x["seconds"], reverse=True)
+    recent = list(reversed(analytics.get("sessions", [])[-200:]))
+    for event in recent:
+        event["duration"] = format_duration(event.get("seconds") or 0)
+    return render_template("viewership.html", totals=totals, recent=recent)
+
+@app.route('/admin/viewership/clear', methods=['POST'])
+def admin_clear_viewership():
+    save_analytics({"sessions": [], "totals": {}})
+    return redirect('/admin/viewership')
 
 @app.route('/admin/suspend-station', methods=['POST'])
 def admin_suspend_station():
@@ -1091,6 +1327,7 @@ def admin_edit_station(index):
         subtitle = (request.form.get('subtitle') or 'Custom Station').strip()
         website = (request.form.get('website') or subtitle).strip()
         bio = (request.form.get('bio') or '').strip()[:250]
+        contact_email = (request.form.get('contact_email') or station.get('contact_email') or '').strip()
         language = (request.form.get('language') or station.get('language') or 'ht').strip().lower()
         flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
         if language not in flags:
@@ -1100,8 +1337,10 @@ def admin_edit_station(index):
             error = image_error
         elif not name or not url:
             error = 'Station name and stream URL are required'
+        elif contact_email and not is_valid_email(contact_email):
+            error = 'Contact email is not valid'
         else:
-            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio, 'language': language, 'flag': flags[language]})
+            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio, 'contact_email': contact_email, 'language': language, 'flag': flags[language]})
             if image_path:
                 station['wallpaper'] = image_path
                 station['logo_url'] = image_path
