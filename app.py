@@ -44,6 +44,7 @@ SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiola
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wallpapers")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
+RADIO_LA_VOIX_LOGO_URL = "/static/logos/radiolavoixdivine.png"
 
 def allowed_image(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
@@ -72,6 +73,7 @@ current_playing = {
     "station_subtitle": "Internet Stream",
     "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live",
     "website": "radiolavoixdivine.com",
+    "logo_url": RADIO_LA_VOIX_LOGO_URL,
     "logo": "🎧",
 }
 news_cache = {"items": [], "fetched_at": 0}
@@ -88,6 +90,7 @@ TEST_STREAMS = [
     {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live", "logo": "🎧"},
     {"name": "181 FM The Buzz", "subtitle": "https://www.181.fm", "website": "https://www.181.fm", "url": "http://listen.181fm.com/181-buzz_128k.mp3", "logo": "📻"},
 ]
+TEST_STREAMS[0]["logo_url"] = RADIO_LA_VOIX_LOGO_URL
 
 def get_config_version():
     mtimes = []
@@ -1067,7 +1070,12 @@ def api_add_station():
         form["language"] = language
     flag = flags[language]
     image_path = ""
+    logo_path = ""
     if not is_json:
+        logo_path, logo_error = save_uploaded_image('logo_image')
+        if logo_error:
+            wifi = get_wifi_status_data()
+            return render_template('add_station.html', status='error', message=logo_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             wifi = get_wifi_status_data()
@@ -1093,7 +1101,7 @@ def api_add_station():
     store = load_station_store()
     pending = store.get('pending_stations', [])
     now = int(time.time())
-    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
+    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
     for i, item in enumerate(pending):
         if (item.get('url') or '').strip() == url:
             pending[i] = station
