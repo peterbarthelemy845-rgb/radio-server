@@ -112,6 +112,8 @@ body.public-web .nav-item.active{border-radius:16px;}
 .station-logo img{width:100%;height:100%;object-fit:cover;display:block}
 body.public-web .station-logo{display:flex}
 @media (max-width:700px){body.public-web .station-logo{display:flex;width:70px;height:70px;border-radius:20px;margin-bottom:6px}.station-logo{width:74px;height:74px;border-radius:20px;margin-bottom:8px}.station-logo img{width:100%;height:100%}}
+body.public-web #stationLogo{position:fixed;left:122px;top:112px;z-index:22;width:58px;height:58px;margin:0;border-radius:16px}
+@media (max-width:700px){body.public-web #stationLogo{left:116px;top:18px;width:46px;height:46px;border-radius:14px}}
 </style>
 </head>
 <body class="{{ 'public-web' if public_web else '' }}">
