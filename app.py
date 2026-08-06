@@ -11,6 +11,7 @@ import urllib.request
 import requests
 import xml.etree.ElementTree as ET
 import re
+import base64
 from email.message import EmailMessage
 from html import unescape
 from urllib.parse import urlparse, quote, urljoin
@@ -294,6 +295,26 @@ def normalize_station(station):
 
 
 def save_uploaded_image(field_name="wallpaper"):
+    cropped = (request.form.get(f"{field_name}_cropped") or "").strip()
+    if cropped.startswith("data:image/"):
+        try:
+            header, encoded = cropped.split(",", 1)
+            subtype = header.split(";", 1)[0].split("/", 1)[1].lower()
+            if subtype == "jpeg":
+                subtype = "jpg"
+            if subtype not in ALLOWED_IMAGE_EXTENSIONS:
+                return "", "Image must be PNG, JPG, JPEG, GIF, or WEBP"
+            raw = base64.b64decode(encoded, validate=True)
+            if len(raw) > 6 * 1024 * 1024:
+                return "", "Image is too large"
+            filename = f"{int(time.time())}_{secrets.token_hex(6)}.{subtype}"
+            save_path = os.path.join(UPLOAD_FOLDER, filename)
+            with open(save_path, "wb") as f:
+                f.write(raw)
+            return f"/static/wallpapers/{filename}", ""
+        except Exception as e:
+            print("Cropped image save failed:", e)
+            return "", "Could not save cropped image"
     image = request.files.get(field_name) if request.files else None
     if not image or not image.filename:
         return "", ""
@@ -1223,24 +1244,53 @@ def admin_clear_reports():
 @app.route('/admin/viewership', methods=['GET'])
 def admin_viewership():
     analytics = load_analytics()
+    now = int(time.time())
+    day_start = now - 86400
+    week_start = now - (7 * 86400)
+    month_start = now - (30 * 86400)
+    sessions_by_key = {}
+    for event in analytics.get("sessions", []):
+        key = analytics_station_key(event.get("name"), event.get("url"))
+        sessions_by_key.setdefault(key, []).append(event)
     totals = []
-    for item in analytics.get("totals", {}).values():
+    for key, item in analytics.get("totals", {}).items():
         seconds = int(item.get("seconds") or 0)
+        events = sessions_by_key.get(key, [])
+        def window_seconds(start):
+            return sum(int(e.get("seconds") or 0) for e in events if int(e.get("listened_at") or 0) >= start)
+        def window_plays(start=None):
+            seen = set()
+            for e in events:
+                if start is not None and int(e.get("listened_at") or 0) < start:
+                    continue
+                sid = e.get("session_id") or f"{e.get('listened_at')}-{e.get('ip')}"
+                seen.add(sid)
+            return len(seen)
+        last = item.get("last_listened_at") or ""
         totals.append({
             "name": item.get("name") or "Unknown station",
             "url": item.get("url") or "",
             "website": item.get("website") or "",
             "seconds": seconds,
             "duration": format_duration(seconds),
+            "today": format_duration(window_seconds(day_start)),
+            "week": format_duration(window_seconds(week_start)),
+            "month": format_duration(window_seconds(month_start)),
+            "plays": window_plays(),
+            "plays_today": window_plays(day_start),
+            "plays_week": window_plays(week_start),
+            "plays_month": window_plays(month_start),
             "hours": round(seconds / 3600, 2),
             "minutes": round(seconds / 60, 1),
             "heartbeats": int(item.get("heartbeats") or 0),
-            "last_listened_at": item.get("last_listened_at") or "",
+            "last_listened_at": time.strftime("%Y-%m-%d %I:%M %p", time.localtime(int(last))) if last else "",
         })
     totals.sort(key=lambda x: x["seconds"], reverse=True)
     recent = list(reversed(analytics.get("sessions", [])[-200:]))
     for event in recent:
         event["duration"] = format_duration(event.get("seconds") or 0)
+        ts = event.get("listened_at") or ""
+        event["listened_at"] = time.strftime("%Y-%m-%d %I:%M %p", time.localtime(int(ts))) if ts else ""
     return render_template("viewership.html", totals=totals, recent=recent)
 
 @app.route('/admin/viewership/clear', methods=['POST'])

@@ -16,6 +16,8 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
 .terms-check{display:flex;gap:10px;align-items:flex-start;font-size:14px;font-weight:800;color:#1e293b}
 .terms-check input{width:22px;min-height:22px;margin:0;flex:0 0 22px}
 .terms-check a{color:#1d4ed8}
+.logo-cropper{display:none;margin:-4px 0 12px;padding:12px;border-radius:18px;background:#eff6ff;border:1px solid #dbeafe}
+.logo-cropper.active{display:block}.logo-cropper canvas{width:160px;height:160px;border-radius:20px;background:#071642;display:block;margin:0 auto 10px}.logo-cropper label{font-size:13px;margin:8px 0 4px}.logo-cropper input[type=range]{width:100%;min-height:auto;padding:0}
 </style>
 </head>
 <body>
@@ -76,6 +78,13 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
       <div class="row">
         <label for="logo_image" data-i18n="logoUploadLabel">Radio logo optional</label>
         <input id="logo_image" name="logo_image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+        <input type="hidden" name="logo_image_cropped">
+        <div class="logo-cropper">
+          <canvas width="400" height="400"></canvas>
+          <label>Zoom</label><input type="range" class="crop-zoom" min="1" max="3" step="0.05" value="1">
+          <label>Move left / right</label><input type="range" class="crop-x" min="0" max="100" value="50">
+          <label>Move up / down</label><input type="range" class="crop-y" min="0" max="100" value="50">
+        </div>
       </div>
       <div class="terms-box">
         <label class="terms-check">
@@ -119,6 +128,8 @@ function buildStreamUrl(){
 const bioBox=document.getElementById('bio');
 const bioCount=document.getElementById('bioCount');
 if(bioBox&&bioCount){bioCount.innerText=bioBox.value.length + '/250';}
+function setupLogoCropper(form){let input=form&&form.querySelector('input[name="logo_image"]');if(!input)return;let hidden=form.querySelector('input[name="logo_image_cropped"]');let panel=form.querySelector('.logo-cropper');let canvas=panel.querySelector('canvas'),ctx=canvas.getContext('2d'),zoom=panel.querySelector('.crop-zoom'),xRange=panel.querySelector('.crop-x'),yRange=panel.querySelector('.crop-y');let img=null;function draw(){if(!img)return;let z=parseFloat(zoom.value||'1');let base=Math.min(img.naturalWidth,img.naturalHeight);let size=base/z;let maxX=Math.max(0,img.naturalWidth-size);let maxY=Math.max(0,img.naturalHeight-size);let sx=maxX*(parseFloat(xRange.value||'50')/100);let sy=maxY*(parseFloat(yRange.value||'50')/100);ctx.clearRect(0,0,400,400);ctx.drawImage(img,sx,sy,size,size,0,0,400,400);hidden.value=canvas.toDataURL('image/png')}[zoom,xRange,yRange].forEach(el=>el.addEventListener('input',draw));input.addEventListener('change',()=>{hidden.value='';let file=input.files&&input.files[0];if(!file){panel.classList.remove('active');return}img=new Image();img.onload=()=>{panel.classList.add('active');zoom.value='1';xRange.value='50';yRange.value='50';draw();URL.revokeObjectURL(img.src)};img.src=URL.createObjectURL(file)});form.addEventListener('reset',()=>{hidden.value='';panel.classList.remove('active');img=null})}
+setupLogoCropper(document.querySelector('form'));
 </script>
 </body>
 </html>
