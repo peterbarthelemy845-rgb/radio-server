@@ -122,12 +122,27 @@ body.public-web .station-logo{display:flex}
 body.public-web #stationLogo{position:fixed;left:122px;top:112px;z-index:22;width:58px;height:58px;margin:0;border-radius:16px}
 @media (max-width:700px){body.public-web #stationLogo{left:116px;top:18px;width:46px;height:46px;border-radius:14px}}
 </style>
+<style>
+.account-link{position:absolute;left:192px;top:112px;z-index:22;width:48px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(255,255,255,.15);color:white;text-decoration:none}
+.account-link:hover{background:rgba(255,255,255,.26)}
+.account-link:focus-visible{outline:3px solid #9fd1ff;outline-offset:3px}
+.account-link svg{width:24px;height:24px}
+@media(max-width:700px){
+  body.public-web .language-menu{left:8px;width:70px;padding:0 4px;font-size:13px}
+  body.public-web #stationLogo{left:82px;width:38px}
+  body.public-web .account-link{left:124px;top:18px;width:44px;height:46px;border-radius:14px}
+  body.public-web .report-btn{right:104px;width:44px}
+  body.public-web .home-bio-btn{right:56px;width:44px}
+  body.public-web .fav-btn{right:8px;width:44px}
+}
+</style>
 </head>
 <body class="{{ 'public-web' if public_web else '' }}">
 <audio id="webAudio" preload="auto" playsinline></audio>
 <script>window.PUBLIC_WEB = {{ "true" if public_web else "false" }};</script>
 <div class="screen" id="screen">
 <div id="radioPage" class="page active">
+  <a class="account-link" href="{{ url_for('admin_login') }}" aria-label="Admin login" title="Admin login"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg></a>
   <div class="top-bar"><div class="top-left"><button class="icon-box" onclick="showPage('wifiPage')">WiFi</button></div><button class="vol-btn" onclick="showPage('soundPage')">VOL</button></div>
   <div class="connection" id="connectionText">Connected...</div>
   <select class="language-menu" id="languageSelect" onchange="setLanguage(this.value)" aria-label="Language"><option value="en">🇺🇸 EN</option><option value="es">🇪🇸 ES</option><option value="fr">🇫🇷 FR</option><option value="ht">🇭🇹 HT</option></select><button class="report-btn" onclick="reportStation(currentPreset())" title="Report station" aria-label="Report station">🚩</button><button class="home-bio-btn" id="homeBioBtn" onclick="showStationBio(currentPreset())" title="Station bio" aria-label="Station bio">Bio</button><button class="fav-btn" id="favoriteBtn" onclick="toggleFavorite()">☆</button><div class="radio-main"><div class="stream-label" data-i18n="streamLabel">INTERNET STREAM</div><div class="station-logo" id="stationLogo">🇭🇹</div><div class="station-name" id="stationName">La Voix Divine</div><div class="station-url" id="stationWebsite">radiolavoixdivine.com</div><div class="status-line" id="networkStatus">● STOPPED</div><div class="controls"><button class="control-btn" onclick="prevPreset()">⏮</button><button class="play-btn" id="playBtn" onclick="togglePlayback()">▶</button><button class="control-btn" onclick="nextPreset()">⏭</button></div><div class="news-carousel" id="newsCarousel" aria-label="Haitian Times headlines"></div></div>
