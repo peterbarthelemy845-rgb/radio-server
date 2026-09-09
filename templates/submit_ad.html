@@ -7,11 +7,9 @@
 <label for="title">Business / ad title</label><input id="title" name="title" maxlength="100" required value="{{ form.get('title', '') }}">
 <label for="contact_name">Your name</label><input id="contact_name" name="contact_name" maxlength="100" autocomplete="name" required value="{{ form.get('contact_name', '') }}">
 <label for="email">Contact email</label><input id="email" name="email" type="email" maxlength="254" autocomplete="email" required value="{{ form.get('email', '') }}">
-<label for="phone">Phone (optional)</label><input id="phone" name="phone" type="tel" maxlength="40" autocomplete="tel" value="{{ form.get('phone', '') }}">
 <label for="media">Video or flyer</label><input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
 <p class="hint">JPG, PNG, WebP, MP4 or WebM. Maximum 50 MB. Your upload stays private until approved.</p>
 <label for="duration">Requested display time (seconds)</label><input id="duration" name="duration" type="number" min="5" max="120" required value="{{ form.get('duration', '10') }}"><p class="hint">For videos, this is the maximum time before the radio starts.</p>
-<label for="notes">Notes for the admin (optional)</label><textarea id="notes" name="notes" maxlength="1000">{{ form.get('notes', '') }}</textarea>
 <label class="check"><input name="consent" type="checkbox" required {% if form.get('consent') %}checked{% endif %}>I have permission to use this content and understand that my ad requires admin approval.</label>
 <button class="button wide" id="adSubmitButton" type="submit">Submit ad for review</button>
 </form></section>
@@ -21,3 +19,23 @@ const adThanks=document.getElementById('adThanks');if(adThanks)adThanks.showModa
 document.getElementById('adSubmissionForm').addEventListener('submit',()=>{const b=document.getElementById('adSubmitButton');b.disabled=true;b.textContent='Uploading…';});
 window.addEventListener('pageshow',()=>{const b=document.getElementById('adSubmitButton');b.disabled=false;b.textContent='Submit ad for review';});
 </script>{% endblock %}
+
+{% block body_class %}ad-submit-page{% endblock %}
+{% block extra_head %}
+<style>
+.ad-submit-page{padding-bottom:calc(106px + env(safe-area-inset-bottom,0px));}
+.ad-submit-page .ad-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;height:calc(82px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);border-radius:22px 22px 0 0;background:rgba(8,16,38,.96);box-shadow:0 -6px 24px rgba(0,0,0,.45);backdrop-filter:blur(10px);}
+.ad-bottom-nav a{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:0 4px;text-align:center;text-decoration:none;color:white;font-size:clamp(13px,3.2vw,20px);font-weight:900;}
+.ad-bottom-nav a[aria-current="page"]{background:rgba(255,255,255,.08);color:#9fd1ff;border-radius:16px;}
+.ad-bottom-nav a:focus-visible{outline:3px solid #9fd1ff;outline-offset:-4px;border-radius:16px;}
+@media(min-width:701px){.ad-submit-page .ad-bottom-nav{height:calc(64px + env(safe-area-inset-bottom,0px));border-radius:18px 18px 0 0;}.ad-submit-page{padding-bottom:calc(88px + env(safe-area-inset-bottom,0px));}.ad-bottom-nav a{font-size:18px;}}
+</style>
+{% endblock %}
+{% block bottom_nav %}
+<nav class="ad-bottom-nav" aria-label="Main navigation">
+<a href="{{ url_for('index') }}#radio">Radio</a>
+<a href="{{ url_for('index') }}#library">Library</a>
+<a href="{{ url_for('index') }}#add-station">Add Station</a>
+<a href="{{ url_for('submit_ad') }}" aria-current="page">Buy Ads</a>
+</nav>
+{% endblock %}
