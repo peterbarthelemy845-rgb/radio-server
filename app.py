@@ -19,6 +19,8 @@ from werkzeug.utils import secure_filename
 import pyotp
 
 app = Flask(__name__)
+from ads import register_ads, public_ad
+register_ads(app)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
 ADMIN_MFA_PHONE = os.environ.get("ADMIN_MFA_PHONE", "").strip()
@@ -773,7 +775,7 @@ def qr_image():
 
 @app.route("/")
 def index():
-    return render_template("index.html", public_web=is_public_website())
+    return render_template("index.html", public_web=is_public_website(), preroll_ad=public_ad())
 
 @app.route("/api/state", methods=["GET"])
 def get_state():

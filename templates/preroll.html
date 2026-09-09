@@ -1,0 +1,86 @@
+<style>
+#prerollDialog{width:min(760px,calc(100vw - 24px));max-height:90dvh;padding:18px;border:1px solid #334155;border-radius:22px;background:#081630;color:white;font-family:Arial;overflow:auto}
+#prerollDialog::backdrop{background:rgba(0,0,0,.86)}
+.ad-head,.ad-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.ad-head{margin-bottom:14px}.ad-head span{color:#9fd1ff;font-size:13px;text-transform:uppercase;letter-spacing:1px}
+#adTitle{margin:6px 0;font-size:22px}#adMedia img,#adMedia video{width:100%;height:min(56dvh,460px);object-fit:contain;background:#020617;border-radius:14px;display:block}.ad-actions{margin-top:14px}
+#prerollDialog button{min-height:44px;padding:10px 16px;border:0;border-radius:12px;color:white;background:#2563eb;font-weight:bold;cursor:pointer}#prerollDialog button:disabled{opacity:.5;cursor:default}#prerollDialog button:focus-visible{outline:3px solid #9fd1ff;outline-offset:3px}#adClose{background:#334155!important}#adStatus{font-size:14px;line-height:1.4}
+</style>
+<dialog id="prerollDialog" aria-labelledby="adTitle">
+<div class="ad-head"><div><span>Advertisement</span><h2 id="adTitle">Support local businesses</h2></div><button id="adClose" type="button" aria-label="Close ad and cancel radio playback">Close</button></div>
+<div id="adMedia"></div><div class="ad-actions"><span id="adStatus" role="status"></span><button id="adSound" type="button" hidden>Turn sound on</button><button id="adSkip" type="button" disabled>Skip</button><button id="adResume" type="button" hidden>Start radio</button></div>
+</dialog>
+<script>
+const prerollConfig={{ preroll_ad|default(none)|tojson }};
+window.prerollBusy=false;
+let adSeen=false;
+const adDialog=document.getElementById('prerollDialog');
+const adMedia=document.getElementById('adMedia');
+const adStatus=document.getElementById('adStatus');
+const adSkip=document.getElementById('adSkip');
+const adSound=document.getElementById('adSound');
+const adResume=document.getElementById('adResume');
+function runPreroll(){
+  const ad=prerollConfig;
+  if(!ad||!ad.src||!window.PUBLIC_WEB)return Promise.resolve(true);
+  const key='radio-preroll:'+ad.src;
+  let seen=adSeen;
+  try{seen=seen||sessionStorage.getItem(key)==='1';}catch(e){}
+  if(ad.frequency!=='always'&&seen)return Promise.resolve(true);
+  if(window.prerollBusy)return Promise.resolve(false);
+  window.prerollBusy=true;
+  document.getElementById('webAudio').pause();
+  document.getElementById('adTitle').textContent=ad.title||'Support local businesses';
+  adMedia.replaceChildren();adResume.hidden=true;adSkip.hidden=!ad.skip;adSkip.disabled=true;adSound.hidden=ad.kind!=='video';
+  adSound.textContent='Turn sound on';adStatus.textContent='Loading advertisement…';
+  return new Promise(resolve=>{
+    let completed=false,elapsed=0,last=performance.now(),ready=false,lastProgress=performance.now();
+    const media=document.createElement(ad.kind==='video'?'video':'img');
+    function finish(proceed){
+      if(completed)return;completed=true;clearInterval(timer);
+      media.onload=media.onerror=media.onended=media.onplaying=null;
+      if(media.tagName==='VIDEO'){media.pause();media.removeAttribute('src');media.load();}
+      adMedia.replaceChildren();adDialog.close();window.prerollBusy=false;
+      if(proceed){adSeen=true;try{sessionStorage.setItem(key,'1');}catch(e){}}
+      resolve(proceed);
+    }
+    media.onerror=()=>finish(true);
+    if(ad.kind==='video'){
+      media.muted=true;media.playsInline=true;media.preload='auto';
+      media.onplaying=()=>{ready=true;lastProgress=performance.now();};
+      media.onended=()=>finish(true);
+      adSound.onclick=()=>{media.muted=!media.muted;adSound.textContent=media.muted?'Turn sound on':'Mute';};
+    }else{media.alt=ad.title||'Local business advertisement';media.onload=()=>{ready=true;last=performance.now();};}
+    document.getElementById('adClose').onclick=()=>finish(false);
+    adDialog.oncancel=e=>{e.preventDefault();finish(false);};
+    adSkip.onclick=()=>{if(ad.skip&&elapsed>=5)finish(true);};
+    const timer=setInterval(()=>{
+      const now=performance.now();
+      if(ready){
+        const previous=elapsed;
+        elapsed=ad.kind==='video'?media.currentTime:elapsed+(now-last)/1000;
+        if(elapsed>previous)lastProgress=now;
+        adSkip.disabled=elapsed<5;adSkip.textContent=elapsed<5?'Skip in '+Math.ceil(5-elapsed)+'s':'Skip ad';
+        adStatus.textContent='Radio starts in '+Math.max(0,Math.ceil(ad.duration-elapsed))+'s';
+        if(elapsed>=ad.duration)finish(true);
+      }
+      if(now-lastProgress>15000)finish(true);
+      last=now;
+    },200);
+    adMedia.appendChild(media);adDialog.showModal();media.src=ad.src;
+    if(ad.kind==='video')media.play().catch(()=>finish(true));
+  });
+}
+function showRadioResume(p){
+  adMedia.replaceChildren();document.getElementById('adTitle').textContent='Ready to listen';
+  adStatus.textContent='Tap Start radio to begin playback.';adSkip.hidden=true;adSound.hidden=true;adResume.hidden=false;
+  window.prerollBusy=true;
+  const close=()=>{adDialog.close();window.prerollBusy=false;};
+  document.getElementById('adClose').onclick=close;adDialog.oncancel=e=>{e.preventDefault();close();};
+  adResume.onclick=async()=>{
+    const audio=document.getElementById('webAudio');
+    try{if(audio.src!==p.url)audio.src=p.url;await audio.play();close();}
+    catch(e){adStatus.textContent='Unable to play this station. Try again or choose another station.';}
+  };
+  if(!adDialog.open)adDialog.showModal();
+}
+</script>

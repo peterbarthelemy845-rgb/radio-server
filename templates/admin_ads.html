@@ -1,0 +1,15 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Radio ads</title>
+<style>*{box-sizing:border-box}body{margin:0;padding:22px;background:linear-gradient(#102a78,#071642);min-height:100vh;font:16px Arial;color:white}main{max-width:800px;margin:auto}.card{padding:24px;border-radius:22px;background:white;color:#0f172a;margin:20px 0}nav{display:flex;gap:12px;flex-wrap:wrap}a,button{display:inline-block;background:#2563eb;color:white;padding:12px 18px;border:0;border-radius:12px;text-decoration:none;font-weight:bold;cursor:pointer}label{display:block;margin:18px 0 8px;font-weight:bold}input:not([type=checkbox]),select{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;font:inherit}p{line-height:1.5}.preview{max-width:100%;max-height:320px;display:block;margin:16px auto;object-fit:contain}.error{color:#b91c1c}.success{color:#166534}</style>
+<main><h1>Pre-roll ads</h1><nav><a href="{{ url_for('admin_pending') }}">Stations</a><a href="{{ url_for('index') }}">Home</a></nav><section class="card">
+<p>Show a local business video or flyer before web radio playback. Upload one active ad; a new upload replaces the current ad. Changes apply when listeners refresh the page.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}{% if saved %}<p class="success" role="status">Ad settings saved.</p>{% endif %}
+<form method="post" enctype="multipart/form-data">
+<label><input type="checkbox" name="enabled" {% if ad.enabled %}checked{% endif %}> Enable pre-roll ad</label>
+<label for="title">Business / ad title</label><input id="title" name="title" maxlength="100" value="{{ ad.title or '' }}">
+<label for="media">Video or flyer (up to 50 MB)</label><input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm">
+<p>Use JPG, PNG or WebP for flyers; MP4 or WebM for videos. Videos start muted, with a sound button.</p>
+{% if ad.src %}{% if ad.kind == 'video' %}<video class="preview" src="{{ ad.src }}" controls playsinline preload="metadata"></video>{% else %}<img class="preview" src="{{ ad.src }}" alt="Current flyer">{% endif %}{% endif %}
+<label for="duration">Flyer display time / maximum video time (seconds)</label><input id="duration" name="duration" type="number" min="5" max="120" value="{{ ad.duration or 10 }}" required>
+<label for="frequency">Show ad</label><select id="frequency" name="frequency"><option value="visit" {% if ad.frequency != 'always' %}selected{% endif %}>Once per visit (browser tab)</option><option value="always" {% if ad.frequency == 'always' %}selected{% endif %}>Before every station start</option></select>
+<label><input type="checkbox" name="skip" {% if ad.get('skip', true) %}checked{% endif %}> Allow Skip after 5 seconds</label>
+<button type="submit">Save ad</button></form></section></main></html>

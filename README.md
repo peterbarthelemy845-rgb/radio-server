@@ -46,3 +46,12 @@ Open a terminal and connect to your Raspberry Pi via SSH. Then, run the followin
 git clone [https://github.com/ShoaibAliWains/volumio-radio-ui.git](https://github.com/ShoaibAliWains/volumio-radio-ui.git)
 cd volumio-radio-ui
 bash install.sh
+
+
+## Pre-roll advertisements
+
+Open **Ads** from the admin Stations page (`/admin/ads`). Upload one active local business flyer (JPG, PNG, WebP) or video (MP4, WebM), up to 50 MB. Enable the ad and save. A new upload replaces the active ad. No ad is enabled by default.
+
+Choose once per browser-tab visit or every station start, the flyer duration / video time limit (5–120 seconds), and whether listeners may skip after five seconds. Videos start muted with a sound toggle. Closing the overlay cancels playback. Failed media is skipped; browsers that block automatic radio playback show a Start radio button. These ads apply to public web playback; device/Pi playback is unchanged.
+
+Listeners must refresh to receive updated settings. Keep `ads.json` and `static/ads/` on persistent storage and preserve them during deployments, just like station data. Uploaded ads are public media files. The upload directory and settings file must be writable by the app. An upstream web server must allow the selected upload size.
