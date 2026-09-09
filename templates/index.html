@@ -202,10 +202,33 @@ function currentListenPayload(seconds){let p=currentPreset()||{};return {session
 function sendListenHeartbeat(seconds){let payload=currentListenPayload(seconds);if(!payload.url||seconds<5)return;fetch('/api/listen-heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),keepalive:true}).catch(()=>{});}
 function startListenTracking(){stopListenTracking(false);lastListenHeartbeatAt=Date.now();listenHeartbeatTimer=setInterval(()=>{if(!appState.playing)return;let now=Date.now();let seconds=Math.round((now-lastListenHeartbeatAt)/1000);lastListenHeartbeatAt=now;sendListenHeartbeat(seconds);},30000);}
 function stopListenTracking(sendFinal=true){if(listenHeartbeatTimer){clearInterval(listenHeartbeatTimer);listenHeartbeatTimer=null;}if(sendFinal&&lastListenHeartbeatAt){let seconds=Math.round((Date.now()-lastListenHeartbeatAt)/1000);sendListenHeartbeat(seconds);}lastListenHeartbeatAt=0;}
-async function playPreset(p){if(window.prerollBusy)return;if(!p||!p.url){await loadState();p=currentPreset();if(!p||!p.url)return;}if(window.PUBLIC_WEB && !(await runPreroll()))return;appState.playing=true;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();loadNetwork();if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');if(a.src!==p.url){a.src=p.url;a.load();}try{await a.play();startListenTracking();}catch(e){console.log(e);stopListenTracking(false);appState.playing=false;updateUI();showRadioResume(p)}}else{fetch('/api/play-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:p.url,name:p.name,subtitle:p.subtitle||'Internet Stream',website:p.website||'',logo:p.logo||'🎧'})}).catch(console.log);startListenTracking();}}
-async function togglePlayback(){if(appState.playing){stopListenTracking();appState.playing=false;updateUI();loadNetwork();if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');a.pause();a.currentTime=0;}else{await fetch('/api/stop-stream',{method:'POST'});}}else{await playPreset(currentPreset())}}
-async function nextPreset(){if(!appState.presets.length)return;appState.preset_index=(appState.preset_index+1)%appState.presets.length;await playPreset(currentPreset())}
-async function prevPreset(){if(!appState.presets.length)return;appState.preset_index=(appState.preset_index-1+appState.presets.length)%appState.presets.length;await playPreset(currentPreset())}
+let stationPlayRequest=0;
+let stationRetryUrl='';
+async function playPreset(p){
+  if(window.prerollBusy)return;
+  const requestId=++stationPlayRequest;
+  if(!p||!p.url){await loadState();if(requestId!==stationPlayRequest)return;p=currentPreset();if(!p||!p.url)return;}
+  if(window.PUBLIC_WEB && stationRetryUrl!==p.url && !(await runPreroll()))return;
+  if(requestId!==stationPlayRequest)return;
+  appState.playing=true;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();loadNetwork();
+  if(window.PUBLIC_WEB){
+    const a=document.getElementById('webAudio');
+    if(a.src!==p.url){a.src=p.url;a.load();}
+    try{await a.play();if(requestId!==stationPlayRequest)return;stationRetryUrl='';startListenTracking();}
+    catch(e){
+      if(requestId!==stationPlayRequest)return;
+      stationRetryUrl=p.url;stopListenTracking(false);appState.playing=false;updateUI();loadNetwork();
+      const status=document.getElementById('networkStatus');
+      status.innerText=e.name==='NotAllowedError'?'Tap Play to start this station.':e.name==='AbortError'?'Playback interrupted. Tap Play to retry.':'Unable to play this station. Try again or choose another station.';
+      status.style.color='#ffd166';
+    }
+  }else{
+    fetch('/api/play-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:p.url,name:p.name,subtitle:p.subtitle||'Internet Stream',website:p.website||'',logo:p.logo||'🎧'})}).catch(console.log);startListenTracking();
+  }
+}
+async function togglePlayback(){if(window.prerollBusy)return;if(appState.playing){++stationPlayRequest;stopListenTracking();appState.playing=false;updateUI();loadNetwork();if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');a.pause();a.currentTime=0;}else{await fetch('/api/stop-stream',{method:'POST'});}}else{await playPreset(currentPreset())}}
+async function nextPreset(){if(window.prerollBusy||!appState.presets.length)return;appState.preset_index=(appState.preset_index+1)%appState.presets.length;await playPreset(currentPreset())}
+async function prevPreset(){if(window.prerollBusy||!appState.presets.length)return;appState.preset_index=(appState.preset_index-1+appState.presets.length)%appState.presets.length;await playPreset(currentPreset())}
 async function setVolume(v){appState.volume=parseInt(v);updateUI();await fetch('/api/volume',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({volume:appState.volume})})}
 function renderNews(){
   const carousel=document.getElementById('newsCarousel');
