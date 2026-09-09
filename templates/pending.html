@@ -12,7 +12,6 @@
   <div class="card actions">
     <a class="btn link" href="/admin/reports">Reports</a>
     <a class="btn link" href="{{ url_for('index') }}">Home</a>
-    <a class="btn link" href="{{ url_for('admin_ads') }}">Ads</a>
     <a class="btn approve" href="/admin/viewership">Viewership</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
   </div>
@@ -67,6 +66,22 @@
       </div>
       {% endfor %}
     {% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Approved custom ads</h2>
+    {% for ad in approved_ads %}
+    <div class="station">
+      <div class="name">{{ ad.title }}</div>
+      <div class="url">{{ 'Active pre-roll' if ad.active else 'Approved · Not currently active' }} · {{ ad.duration }} seconds</div>
+      {% if ad.email %}<div class="url">Contact: {{ ad.email }}</div>{% endif %}
+      {% if ad.kind == 'video' %}
+      <video src="{{ ad.src }}" controls playsinline preload="metadata" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px"></video>
+      {% else %}
+      <img src="{{ ad.src }}" alt="{{ ad.title }}" loading="lazy" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px">
+      {% endif %}
+    </div>
+    {% else %}<div class="empty">No approved custom ads yet.</div>{% endfor %}
+    <div class="actions"><a class="btn link" href="{{ url_for('admin_ads') }}">Manage ads &amp; review submissions</a></div>
   </div>
 </div>
 </body></html>

@@ -29,6 +29,21 @@ def pending_ads():
     with database() as connection:
         return [dict(row) for row in connection.execute("SELECT * FROM submissions WHERE status='pending' ORDER BY created")]
 
+def approved_ads():
+    current = ads.load_ad()
+    rows = []
+    if DATABASE.exists():
+        with database() as connection:
+            rows = [dict(row) for row in connection.execute("SELECT * FROM submissions WHERE status='approved' ORDER BY created DESC")]
+    for row in rows:
+        row['src'] = '/static/ads/' + row['filename']
+        row['active'] = bool(current.get('enabled') and current.get('src') == row['src'])
+    if current.get('src') and not any(row['src'] == current['src'] for row in rows):
+        rows.insert(0, dict(title=current.get('title') or 'Admin-uploaded ad', src=current['src'],
+                            kind=current.get('kind', 'image'), duration=current.get('duration', 10),
+                            active=bool(current.get('enabled')), email=''))
+    return rows
+
 def csrf_token():
     if 'ad_csrf' not in session:
         session['ad_csrf'] = secrets.token_hex(24)
