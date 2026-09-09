@@ -81,7 +81,7 @@ def register_submissions(app):
                     connection.execute('INSERT INTO submissions VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                         (secrets.token_hex(16), title, name, email, phone, notes, filename, kind, duration, int(time.time()), 'pending'))
                 session['ad_submitted'] = True
-                return redirect(url_for('submit_ad'))
+                return redirect(url_for('submit_ad', embedded='1') if request.args.get('embedded') == '1' else url_for('submit_ad'))
             except (ValueError, OSError, sqlite3.Error) as exc:
                 if filename:
                     (PRIVATE / filename).unlink(missing_ok=True)
