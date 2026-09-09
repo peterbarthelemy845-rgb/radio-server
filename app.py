@@ -1211,9 +1211,9 @@ def api_listen_heartbeat():
 
 @app.route('/admin/pending', methods=['GET'])
 def admin_pending():
-    from ad_submissions import approved_ads
+    from ad_submissions import approved_ads, pending_ads
     store = load_station_store()
-    return render_template('pending.html', pending=store.get('pending_stations', []), approved=store.get('custom_stations', []), approved_ads=approved_ads())
+    return render_template('pending.html', pending=store.get('pending_stations', []), approved=store.get('custom_stations', []), approved_ads=approved_ads(), pending_ads=pending_ads())
 
 @app.route('/admin/stations', methods=['GET'])
 def admin_stations():

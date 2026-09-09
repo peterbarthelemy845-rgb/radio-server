@@ -41,7 +41,7 @@ def save_ad_upload(upload, folder):
 
 
 def register_ads(app):
-    from ad_submissions import register_submissions, pending_ads
+    from ad_submissions import register_submissions
     register_submissions(app)
     @app.route('/admin/ads', methods=['GET', 'POST'])
     def admin_ads():
@@ -70,4 +70,4 @@ def register_ads(app):
                 return redirect(url_for('admin_ads', saved='1'))
             except (ValueError, OSError) as exc:
                 error = str(exc) if isinstance(exc, ValueError) else 'Unable to save the ad. Please try again.'
-        return render_template('admin_ads.html', ad=ad, error=error, saved=request.args.get('saved') == '1', pending=pending_ads())
+        return render_template('admin_ads.html', ad=ad, error=error, saved=request.args.get('saved') == '1')

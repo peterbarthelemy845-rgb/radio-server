@@ -133,4 +133,4 @@ def register_submissions(app):
                 temporary.write_text(json.dumps(ad), encoding='utf-8')
                 os.replace(temporary, ads.SETTINGS)
             connection.execute('UPDATE submissions SET status=? WHERE id=?', ('approved' if action == 'approve' else 'rejected', submission_id))
-        return redirect(url_for('admin_ads', reviewed=action))
+        return redirect(url_for('admin_pending', reviewed=action, _anchor='pending-ads'))
