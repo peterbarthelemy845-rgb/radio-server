@@ -16,7 +16,7 @@ def load_ad():
 
 def public_ad():
     ad = load_ad()
-    return ad if ad.get('enabled') and ad.get('src') else None
+    return {'enabled': bool(ad.get('enabled')), 'frequency': ad.get('frequency', 'visit')}
 
 
 
@@ -43,6 +43,8 @@ def save_ad_upload(upload, folder):
 def register_ads(app):
     from ad_submissions import register_submissions
     register_submissions(app)
+    from ad_rotation import register_rotation
+    register_rotation(app)
     @app.route('/admin/ads', methods=['GET', 'POST'])
     def admin_ads():
         ad = load_ad()
@@ -58,6 +60,11 @@ def register_ads(app):
                 upload = request.files.get('media')
                 if upload and upload.filename:
                     filename, kind = save_ad_upload(upload, MEDIA)
+                    from ad_rotation import prepare, insert
+                    from ad_submissions import database
+                    with database() as db:
+                        prepare(db)
+                        insert(db, secrets.token_hex(16), request.form.get('title', '').strip()[:100] or 'Admin-uploaded ad', '/static/ads/' + filename, kind, duration)
                     ad.update(src='/static/ads/' + filename, kind=kind)
                 enabled = request.form.get('enabled') == 'on'
                 if enabled and not ad.get('src'):

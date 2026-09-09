@@ -19,20 +19,28 @@ const adStatus=document.getElementById('adStatus');
 const adSkip=document.getElementById('adSkip');
 const adSound=document.getElementById('adSound');
 const adResume=document.getElementById('adResume');
-function runPreroll(){
-  const ad=prerollConfig;
-  if(!ad||!ad.src||!window.PUBLIC_WEB)return Promise.resolve(true);
-  const key='radio-preroll:'+ad.src;
+async function runPreroll(){
+  if(!window.PUBLIC_WEB)return true;
+  if(window.prerollBusy)return false;
+  const key='radio-preroll-visit';
   let seen=adSeen;
   try{seen=seen||sessionStorage.getItem(key)==='1';}catch(e){}
-  if(ad.frequency!=='always'&&seen)return Promise.resolve(true);
-  if(window.prerollBusy)return Promise.resolve(false);
+  if(prerollConfig && prerollConfig.frequency!=='always'&&seen)return true;
   window.prerollBusy=true;
+  let ad;
+  try{
+    const response=await fetch('/api/ad-next',{method:'POST',signal:AbortSignal.timeout(5000)});
+    if(!response.ok)throw new Error('Ad unavailable');
+    ad=(await response.json()).ad;
+  }catch(e){window.prerollBusy=false;return true;}
+  if(!ad||!ad.src){window.prerollBusy=false;return true;}
   document.getElementById('webAudio').pause();
   document.getElementById('adTitle').textContent=ad.title||'Support local businesses';
   adMedia.replaceChildren();adResume.hidden=true;adSkip.hidden=!ad.skip;adSkip.disabled=true;adSound.hidden=ad.kind!=='video';
-  adSound.textContent='Turn sound on';adStatus.textContent='Loading advertisement…';
+  adSound.textContent='Turn sound on';adStatus.textContent='Loading advertisementâ€¦';
   return new Promise(resolve=>{
+    let counted=false;
+    function countPlay(){if(!counted){counted=true;fetch('/api/ad-play',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:ad.token}),keepalive:true}).catch(()=>{});}}
     let completed=false,elapsed=0,last=performance.now(),ready=false,lastProgress=performance.now();
     const media=document.createElement(ad.kind==='video'?'video':'img');
     function finish(proceed){
@@ -46,10 +54,10 @@ function runPreroll(){
     media.onerror=()=>finish(true);
     if(ad.kind==='video'){
       media.muted=true;media.playsInline=true;media.preload='auto';
-      media.onplaying=()=>{ready=true;lastProgress=performance.now();};
+      media.onplaying=()=>{countPlay();ready=true;lastProgress=performance.now();};
       media.onended=()=>finish(true);
       adSound.onclick=()=>{media.muted=!media.muted;adSound.textContent=media.muted?'Turn sound on':'Mute';};
-    }else{media.alt=ad.title||'Local business advertisement';media.onload=()=>{ready=true;last=performance.now();};}
+    }else{media.alt=ad.title||'Local business advertisement';media.onload=()=>{countPlay();ready=true;last=performance.now();};}
     document.getElementById('adClose').onclick=()=>finish(false);
     adDialog.oncancel=e=>{e.preventDefault();finish(false);};
     adSkip.onclick=()=>{if(ad.skip&&elapsed>=5)finish(true);};

@@ -30,19 +30,8 @@ def pending_ads():
         return [dict(row) for row in connection.execute("SELECT * FROM submissions WHERE status='pending' ORDER BY created")]
 
 def approved_ads():
-    current = ads.load_ad()
-    rows = []
-    if DATABASE.exists():
-        with database() as connection:
-            rows = [dict(row) for row in connection.execute("SELECT * FROM submissions WHERE status='approved' ORDER BY created DESC")]
-    for row in rows:
-        row['src'] = '/static/ads/' + row['filename']
-        row['active'] = bool(current.get('enabled') and current.get('src') == row['src'])
-    if current.get('src') and not any(row['src'] == current['src'] for row in rows):
-        rows.insert(0, dict(title=current.get('title') or 'Admin-uploaded ad', src=current['src'],
-                            kind=current.get('kind', 'image'), duration=current.get('duration', 10),
-                            active=bool(current.get('enabled')), email=''))
-    return rows
+    from ad_rotation import campaigns
+    return campaigns()
 
 def csrf_token():
     if 'ad_csrf' not in session:
@@ -123,9 +112,12 @@ def register_submissions(app):
             row = connection.execute("SELECT * FROM submissions WHERE id=? AND status='pending'", (submission_id,)).fetchone()
             if not row:
                 abort(404)
+            from ad_rotation import prepare, insert
+            prepare(connection)
             if action == 'approve':
                 ads.MEDIA.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(PRIVATE / row['filename'], ads.MEDIA / row['filename'])
+                insert(connection, row['id'], row['title'], '/static/ads/' + row['filename'], row['kind'], row['duration'])
                 ad = ads.load_ad()
                 ad.update(title=row['title'], src='/static/ads/' + row['filename'], kind=row['kind'],
                           duration=row['duration'], enabled=True, frequency=ad.get('frequency', 'visit'), skip=ad.get('skip', True))

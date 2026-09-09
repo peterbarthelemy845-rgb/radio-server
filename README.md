@@ -48,19 +48,14 @@ cd volumio-radio-ui
 bash install.sh
 
 
-## Pre-roll advertisements
+## Advertisements
 
-Open **Ads** from the admin Stations page (`/admin/ads`). Upload one active local business flyer (JPG, PNG, WebP) or video (MP4, WebM), up to 50 MB. Enable the ad and save. A new upload replaces the active ad. No ad is enabled by default.
+Buy Ads opens the advertiser form inside the homepage. Advertisers submit videos or flyers with contact details, without accounts or passwords. Pending files remain private. Admin Dashboard contains both pending station and pending ad reviews, followed by approved stations and approved ads.
 
-Choose once per browser-tab visit or every station start, the flyer duration / video time limit (5–120 seconds), and whether listeners may skip after five seconds. Videos start muted with a sound toggle. Closing the overlay cancels playback. Failed media is skipped; browsers that block automatic radio playback show a Start radio button. These ads apply to public web playback; device/Pi playback is unchanged.
+Approving an ad adds it to rotation without replacing other approved ads. Enabled ads within their start/end dates are selected in round-robin order across playback requests, one ad per start. The existing once-per-tab-visit or every-start setting still applies. Ads that fail to load are skipped so radio is not blocked.
 
-Listeners must refresh to receive updated settings. Keep `ads.json` and `static/ads/` on persistent storage and preserve them during deployments, just like station data. Uploaded ads are public media files. The upload directory and settings file must be writable by the app. An upstream web server must allow the selected upload size.
+Under Approved custom ads, enable/pause each ad and set optional inclusive start/end dates in UTC. Blank dates have no limit. Plays count video starts or loaded flyers, not completed views, unique people, or audited billable impressions. Duplicate reports for the same playback token are ignored. Counts are dependent on the browser reporting playback.
 
+Ad playback settings control the global enable switch, frequency and Skip option. Admin uploads join rotation too. Existing active ads are migrated automatically; previously approved but inactive ads stay paused until enabled on the dashboard. Uploaded media can be JPG, PNG, WebP, MP4 or WebM, up to 50 MB. Videos start muted with a sound toggle.
 
-## Advertiser submissions and approval
-
-The homepage profile icon opens `/account`, with **Admin Login** and **Ads Login**. Ads Login opens `/ads/submit`: advertisers provide contact details and upload a video or flyer without a password. A successful submission displays a thank-you popup and remains pending.
-
-Admins review submissions in **Admin → Ads → Ads waiting for approval**. **Approve & activate** makes that ad the active pre-roll, replacing the previous active ad. **Reject** leaves the current active ad unchanged. Listeners receive changes when they refresh. Contact details and pending media are admin-only; submitted files are outside the public static directory until approved.
-
-Preserve the entire private `ad_submissions/` directory (SQLite database and submitted files), `ads.json`, and `static/ads/` across deployments. Do not expose `ad_submissions/` through your web server. No advertiser accounts or automatic emails are created.
+Preserve ads.json, static/ads/, and the entire private ad_submissions/ directory (SQLite database and uploaded files) during deployments. Do not expose ad_submissions/ through the web server. Multiple application workers must share the same persistent database/files. No payment processing or automatic emails are included.
