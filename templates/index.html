@@ -304,11 +304,12 @@ function buildStreamUrl(prefix){
   urlBox.value=host+mount;
   urlBox.focus();
 }
-if(addStationForm){addStationForm.addEventListener('submit',async e=>{e.preventDefault();let msg=document.getElementById('addMsg');msg.innerText='Saving...';msg.className='msg';try{let fd=new FormData(e.target);let r=await fetch('/api/add-station',{method:'POST',headers:{'X-Requested-With':'fetch'},body:fd});let d=await r.json().catch(()=>({status:r.ok?'ok':'error',message:r.ok?'Station saved':'Save failed'}));if(r.ok&&d.status==='ok'){msg.innerText='Station submitted. Waiting for approval.';msg.className='msg ok';e.target.reset();if(homeAddBioCount)homeAddBioCount.innerText='0/250';await loadState();renderLibrary()}else{msg.innerText=d.message||'Save failed';msg.className='msg err'}}catch(err){msg.innerText='Save failed';msg.className='msg err'}})}
+if(addStationForm){addStationForm.addEventListener('submit',async e=>{e.preventDefault();let msg=document.getElementById('addMsg');msg.innerText='Saving...';msg.className='msg';try{let fd=new FormData(e.target);let r=await fetch('/api/add-station',{method:'POST',headers:{'X-Requested-With':'fetch'},body:fd});let d=await r.json().catch(()=>({status:r.ok?'ok':'error',message:r.ok?'Station saved':'Save failed'}));if(r.ok&&d.status==='ok'){msg.innerText='Station submitted. Waiting for approval.';msg.className='msg ok';showSubmissionSuccess();e.target.reset();if(homeAddBioCount)homeAddBioCount.innerText='0/250';await loadState();renderLibrary()}else{msg.innerText=d.message||'Save failed';msg.className='msg err'}}catch(err){msg.innerText='Save failed';msg.className='msg err'}})}
 const webAudioEl=document.getElementById('webAudio');
 if(webAudioEl){webAudioEl.addEventListener('play',()=>{appState.playing=true;updateUI();loadNetwork();startListenTracking();});webAudioEl.addEventListener('playing',()=>{appState.playing=true;updateUI();loadNetwork();});webAudioEl.addEventListener('waiting',()=>{appState.playing=true;updateUI();});webAudioEl.addEventListener('pause',()=>{if(window.PUBLIC_WEB){stopListenTracking();appState.playing=false;updateUI();loadNetwork();}});webAudioEl.addEventListener('ended',()=>{stopListenTracking();appState.playing=false;updateUI();loadNetwork();});}
 window.addEventListener('beforeunload',()=>stopListenTracking(true));
 applyLanguage();openPageFromHash();loadState();loadNetwork();loadWifi();loadHaitianTimesNews();setInterval(loadNetwork,5000);setInterval(loadState,30000);setInterval(loadHaitianTimesNews,900000);
 </script>
+{% include 'submission_success.html' %}
 </body>
 </html>

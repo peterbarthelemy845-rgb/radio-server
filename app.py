@@ -1300,11 +1300,12 @@ def admin_clear_viewership():
 
 @app.route('/admin/suspend-station', methods=['POST'])
 def admin_suspend_station():
+    destination = 'admin_pending' if request.form.get('return_to') == 'pending' else 'admin_reports'
     url = (request.form.get('url') or '').strip()
     name = (request.form.get('name') or '').strip()
     reason = (request.form.get('reason') or 'Suspended from report').strip()[:300]
     if name.lower() == 'la voix divine':
-        return redirect('/admin/reports')
+        return redirect(url_for(destination))
     store = load_station_store()
     custom = store.get('custom_stations', [])
     index = find_custom_station_index(custom, url=url, name=name)
@@ -1316,7 +1317,7 @@ def admin_suspend_station():
         custom[index] = station
         store['custom_stations'] = custom
         save_station_store(store)
-    return redirect('/admin/reports')
+    return redirect(url_for(destination))
 
 @app.route('/admin/restore/<int:index>', methods=['POST', 'GET'])
 def admin_restore_station(index):

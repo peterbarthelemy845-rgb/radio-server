@@ -11,6 +11,7 @@
   <div class="top"><h1>Pending Stations</h1><div class="sub">Approve or reject submitted stations.</div></div>
   <div class="card actions">
     <a class="btn link" href="/admin/reports">Reports</a>
+    <a class="btn link" href="{{ url_for('index') }}">Home</a>
     <a class="btn approve" href="/admin/viewership">Viewership</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
   </div>
@@ -51,6 +52,14 @@
           <a class="btn link" href="/admin/edit/{{ loop.index0 }}">Edit</a>
           {% if s.suspended %}
           <form method="post" action="/admin/restore/{{ loop.index0 }}"><button class="btn approve">Restore</button></form>
+          {% elif s.name|lower != 'la voix divine' %}
+          <form method="post" action="{{ url_for('admin_suspend_station') }}">
+            <input type="hidden" name="url" value="{{ s.url }}">
+            <input type="hidden" name="name" value="{{ s.name }}">
+            <input type="hidden" name="reason" value="Suspended by administrator">
+            <input type="hidden" name="return_to" value="pending">
+            <button class="btn" style="background:#b45309">Suspend</button>
+          </form>
           {% endif %}
           <form method="post" action="/admin/delete/{{ loop.index0 }}"><button class="btn reject">Delete</button></form>
         </div>
