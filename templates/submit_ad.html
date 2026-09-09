@@ -1,0 +1,23 @@
+{% extends 'ad_public_base.html' %}{% block title %}Submit an ad{% endblock %}
+{% block content %}<h1>Submit your ad</h1><p>Promote your local business with a video or flyer. An administrator must approve your ad before it can run.</p>
+<section class="card">{% if error %}<p class="error" role="alert">{{ error }} Please reselect your file before trying again.</p>{% endif %}
+{% if submitted %}<p role="status">Thank you for your submission. Your ad is under review.</p>{% endif %}
+<form method="post" enctype="multipart/form-data" id="adSubmissionForm">
+<input type="hidden" name="csrf_token" value="{{ ad_csrf_token() }}">
+<label for="title">Business / ad title</label><input id="title" name="title" maxlength="100" required value="{{ form.get('title', '') }}">
+<label for="contact_name">Your name</label><input id="contact_name" name="contact_name" maxlength="100" autocomplete="name" required value="{{ form.get('contact_name', '') }}">
+<label for="email">Contact email</label><input id="email" name="email" type="email" maxlength="254" autocomplete="email" required value="{{ form.get('email', '') }}">
+<label for="phone">Phone (optional)</label><input id="phone" name="phone" type="tel" maxlength="40" autocomplete="tel" value="{{ form.get('phone', '') }}">
+<label for="media">Video or flyer</label><input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
+<p class="hint">JPG, PNG, WebP, MP4 or WebM. Maximum 50 MB. Your upload stays private until approved.</p>
+<label for="duration">Requested display time (seconds)</label><input id="duration" name="duration" type="number" min="5" max="120" required value="{{ form.get('duration', '10') }}"><p class="hint">For videos, this is the maximum time before the radio starts.</p>
+<label for="notes">Notes for the admin (optional)</label><textarea id="notes" name="notes" maxlength="1000">{{ form.get('notes', '') }}</textarea>
+<label class="check"><input name="consent" type="checkbox" required {% if form.get('consent') %}checked{% endif %}>I have permission to use this content and understand that my ad requires admin approval.</label>
+<button class="button wide" id="adSubmitButton" type="submit">Submit ad for review</button>
+</form></section>
+{% if submitted %}<dialog id="adThanks" aria-labelledby="adThanksTitle"><h2 id="adThanksTitle">Thank you!</h2><p>Thank you for your submission. Your ad is under review.</p><form method="dialog"><button>OK</button></form></dialog>{% endif %}
+<script>
+const adThanks=document.getElementById('adThanks');if(adThanks)adThanks.showModal();
+document.getElementById('adSubmissionForm').addEventListener('submit',()=>{const b=document.getElementById('adSubmitButton');b.disabled=true;b.textContent='Uploading…';});
+window.addEventListener('pageshow',()=>{const b=document.getElementById('adSubmitButton');b.disabled=false;b.textContent='Submit ad for review';});
+</script>{% endblock %}

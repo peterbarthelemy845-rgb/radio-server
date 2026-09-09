@@ -18,7 +18,31 @@ def public_ad():
     ad = load_ad()
     return ad if ad.get('enabled') and ad.get('src') else None
 
+
+
+def save_ad_upload(upload, folder):
+    ext = Path(upload.filename).suffix.lower()
+    if ext not in ('.jpg', '.jpeg', '.png', '.webp', '.mp4', '.webm'):
+        raise ValueError('Upload JPG, PNG, WebP, MP4, or WebM.')
+    raw = upload.stream.read(50 * 1024 * 1024 + 1)
+    if not raw or len(raw) > 50 * 1024 * 1024:
+        raise ValueError('Choose a non-empty file no larger than 50 MB.')
+    valid = ((ext in ('.jpg', '.jpeg') and raw.startswith(b'\xff\xd8\xff')) or
+             (ext == '.png' and raw.startswith(b'\x89PNG\r\n\x1a\n')) or
+             (ext == '.webp' and raw[:4] == b'RIFF' and raw[8:12] == b'WEBP') or
+             (ext == '.mp4' and raw[4:8] == b'ftyp') or
+             (ext == '.webm' and raw.startswith(b'\x1aE\xdf\xa3')))
+    if not valid:
+        raise ValueError('The file content does not match its format.')
+    folder.mkdir(parents=True, exist_ok=True)
+    filename = secrets.token_hex(16) + ext
+    (folder / filename).write_bytes(raw)
+    return filename, 'video' if ext in ('.mp4', '.webm') else 'image'
+
+
 def register_ads(app):
+    from ad_submissions import register_submissions, pending_ads
+    register_submissions(app)
     @app.route('/admin/ads', methods=['GET', 'POST'])
     def admin_ads():
         ad = load_ad()
@@ -33,23 +57,8 @@ def register_ads(app):
                     raise ValueError('Choose a valid frequency.')
                 upload = request.files.get('media')
                 if upload and upload.filename:
-                    ext = Path(upload.filename).suffix.lower()
-                    if ext not in ('.jpg', '.jpeg', '.png', '.webp', '.mp4', '.webm'):
-                        raise ValueError('Upload JPG, PNG, WebP, MP4, or WebM.')
-                    raw = upload.stream.read(50 * 1024 * 1024 + 1)
-                    if not raw or len(raw) > 50 * 1024 * 1024:
-                        raise ValueError('Choose a non-empty file no larger than 50 MB.')
-                    valid = ((ext in ('.jpg', '.jpeg') and raw.startswith(b'\xff\xd8\xff')) or
-                             (ext == '.png' and raw.startswith(b'\x89PNG\r\n\x1a\n')) or
-                             (ext == '.webp' and raw[:4] == b'RIFF' and raw[8:12] == b'WEBP') or
-                             (ext == '.mp4' and raw[4:8] == b'ftyp') or
-                             (ext == '.webm' and raw.startswith(b'\x1aE\xdf\xa3')))
-                    if not valid:
-                        raise ValueError('The file content does not match its format.')
-                    MEDIA.mkdir(parents=True, exist_ok=True)
-                    filename = secrets.token_hex(16) + ext
-                    (MEDIA / filename).write_bytes(raw)
-                    ad.update(src='/static/ads/' + filename, kind='video' if ext in ('.mp4', '.webm') else 'image')
+                    filename, kind = save_ad_upload(upload, MEDIA)
+                    ad.update(src='/static/ads/' + filename, kind=kind)
                 enabled = request.form.get('enabled') == 'on'
                 if enabled and not ad.get('src'):
                     raise ValueError('Upload an ad before enabling it.')
@@ -61,4 +70,4 @@ def register_ads(app):
                 return redirect(url_for('admin_ads', saved='1'))
             except (ValueError, OSError) as exc:
                 error = str(exc) if isinstance(exc, ValueError) else 'Unable to save the ad. Please try again.'
-        return render_template('admin_ads.html', ad=ad, error=error, saved=request.args.get('saved') == '1')
+        return render_template('admin_ads.html', ad=ad, error=error, saved=request.args.get('saved') == '1', pending=pending_ads())

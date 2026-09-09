@@ -12,4 +12,14 @@
 <label for="duration">Flyer display time / maximum video time (seconds)</label><input id="duration" name="duration" type="number" min="5" max="120" value="{{ ad.duration or 10 }}" required>
 <label for="frequency">Show ad</label><select id="frequency" name="frequency"><option value="visit" {% if ad.frequency != 'always' %}selected{% endif %}>Once per visit (browser tab)</option><option value="always" {% if ad.frequency == 'always' %}selected{% endif %}>Before every station start</option></select>
 <label><input type="checkbox" name="skip" {% if ad.get('skip', true) %}checked{% endif %}> Allow Skip after 5 seconds</label>
-<button type="submit">Save ad</button></form></section></main></html>
+<button type="submit">Save ad</button></form></section>
+{% if request.args.get('reviewed') == 'approve' %}<p role="status">Ad approved and activated. The previous active ad has been replaced.</p>{% elif request.args.get('reviewed') == 'reject' %}<p role="status">Ad rejected. The active ad was not changed.</p>{% endif %}
+<section class="card"><h2>Ads waiting for approval</h2><p>Preview each submission below. Approve &amp; activate replaces the current pre-roll ad. Contact details are only visible to admins.</p>
+{% for item in pending %}<article style="border-top:1px solid #cbd5e1;padding:20px 0">
+<h3>{{ item.title }}</h3><p>{{ item.contact_name }} · {{ item.email }}{% if item.phone %} · {{ item.phone }}{% endif %}</p>
+{% if item.notes %}<p>{{ item.notes }}</p>{% endif %}<p>Requested duration: {{ item.duration }} seconds</p>
+{% if item.kind == 'video' %}<video class="preview" src="{{ url_for('submitted_ad_media', submission_id=item.id) }}" controls playsinline preload="metadata"></video>{% else %}<img class="preview" src="{{ url_for('submitted_ad_media', submission_id=item.id) }}" alt="{{ item.title }}">{% endif %}
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<form method="post" action="{{ url_for('moderate_ad', submission_id=item.id, action='approve') }}"><input type="hidden" name="csrf_token" value="{{ ad_csrf_token() }}"><button type="submit">Approve &amp; activate</button></form>
+<form method="post" action="{{ url_for('moderate_ad', submission_id=item.id, action='reject') }}"><input type="hidden" name="csrf_token" value="{{ ad_csrf_token() }}"><button type="submit" style="background:#dc2626">Reject</button></form>
+</div></article>{% else %}<p>No ads waiting for approval.</p>{% endfor %}</section></main></html>

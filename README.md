@@ -55,3 +55,12 @@ Open **Ads** from the admin Stations page (`/admin/ads`). Upload one active loca
 Choose once per browser-tab visit or every station start, the flyer duration / video time limit (5–120 seconds), and whether listeners may skip after five seconds. Videos start muted with a sound toggle. Closing the overlay cancels playback. Failed media is skipped; browsers that block automatic radio playback show a Start radio button. These ads apply to public web playback; device/Pi playback is unchanged.
 
 Listeners must refresh to receive updated settings. Keep `ads.json` and `static/ads/` on persistent storage and preserve them during deployments, just like station data. Uploaded ads are public media files. The upload directory and settings file must be writable by the app. An upstream web server must allow the selected upload size.
+
+
+## Advertiser submissions and approval
+
+The homepage profile icon opens `/account`, with **Admin Login** and **Ads Login**. Ads Login opens `/ads/submit`: advertisers provide contact details and upload a video or flyer without a password. A successful submission displays a thank-you popup and remains pending.
+
+Admins review submissions in **Admin → Ads → Ads waiting for approval**. **Approve & activate** makes that ad the active pre-roll, replacing the previous active ad. **Reject** leaves the current active ad unchanged. Listeners receive changes when they refresh. Contact details and pending media are admin-only; submitted files are outside the public static directory until approved.
+
+Preserve the entire private `ad_submissions/` directory (SQLite database and submitted files), `ads.json`, and `static/ads/` across deployments. Do not expose `ad_submissions/` through your web server. No advertiser accounts or automatic emails are created.
