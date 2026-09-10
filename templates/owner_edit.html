@@ -1,0 +1,8 @@
+{% extends 'ad_public_base.html' %}{% block title %}Edit my station{% endblock %}
+{% block content %}<h1>Edit station</h1><a class="home" href="{{ url_for('owner_dashboard') }}">My stations</a><section class="card"><p>Station code: {{ station.station_code }}</p>{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" enctype="multipart/form-data"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
+<label>Station name<input name="name" maxlength="120" required value="{{ station.name }}"></label>
+<label>Stream URL<input name="url" type="url" maxlength="2000" required value="{{ station.url }}"></label>
+<label>Website / subtitle<input name="subtitle" maxlength="300" value="{{ station.subtitle }}"></label>
+<label>Language<select name="language">{% for code,label in [('ht','Haitian Creole'),('en','English'),('fr','French'),('es','Spanish')] %}<option value="{{ code }}" {% if station.language == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>Bio<textarea name="bio" maxlength="250">{{ station.bio }}</textarea></label><label>Replace logo (optional)<input type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif"></label><button class="wide">Save changes</button></form></section>{% endblock %}

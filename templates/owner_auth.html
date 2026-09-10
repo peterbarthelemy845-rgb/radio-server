@@ -1,0 +1,9 @@
+{% extends 'ad_public_base.html' %}{% block title %}Station Owner Login{% endblock %}
+{% block content %}<h1>{{ 'Create owner account' if register else 'Station Owner Login' }}</h1><section class="card">
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
+<label>Email<input name="email" type="email" maxlength="254" required autocomplete="email"></label>
+<label>Password<input name="password" type="password" minlength="{{ 12 if register else 1 }}" maxlength="128" required autocomplete="{{ 'new-password' if register else 'current-password' }}"></label>
+{% if register %}<p class="hint">Use at least 12 characters. One account per email. Existing stations require admin assignment.</p>{% endif %}
+<button class="wide">{{ 'Create account' if register else 'Sign in' }}</button></form>
+<p><a href="{{ url_for('owner_login' if register else 'owner_register') }}">{{ 'Already registered? Sign in' if register else 'Create an account' }}</a></p></section>{% endblock %}

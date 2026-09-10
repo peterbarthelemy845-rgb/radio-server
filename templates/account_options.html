@@ -1,5 +1,5 @@
 {% extends 'ad_public_base.html' %}{% block title %}Account options{% endblock %}
-{% block content %}<h1>Welcome</h1><p>Manage the station or submit an advertisement.</p><section class="card choices">
+{% block content %}<h1>Welcome</h1><p>Manage the station or submit an advertisement.</p><section class="card choices"><div><a class="button" href="{{ url_for('owner_login') }}">Station Owner Login</a><p class="hint">View and manage your stations, or create an owner account.</p></div>
 <div><a class="button" href="{{ url_for('admin_login') }}">Admin Login</a><p class="hint">Manage stations and review submitted ads.</p></div>
 <div><a class="button" href="{{ url_for('submit_ad') }}">Ads Login</a><p class="hint">Submit your business video or flyer for approval. No account or password needed.</p></div>
 </section>{% endblock %}

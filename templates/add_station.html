@@ -29,7 +29,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
     <p class="sub" data-i18n="saveStream">Save a radio stream from your phone.</p>
   </section>
   <section class="card">
-    <form method="post" action="/api/add-station" enctype="multipart/form-data">
+    <form method="post" action="/api/add-station" enctype="multipart/form-data">{% include 'owner_submission_fields.html' %}
       <div class="row">
         <label for="name" data-i18n="stationNameLabel">Station name</label>
         <input id="name" name="name" type="text" required value="{{ form.name if form else '' }}" placeholder="Example: Test Radio" autocomplete="off">
@@ -59,7 +59,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
       </div>
       <div class="row">
         <label for="contact_email" data-i18n="emailLabel">Contact email</label>
-        <input id="contact_email" name="contact_email" type="email" required value="{{ form.contact_email if form else '' }}" placeholder="owner@example.com" autocomplete="email">
+        <input id="contact_email" name="contact_email" type="email" required placeholder="owner@example.com" autocomplete="email" value="{{ station_owner().email if station_owner() else (form.contact_email|default('') if form is defined else '') }}" {% if station_owner() %}readonly{% endif %}>
       </div>
       <div class="row">
         <label for="language" data-i18n="languageFlagLabel">Language / flag</label>

@@ -1,0 +1,3 @@
+<input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
+{% set current_owner = station_owner() %}
+<p style="font-size:16px;line-height:1.5">{% if current_owner %}Submitting as {{ current_owner.email }}. <a href="{{ url_for('owner_dashboard') }}" style="color:#38bdf8">My stations</a>{% else %}<a href="{{ url_for('owner_login') }}" style="color:#38bdf8">Sign in</a> or <a href="{{ url_for('owner_register') }}" style="color:#38bdf8">create a station owner account</a> before submitting. Your account email is used for ownership.{% endif %}</p>

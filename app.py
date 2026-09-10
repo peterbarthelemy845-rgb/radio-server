@@ -291,6 +291,9 @@ def normalize_station(station):
         "terms_agreed": bool(station.get("terms_agreed")),
         "terms_agreed_at": station.get("terms_agreed_at"),
         "submitted_at": station.get("submitted_at"),
+        "station_code": station.get("station_code", ""),
+        "owner_id": station.get("owner_id", ""),
+        "owner_suspended": bool(station.get("owner_suspended")),
         "suspended": bool(station.get("suspended")),
         "suspended_at": station.get("suspended_at"),
         "suspend_reason": (station.get("suspend_reason") or "").strip(),
@@ -381,7 +384,7 @@ def get_all_streams():
         store = load_station_store()
         for raw in store.get("custom_stations", []):
             station = normalize_station(raw)
-            if station.get("name") and station.get("url") and not station.get("suspended"):
+            if station.get("name") and station.get("url") and not station.get("suspended") and not station.get("owner_suspended"):
                 streams.append(station)
     except Exception as e:
         print("Saved custom station load failed:", e)
@@ -393,7 +396,10 @@ def get_all_streams():
     # Remove duplicates by URL/name.
     clean = []
     seen = set()
+    blocked_urls = {s.get("url") for s in load_station_store().get("custom_stations", []) if s.get("suspended") or s.get("owner_suspended")}
     for s in streams:
+        if s.get("url") in blocked_urls or s.get("owner_suspended") or s.get("suspended"):
+            continue
         if not s.get("flag"):
             language = (s.get("language") or "ht").strip().lower()
             s["flag"] = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}.get(language, "🇭🇹")
@@ -404,7 +410,7 @@ def get_all_streams():
         key = (s.get("url") or s.get("name") or "").strip().lower()
         if key and key not in seen:
             seen.add(key)
-            clean.append(s)
+            clean.append({k: v for k, v in s.items() if k not in ("owner_id", "station_code", "contact_email", "email", "terms_agreed_at", "terms_agreed")})
     return clean
 
 def run_command(cmd: str) -> subprocess.CompletedProcess:
@@ -713,7 +719,7 @@ def build_state():
 
 @app.before_request
 def require_admin_login():
-    if request.path.startswith('/admin') and request.endpoint not in ('admin_login', 'admin_logout'):
+    if (request.path.startswith('/admin') or request.path.startswith('/api/admin/')) and request.endpoint not in ('admin_login', 'admin_logout'):
         if not session.get('admin_logged_in'):
             return redirect(url_for('admin_login', next=request.path))
 
@@ -1152,7 +1158,8 @@ def api_add_station():
     subtitle = (data.get('subtitle') or 'Custom Station').strip()
     website = (data.get('website') or subtitle).strip()
     bio = (data.get('bio') or '').strip()[:250]
-    contact_email = (data.get('contact_email') or data.get('email') or '').strip()
+    from station_owners import require_owner, attach_station
+    contact_email = require_owner()['email']
     terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
     language = (data.get('language') or 'ht').strip().lower()
     form = station_submission_form(name, url, subtitle, bio, language, contact_email)
@@ -1194,17 +1201,18 @@ def api_add_station():
     pending = store.get('pending_stations', [])
     now = int(time.time())
     station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
-    for i, item in enumerate(pending):
-        if (item.get('url') or '').strip() == url:
-            pending[i] = station
-            break
-    else:
-        pending.append(station)
+    if any((item.get('url') or '').strip() == url for item in store.get('custom_stations', []) + pending):
+        message = 'This stream is already submitted. Manage it from your owner dashboard.'
+        if wants_json:
+            return jsonify(status='error', message=message), 409
+        return render_template('add_station.html', status='error', message=message, form=form), 409
+    station = attach_station(station)
+    pending.append(station)
     store['pending_stations'] = pending
     save_station_store(store)
     message = "Station submitted. Waiting for approval."
     if wants_json:
-        return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "version": get_config_version()})
+        return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "station_code": station["station_code"], "version": get_config_version()})
     wifi = get_wifi_status_data()
     return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
 
@@ -1298,6 +1306,16 @@ def export_stations():
     missing = []
     with ZipFile(payload, 'w', ZIP_DEFLATED) as archive:
         archive.writestr('stations.json', json.dumps(store, indent=2, ensure_ascii=False))
+        from station_owners import DATABASE
+        if DATABASE.exists():
+            import sqlite3
+            import tempfile
+            from contextlib import closing
+            with tempfile.TemporaryDirectory() as folder:
+                snapshot = Path(folder) / 'owners.sqlite3'
+                with closing(sqlite3.connect(DATABASE)) as source_db, closing(sqlite3.connect(snapshot)) as backup_db:
+                    source_db.backup(backup_db)
+                archive.write(snapshot, 'owner_data/owners.sqlite3')
         archive.writestr('available-stations.json', json.dumps(available, indent=2, ensure_ascii=False))
         copied = set()
         for station in list(store.get('custom_stations', [])) + list(store.get('pending_stations', [])) + available:
@@ -1311,7 +1329,7 @@ def export_stations():
                     missing.append(path)
                     continue
                 archive.write(candidate, candidate.relative_to(base).as_posix())
-        archive.writestr('RESTORE.txt', 'Station backup\n\nCopy stations.json into the app directory and merge the static/ folder to restore station images. Restart the app. Back up current data before restoring.\n\nIncludes pending, approved and suspended records with contact details and metadata. available-stations.json is a reference snapshot of public/default stations; external images are represented by their URLs.\nMissing local image files: ' + (', '.join(missing) or 'None') + '\n')
+        archive.writestr('RESTORE.txt', 'Station backup\n\nCopy stations.json into the app directory and merge the static/ folder to restore station images. Restore owner_data/owners.sqlite3 when included to retain owner accounts and assignments. This backup contains private contact details and password hashes; keep it private. Restart the app. Back up current data before restoring.\n\nIncludes pending, approved and suspended records with contact details and metadata. available-stations.json is a reference snapshot of public/default stations; external images are represented by their URLs.\nMissing local image files: ' + (', '.join(missing) or 'None') + '\n')
     payload.seek(0)
     response = send_file(payload, mimetype='application/zip', as_attachment=True,
                          download_name='stations-backup-' + time.strftime('%Y%m%d-%H%M%S', time.gmtime()) + '.zip')
@@ -1524,6 +1542,10 @@ def api_admin_stations():
 @app.route('/api/qr-link', methods=['GET'])
 def qr_link():
     return jsonify({"status": "ok", "url": get_add_station_url()})
+
+import sys
+from station_owners import register_owners
+register_owners(app, sys.modules[__name__])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

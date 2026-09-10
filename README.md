@@ -68,3 +68,16 @@ Admin Dashboard → Export stations downloads a ZIP. Save it to your Desktop usi
 The application update ZIP intentionally excludes the empty stations.json placeholder. Extract updates into the existing app directory without deleting its data folders. Export before updates. For a fresh deployment or an ephemeral hosting filesystem, restore stations.json and static files from your backup and use persistent storage; removing a placeholder alone cannot preserve data when a host replaces the entire filesystem.
 
 The first station in the player is ad-free. Other stations follow the existing ad frequency, rotation and schedule settings. Ad submissions use the business/ad title and contact email; a separate personal name is no longer requested.
+
+
+## Station owner accounts
+
+Open Profile → Station Owner Login to register or sign in. Registration uses a unique case-insensitive email and a password of 12–128 characters. Passwords are stored as Werkzeug scrypt hashes; sign-in attempts are limited. The app uses a persistent random session key when ADMIN_SECRET_KEY is not supplied. Session cookies are Secure, HttpOnly and SameSite=Lax by default. Use HTTPS in production. For local HTTP-only device testing, explicitly set SESSION_COOKIE_SECURE=false.
+
+Owners must sign in before Add Station submissions. Every accepted submission receives a random ST- station code and is bound to the signed-in account email. Client-supplied email, owner IDs, and codes do not assign ownership. Duplicate stream submissions are rejected instead of overwriting existing records. An account may own multiple stations, but an email cannot create multiple accounts.
+
+Owner dashboard supports viewing codes/details, editing name/stream/website/language/bio/logo, owner suspension/reactivation, and deletion requests. Admin suspension is independent and cannot be undone by an owner. Only admins can approve permanent deletion or deny a request in the main admin dashboard. Public listings omit account IDs, codes, and contact emails.
+
+Existing stations are not automatically claimed by matching email. The owner first registers, then the administrator verifies the assignment and uses Assign owner account email on the approved station card. This prevents a newly registered email from claiming legacy records. This version does not send mailbox-verification or password-reset emails; registration alone is not proof of mailbox ownership.
+
+Keep owner_data/ (owners.sqlite3 and session.key) on persistent private storage along with stations.json. Export stations now includes a consistent ownership/account database snapshot; protect backups because they contain private email addresses and password hashes. Restore the owner database together with station records to preserve access. Never copy a development database or session.key into production; release ZIPs exclude them. The generated signing key replaces the old insecure fallback, so existing sessions may need to sign in again after this update.

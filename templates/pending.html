@@ -36,6 +36,7 @@
       <div class="empty">No pending stations.</div>
     {% endif %}
   </div>
+  {% include 'station_deletion_requests.html' %}
   <div id="pending-ads">{% include 'pending_ads_section.html' %}</div>
   <div class="card">
     <h2>Approved custom stations</h2>
@@ -52,6 +53,9 @@
         {% endif %}
         <div class="actions">
           <a class="btn link" href="/admin/edit/{{ loop.index0 }}">Edit</a>
+          <p>Station code: {{ s.station_code or 'Not assigned' }}{% if s.owner_suspended %} · Suspended by owner{% endif %}</p>
+          <form method="post" action="{{ url_for('assign_station_owner', index=loop.index0) }}">
+          <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><label>Assign owner account email<input type="email" name="email" required value="{{ s.contact_email or '' }}"></label><button class="btn link">Assign owner</button></form>
           {% if s.suspended %}
           <form method="post" action="/admin/restore/{{ loop.index0 }}"><button class="btn approve">Restore</button></form>
           {% elif s.name|lower != 'la voix divine' %}
