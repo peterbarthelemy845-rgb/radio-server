@@ -777,6 +777,18 @@ def qr_image():
 def index():
     return render_template("index.html", public_web=is_public_website(), preroll_ad=public_ad())
 
+@app.route('/api/resolve-stream', methods=['POST'])
+def resolve_browser_stream():
+    from stream_playlists import resolve_playlist
+    data = request.get_json(silent=True) or {}
+    url = data.get('url')
+    if not isinstance(url, str) or url not in {station.get('url') for station in get_all_streams()}:
+        return jsonify(error='Station is not available'), 400
+    try:
+        return jsonify(url=resolve_playlist(url))
+    except (ValueError, OSError, requests.RequestException):
+        return jsonify(error='Unable to read this station playlist. Please try again.'), 502
+
 @app.route("/api/state", methods=["GET"])
 def get_state():
     return jsonify(build_state())
