@@ -1,10 +1,10 @@
 {% extends 'ad_public_base.html' %}{% block title %}My stations{% endblock %}
-{% block content %}<h1>My stations</h1><p>{{ owner.email }}</p><a class="button" href="{{ url_for('index') }}#add-station">Submit a station</a>
+{% block content %}<h1>My stations</h1><p>{{ owner.email }}</p>
 <form method="post" action="{{ url_for('owner_logout') }}" style="display:inline"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button>Sign out</button></form>
 {% for s in stations %}<section class="card"><h2>{{ s.name }}</h2>{% if s.logo_url %}<img src="{{ s.logo_url }}" alt="Station logo" style="width:80px;height:80px;object-fit:cover;border-radius:14px">{% endif %}<p>Language: {{ s.language }}</p><p><strong>Station code:</strong> {{ s.station_code }}</p><p style="overflow-wrap:anywhere">{{ s.url }}</p><p>{{ s.approval }}{% if s.suspended %} · Suspended by administrator{% endif %}{% if s.owner_suspended %} · Suspended by you{% endif %}</p>
 <p>{{ s.subtitle }}</p><p>{{ s.bio }}</p><p>{{ s.contact_email }}</p>
 <a class="button" href="{{ url_for('owner_station', code=s.station_code) }}">Edit details</a>
 <form method="post" action="{{ url_for('owner_station_action', code=s.station_code, action='reactivate' if s.owner_suspended else 'suspend') }}" style="margin-top:12px"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button>{{ 'Reactivate' if s.owner_suspended else 'Suspend' }}</button></form>
 <details style="margin-top:18px"><summary>Request permanent deletion</summary><p>Only an administrator can delete this station.</p><form method="post" action="{{ url_for('owner_station_action', code=s.station_code, action='request-deletion') }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><label>Reason<textarea name="reason" maxlength="500"></textarea></label><button>Send deletion request</button></form></details></section>
-{% else %}<section class="card"><p>No stations assigned to your account yet. Submit a new station, or ask the administrator to assign an existing one.</p></section>{% endfor %}
+{% else %}<section class="card"><p>No approved stations are currently associated with your account. Contact the administrator.</p></section>{% endfor %}
 {% if deletion_history %}<section class="card"><h2>Deletion requests</h2>{% for item in deletion_history %}<p>{{ item.name }} — {{ item.status }}</p>{% endfor %}</section>{% endif %}{% endblock %}

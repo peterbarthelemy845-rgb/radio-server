@@ -1457,13 +1457,16 @@ def admin_restore_station(index):
         save_station_store(store)
     return redirect('/admin/pending')
 
-@app.route('/admin/approve/<int:index>', methods=['POST', 'GET'])
+@app.route('/admin/approve/<int:index>', methods=['POST'])
 def admin_approve(index):
+    from station_owners import check_token, provision_owner
+    check_token()
     store = load_station_store()
     pending = store.get('pending_stations', [])
     custom = store.get('custom_stations', [])
     if 0 <= index < len(pending):
         station = normalize_station(pending.pop(index))
+        provision_owner(station)
         station.pop('submitted_at', None)
         for item in custom:
             if (item.get('url') or '').strip() == station.get('url'):

@@ -4,7 +4,7 @@ import sqlite3
 import time
 from pathlib import Path
 from contextlib import contextmanager
-from flask import request, session, g, abort, redirect, url_for, render_template, jsonify
+from flask import request, session, g, abort, redirect, url_for, render_template, jsonify, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
 DATA = Path(__file__).resolve().parent / 'owner_data'
@@ -16,6 +16,7 @@ def connect():
     db.row_factory = sqlite3.Row
     db.executescript('''
       CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS owner_access(owner_id TEXT PRIMARY KEY,hash TEXT NOT NULL,version TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS station_ownership(code TEXT PRIMARY KEY,owner_id TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS deletion_requests(id TEXT PRIMARY KEY,code TEXT,owner_id TEXT,name TEXT,reason TEXT,status TEXT,created INTEGER);
       CREATE UNIQUE INDEX IF NOT EXISTS one_pending_deletion ON deletion_requests(code) WHERE status='pending';
@@ -51,8 +52,8 @@ def account():
     if not session.get('owner_id'):
         return None
     with database() as db:
-        row = db.execute('SELECT id,email FROM accounts WHERE id=?', (session['owner_id'],)).fetchone()
-        return dict(row) if row else None
+        row = db.execute('SELECT a.id,a.email,c.version FROM accounts a JOIN owner_access c ON c.owner_id=a.id WHERE a.id=?', (session['owner_id'],)).fetchone()
+        return dict(row) if row and session.get('owner_version') == row['version'] else None
 
 def require_owner():
     owner = account()
@@ -61,14 +62,28 @@ def require_owner():
     return owner
 
 def attach_station(station):
-    owner = account()
-    code = 'ST-' + secrets.token_hex(8).upper()
-    # Email alone never grants access to an existing account or station.
-    owner_id = owner['id'] if owner and owner['email'] == station.get('contact_email', '').strip().casefold() else ''
-    if owner_id:
-        with database() as db:
-            db.execute('INSERT INTO station_ownership VALUES (?,?)', (code, owner_id))
-    station.update(station_code=code, owner_id=owner_id, owner_suspended=False)
+    station.update(station_code='ST-' + secrets.token_hex(8).upper(), owner_id='', owner_suspended=False)
+    return station
+
+def provision_owner(station, rotate=False):
+    email = (station.get('contact_email') or '').strip().casefold()
+    if not email or '@' not in email:
+        abort(400, 'A contact email is required before approving owner access.')
+    with database() as db:
+        owner = db.execute('SELECT id,email FROM accounts WHERE email=?', (email,)).fetchone()
+        if not owner:
+            owner = {'id': secrets.token_hex(16), 'email': email}
+            db.execute('INSERT INTO accounts VALUES (?,?,?)', (owner['id'], email, generate_password_hash(secrets.token_hex(32))))
+        credential = db.execute('SELECT * FROM owner_access WHERE owner_id=?', (owner['id'],)).fetchone()
+        if rotate or not credential:
+            access_code = 'OWN-' + secrets.token_hex(12).upper()
+            db.execute('INSERT OR REPLACE INTO owner_access VALUES (?,?,?)', (owner['id'], generate_password_hash(access_code), secrets.token_hex(16)))
+            flash('Owner login for ' + email + ': ' + access_code + '. Copy this access code and give it privately to the owner. It is shown once.', 'owner-access')
+        else:
+            flash('Station linked to ' + email + '. Their existing access code still works.', 'owner-access')
+        code = station.get('station_code') or 'ST-' + secrets.token_hex(8).upper()
+        db.execute('INSERT OR REPLACE INTO station_ownership VALUES (?,?)', (code, owner['id']))
+        station.update(station_code=code, owner_id=owner['id'], contact_email=email)
     return station
 
 def all_station_rows(store):
@@ -120,7 +135,7 @@ def register_owners(app, radio):
         db = getattr(g, 'owner_write_db', None)
         if db:
             db.commit() if response.status_code < 400 else db.rollback()
-        if request.path.startswith('/owner/'):
+        if request.path.startswith(('/owner', '/admin/')):
             response.headers['Cache-Control'] = 'private, no-store'
         return response
 
@@ -134,24 +149,7 @@ def register_owners(app, radio):
 
     @app.route('/owner/register', methods=['GET', 'POST'])
     def owner_register():
-        error = ''
-        if request.method == 'POST':
-            check_token()
-            email = request.form.get('email', '').strip().casefold()
-            password = request.form.get('password', '')
-            if not radio.is_valid_email(email) or len(email) > 254 or not 12 <= len(password) <= 128:
-                error = 'Enter a valid email and a password between 12 and 128 characters.'
-            else:
-                try:
-                    with database() as db:
-                        id = secrets.token_hex(16)
-                        db.execute('INSERT INTO accounts VALUES (?,?,?)', (id, email, generate_password_hash(password)))
-                    session.clear()
-                    session['owner_id'] = id
-                    return redirect(url_for('owner_dashboard'))
-                except sqlite3.IntegrityError:
-                    error = 'An account already exists for this email. Sign in instead.'
-        return render_template('owner_auth.html', register=True, error=error)
+        return redirect(url_for('owner_login'))
 
     @app.route('/owner/login', methods=['GET', 'POST'])
     def owner_login():
@@ -159,7 +157,7 @@ def register_owners(app, radio):
         if request.method == 'POST':
             check_token()
             email = request.form.get('email', '').strip().casefold()
-            password = request.form.get('password', '')
+            password = request.form.get('access_code', '').strip()
             with database() as db:
                 key = email + '|' + (request.remote_addr or '')
                 attempt = db.execute('SELECT * FROM login_attempts WHERE key=?', (key,)).fetchone()
@@ -167,15 +165,16 @@ def register_owners(app, radio):
                 if attempt and attempt['until'] > now and attempt['count'] >= 5:
                     error = 'Too many attempts. Try again in 15 minutes.'
                 else:
-                    row = db.execute('SELECT * FROM accounts WHERE email=?', (email,)).fetchone()
-                    if row and len(password) <= 128 and check_password_hash(row['password'], password):
+                    row = db.execute('SELECT a.id,c.hash,c.version FROM accounts a JOIN owner_access c ON c.owner_id=a.id WHERE a.email=?', (email,)).fetchone()
+                    if row and len(password) <= 128 and check_password_hash(row['hash'], password):
                         db.execute('DELETE FROM login_attempts WHERE key=?', (key,))
                         session.clear()
                         session['owner_id'] = row['id']
+                        session['owner_version'] = row['version']
                         return redirect(url_for('owner_dashboard'))
                     count = attempt['count'] + 1 if attempt and attempt['until'] > now else 1
                     db.execute('INSERT OR REPLACE INTO login_attempts VALUES (?,?,?)', (key, count, now + 900))
-                    error = 'Invalid email or password.'
+                    error = 'Invalid email or access code.'
         return render_template('owner_auth.html', register=False, error=error)
 
     @app.route('/owner/logout', methods=['POST'])
@@ -262,17 +261,9 @@ def register_owners(app, radio):
         if not session.get('admin_logged_in'):
             abort(403)
         check_token()
-        email = request.form.get('email', '').strip().casefold()
-        with database() as db:
-            owner = db.execute('SELECT id,email FROM accounts WHERE email=?', (email,)).fetchone()
-            if not owner:
-                abort(400, 'The owner must register an account first.')
-            store = radio.load_station_store()
-            if not 0 <= index < len(store.get('custom_stations', [])):
-                abort(404)
-            station = store['custom_stations'][index]
-            code = station.get('station_code') or 'ST-' + secrets.token_hex(8).upper()
-            db.execute('INSERT OR REPLACE INTO station_ownership VALUES (?,?)', (code, owner['id']))
-            station.update(station_code=code, owner_id=owner['id'], contact_email=owner['email'])
-            radio.save_station_store(store)
+        store = radio.load_station_store()
+        if not 0 <= index < len(store.get('custom_stations', [])):
+            abort(404)
+        provision_owner(store['custom_stations'][index], rotate=True)
+        radio.save_station_store(store)
         return redirect(url_for('admin_pending'))
