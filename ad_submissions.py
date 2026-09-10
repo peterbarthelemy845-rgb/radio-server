@@ -48,7 +48,7 @@ def register_submissions(app):
 
     @app.route('/account')
     def account_options():
-        return render_template('account_options.html')
+        return redirect(url_for('owner_login'))
 
     @app.route('/ads/submit', methods=['GET', 'POST'])
     def submit_ad():
