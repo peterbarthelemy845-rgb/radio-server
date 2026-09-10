@@ -25,6 +25,7 @@
         <div class="name">{{ s.flag or 'ðŸ‡­ðŸ‡¹' }} {{ s.name }}</div>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
+        <p>Station code: {{ s.station_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
           <form method="post" action="/admin/approve/{{ loop.index0 }}"><button class="btn approve">Approve</button></form>

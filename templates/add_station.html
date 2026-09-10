@@ -59,7 +59,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
       </div>
       <div class="row">
         <label for="contact_email" data-i18n="emailLabel">Contact email</label>
-        <input id="contact_email" name="contact_email" type="email" required placeholder="owner@example.com" autocomplete="email" value="{{ station_owner().email if station_owner() else (form.contact_email|default('') if form is defined else '') }}" {% if station_owner() %}readonly{% endif %}>
+        <input id="contact_email" name="contact_email" type="email" required placeholder="owner@example.com" autocomplete="email" value="{{ form.contact_email|default('') if form is defined else '' }}" >
       </div>
       <div class="row">
         <label for="language" data-i18n="languageFlagLabel">Language / flag</label>

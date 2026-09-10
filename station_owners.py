@@ -61,11 +61,14 @@ def require_owner():
     return owner
 
 def attach_station(station):
-    owner = require_owner()
+    owner = account()
     code = 'ST-' + secrets.token_hex(8).upper()
-    with database() as db:
-        db.execute('INSERT INTO station_ownership VALUES (?,?)', (code, owner['id']))
-    station.update(station_code=code, owner_id=owner['id'], contact_email=owner['email'], owner_suspended=False)
+    # Email alone never grants access to an existing account or station.
+    owner_id = owner['id'] if owner and owner['email'] == station.get('contact_email', '').strip().casefold() else ''
+    if owner_id:
+        with database() as db:
+            db.execute('INSERT INTO station_ownership VALUES (?,?)', (code, owner_id))
+    station.update(station_code=code, owner_id=owner_id, owner_suspended=False)
     return station
 
 def all_station_rows(store):
@@ -110,10 +113,6 @@ def register_owners(app, radio):
             db.execute('BEGIN IMMEDIATE')
             g.owner_write_db = db
         if request.path == '/api/add-station' and request.method == 'POST':
-            if not account():
-                if request.is_json or request.headers.get('X-Requested-With') == 'fetch':
-                    return jsonify(status='error', message='Please sign in to your station owner account before submitting.', login_url=url_for('owner_login')), 401
-                return redirect(url_for('owner_login'))
             check_token()
 
     @app.after_request

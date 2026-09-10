@@ -1158,8 +1158,8 @@ def api_add_station():
     subtitle = (data.get('subtitle') or 'Custom Station').strip()
     website = (data.get('website') or subtitle).strip()
     bio = (data.get('bio') or '').strip()[:250]
-    from station_owners import require_owner, attach_station
-    contact_email = require_owner()['email']
+    from station_owners import attach_station
+    contact_email = (data.get('contact_email') or data.get('email') or '').strip().casefold()
     terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
     language = (data.get('language') or 'ht').strip().lower()
     form = station_submission_form(name, url, subtitle, bio, language, contact_email)

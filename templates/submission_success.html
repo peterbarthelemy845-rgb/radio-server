@@ -13,7 +13,6 @@
 </dialog>
 <script>
 function showSubmissionSuccess(code){
-  if(code)document.getElementById('submissionSuccessMessage').textContent='Your station is waiting for admin approval. Station code: '+code+'. View it in your Station Owner dashboard.';
   const dialog=document.getElementById('submissionSuccess');
   if(!dialog.open)dialog.showModal();
 }
