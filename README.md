@@ -83,3 +83,8 @@ Owners can view and edit only their associated stations, suspend/reactivate thei
 Preserve owner_data/ (owners.sqlite3 and session.key), stations.json and uploaded static images on persistent private storage. Export stations includes the account/ownership database. Keep backups private because they contain contact information and credential hashes. Restore station records and ownership database together. Release ZIPs do not include runtime databases or signing keys.
 
 Session cookies default to Secure, HttpOnly and SameSite=Lax. Use HTTPS in production; local HTTP-only device testing requires SESSION_COOKIE_SECURE=false. Set a stable ADMIN_SECRET_KEY or preserve the generated owner_data/session.key across deployments. Sign-in attempts are limited. Administrator approval and private delivery of the access code establish access; there is no automatic mailbox-verification service.
+
+Owner dashboard:
+- The owner dashboard includes station management, listening time and recorded sessions for the owner's current station URLs, and a seven-day UTC chart. Recent metrics use retained analytics history; sessions are not unique people.
+- Uploaded ads are matched to the account's submission email and show review status and campaign play counts. Private previews require the matching owner session.
+- Station reference codes are available in a popup from the top toolbar. Private login access codes remain separate and are shown to the administrator only when generated.

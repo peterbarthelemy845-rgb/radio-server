@@ -4,7 +4,7 @@ import sqlite3
 import time
 from pathlib import Path
 from contextlib import contextmanager
-from flask import request, session, g, abort, redirect, url_for, render_template, jsonify, flash
+from flask import request, session, g, abort, redirect, url_for, render_template, jsonify, flash, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 
 DATA = Path(__file__).resolve().parent / 'owner_data'
@@ -106,6 +106,42 @@ def deletion_requests():
     with database() as db:
         return [dict(row) for row in db.execute("SELECT d.*,a.email FROM deletion_requests d JOIN accounts a ON a.id=d.owner_id WHERE status='pending' ORDER BY created")]
 
+def owner_ad_rows(owner):
+    import ad_submissions
+    import ad_rotation
+    with ad_submissions.database() as db:
+        rows = [dict(row) for row in db.execute('SELECT * FROM submissions WHERE lower(trim(email))=? ORDER BY created DESC', (owner['email'],))]
+    campaigns = {row['id']: row for row in ad_rotation.campaigns()}
+    for row in rows:
+        campaign = campaigns.get(row['id'], {})
+        row.update(plays=campaign.get('plays', 0), active=campaign.get('active', False), start=campaign.get('start', ''), end=campaign.get('end', ''))
+    return rows
+
+def owner_viewership(stations, analytics, radio):
+    now = int(time.time())
+    results = []
+    for station in stations:
+        url = station.get('url', '')
+        events = [e for e in analytics.get('sessions', []) if e.get('url') == url]
+        totals = [v for v in analytics.get('totals', {}).values() if v.get('url') == url]
+        total = sum(max(0, int(v.get('seconds') or 0)) for v in totals)
+        windows = []
+        for days, label in [(1, 'Last 24 hours'), (7, 'Last 7 days'), (30, 'Last 30 days')]:
+            selected = [e for e in events if now-days*86400 <= int(e.get('listened_at') or 0) <= now]
+            duration = sum(max(0, int(e.get('seconds') or 0)) for e in selected)
+            sessions = len({e['session_id'] for e in selected if e.get('session_id')})
+            windows.append(dict(label=label, duration=radio.format_duration(duration), sessions=sessions))
+        days = []
+        for offset in range(6, -1, -1):
+            start = (now//86400-offset)*86400
+            seconds = sum(max(0, int(e.get('seconds') or 0)) for e in events if start <= int(e.get('listened_at') or 0) < start+86400)
+            days.append(dict(label=time.strftime('%a', time.gmtime(start)), minutes=round(seconds/60, 1), seconds=seconds))
+        peak = max([d['seconds'] for d in days] + [1])
+        for day in days:
+            day['height'] = round(day['seconds']/peak*100)
+        results.append(dict(name=station['name'], total_seconds=total, duration=radio.format_duration(total), windows=windows, days=days))
+    return results
+
 def register_owners(app, radio):
     # Persist a non-public signing key when no explicit deployment secret is set.
     if not os.environ.get('ADMIN_SECRET_KEY'):
@@ -193,7 +229,24 @@ def register_owners(app, radio):
             codes = {r['code'] for r in db.execute('SELECT code FROM station_ownership WHERE owner_id=?', (owner['id'],))}
             requests = [dict(r) for r in db.execute('SELECT * FROM deletion_requests WHERE owner_id=? ORDER BY created DESC', (owner['id'],))]
         rows = [dict(s, approval='Pending review' if group == 'pending_stations' else 'Approved') for group, s in all_station_rows(store) if s.get('owner_id') == owner['id'] and s.get('station_code') in codes]
-        return render_template('owner_dashboard.html', owner=owner, stations=rows, deletion_history=requests)
+        stats = owner_viewership(rows, radio.load_analytics(), radio)
+        uploaded_ads = owner_ad_rows(owner)
+        return render_template('owner_dashboard.html', owner=owner, stations=rows, deletion_history=requests, viewership=stats, uploaded_ads=uploaded_ads, total_duration=radio.format_duration(sum(s['total_seconds'] for s in stats)), daily_sessions=sum(s['windows'][0]['sessions'] for s in stats))
+
+    @app.route('/owner/ad/<id>/media')
+    def owner_ad_media(id):
+        owner = require_owner()
+        import ad_submissions
+        with ad_submissions.database() as db:
+            row = db.execute('SELECT filename FROM submissions WHERE id=? AND lower(trim(email))=?', (id, owner['email'])).fetchone()
+        if not row:
+            abort(404)
+        path = (ad_submissions.PRIVATE / row['filename']).resolve()
+        if ad_submissions.PRIVATE.resolve() not in path.parents or not path.is_file():
+            abort(404)
+        response = send_file(path, conditional=True)
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
 
     @app.route('/owner/station/<code>', methods=['GET', 'POST'])
     def owner_station(code):
