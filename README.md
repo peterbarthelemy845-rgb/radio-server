@@ -59,3 +59,12 @@ Under Approved custom ads, enable/pause each ad and set optional inclusive start
 Ad playback settings control the global enable switch, frequency and Skip option. Admin uploads join rotation too. Existing active ads are migrated automatically; previously approved but inactive ads stay paused until enabled on the dashboard. Uploaded media can be JPG, PNG, WebP, MP4 or WebM, up to 50 MB. Videos start muted with a sound toggle.
 
 Preserve ads.json, static/ads/, and the entire private ad_submissions/ directory (SQLite database and uploaded files) during deployments. Do not expose ad_submissions/ through the web server. Multiple application workers must share the same persistent database/files. No payment processing or automatic emails are included.
+
+
+## Station backups and safe updates
+
+Admin Dashboard → Export stations downloads a ZIP. Save it to your Desktop using the browser save dialog (or move it from Downloads). It contains stations.json with pending, approved and suspended station records, local logos/backgrounds referenced by stations, a public/default station reference list, and restore instructions. External image URLs are retained but remote image files are not downloaded.
+
+The application update ZIP intentionally excludes the empty stations.json placeholder. Extract updates into the existing app directory without deleting its data folders. Export before updates. For a fresh deployment or an ephemeral hosting filesystem, restore stations.json and static files from your backup and use persistent storage; removing a placeholder alone cannot preserve data when a host replaces the entire filesystem.
+
+The first station in the player is ad-free. Other stations follow the existing ad frequency, rotation and schedule settings. Ad submissions use the business/ad title and contact email; a separate personal name is no longer requested.

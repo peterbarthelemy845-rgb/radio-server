@@ -1,7 +1,7 @@
 {% if request.args.get('reviewed') == 'approve' %}<p role="status">Ad approved and activated. It is now included in ad rotation.</p>{% elif request.args.get('reviewed') == 'reject' %}<p role="status">Ad rejected. The active ad was not changed.</p>{% endif %}
 <section class="card"><h2>Ads waiting for approval</h2><p>Preview each submission below. Approve &amp; activate adds the ad to rotation. Contact details are only visible to admins.</p>
 {% for item in pending_ads %}<article style="border-top:1px solid #cbd5e1;padding:20px 0">
-<h3>{{ item.title }}</h3><p>{{ item.contact_name }} Â· {{ item.email }}{% if item.phone %} Â· {{ item.phone }}{% endif %}</p>
+<h3>{{ item.title }}</h3><p>{{ item.email }}{% if item.phone %} Â· {{ item.phone }}{% endif %}</p>
 {% if item.notes %}<p>{{ item.notes }}</p>{% endif %}<p>Requested duration: {{ item.duration }} seconds</p>
 {% if item.kind == 'video' %}<video style="display:block;max-width:100%;max-height:260px;margin:12px 0;border-radius:14px" src="{{ url_for('submitted_ad_media', submission_id=item.id) }}" controls playsinline preload="metadata"></video>{% else %}<img style="display:block;max-width:100%;max-height:260px;margin:12px 0;border-radius:14px" src="{{ url_for('submitted_ad_media', submission_id=item.id) }}" alt="{{ item.title }}">{% endif %}
 <div style="display:flex;gap:12px;flex-wrap:wrap">

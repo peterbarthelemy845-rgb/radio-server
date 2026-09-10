@@ -222,7 +222,9 @@ async function playPreset(p){
   let playbackUrl=p.url;
   if(window.PUBLIC_WEB){try{playbackUrl=await browserStreamUrl(p.url);}catch(e){if(requestId!==stationPlayRequest)return;const status=document.getElementById('networkStatus');status.innerText='This station could not load. Tap Play to retry.';status.style.color='#ffd166';return;}}
   if(requestId!==stationPlayRequest)return;
-  if(window.PUBLIC_WEB && stationRetryUrl!==p.url && !(await runPreroll()))return;
+  const firstStation=appState.presets&&appState.presets[0];
+  const adFreeStation=firstStation && firstStation.url===p.url;
+  if(window.PUBLIC_WEB && !adFreeStation && stationRetryUrl!==p.url && !(await runPreroll()))return;
   if(requestId!==stationPlayRequest)return;
   appState.playing=true;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();loadNetwork();
   if(window.PUBLIC_WEB){

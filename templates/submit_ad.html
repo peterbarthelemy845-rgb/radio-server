@@ -6,7 +6,6 @@
 <form method="post" enctype="multipart/form-data" id="adSubmissionForm">
 <input type="hidden" name="csrf_token" value="{{ ad_csrf_token() }}">
 <label for="title">Business / ad title</label><input id="title" name="title" maxlength="100" required value="{{ form.get('title', '') }}">
-<label for="contact_name">Your name</label><input id="contact_name" name="contact_name" maxlength="100" autocomplete="name" required value="{{ form.get('contact_name', '') }}">
 <label for="email">Contact email</label><input id="email" name="email" type="email" maxlength="254" autocomplete="email" required value="{{ form.get('email', '') }}">
 <label for="media">Video or flyer</label><input id="media" name="media" type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" required>
 <p class="hint">JPG, PNG, WebP, MP4 or WebM. Maximum 50 MB. Your upload stays private until approved.</p>

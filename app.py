@@ -1284,6 +1284,40 @@ def admin_pending():
     store = load_station_store()
     return render_template('pending.html', pending=store.get('pending_stations', []), approved=store.get('custom_stations', []), approved_ads=approved_ads(), pending_ads=pending_ads())
 
+@app.route('/admin/export-stations', methods=['GET'])
+def export_stations():
+    from io import BytesIO
+    from pathlib import Path
+    from zipfile import ZipFile, ZIP_DEFLATED
+    from flask import send_file
+    store = load_station_store()
+    available = get_all_streams()
+    payload = BytesIO()
+    base = Path(app.root_path).resolve()
+    static = (base / 'static').resolve()
+    missing = []
+    with ZipFile(payload, 'w', ZIP_DEFLATED) as archive:
+        archive.writestr('stations.json', json.dumps(store, indent=2, ensure_ascii=False))
+        archive.writestr('available-stations.json', json.dumps(available, indent=2, ensure_ascii=False))
+        copied = set()
+        for station in list(store.get('custom_stations', [])) + list(store.get('pending_stations', [])) + available:
+            for field in ('logo_url', 'wallpaper'):
+                path = station.get(field) or ''
+                if not path.startswith('/static/') or path in copied:
+                    continue
+                copied.add(path)
+                candidate = (base / path.lstrip('/')).resolve()
+                if static not in candidate.parents or not candidate.is_file():
+                    missing.append(path)
+                    continue
+                archive.write(candidate, candidate.relative_to(base).as_posix())
+        archive.writestr('RESTORE.txt', 'Station backup\n\nCopy stations.json into the app directory and merge the static/ folder to restore station images. Restart the app. Back up current data before restoring.\n\nIncludes pending, approved and suspended records with contact details and metadata. available-stations.json is a reference snapshot of public/default stations; external images are represented by their URLs.\nMissing local image files: ' + (', '.join(missing) or 'None') + '\n')
+    payload.seek(0)
+    response = send_file(payload, mimetype='application/zip', as_attachment=True,
+                         download_name='stations-backup-' + time.strftime('%Y%m%d-%H%M%S', time.gmtime()) + '.zip')
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
 @app.route('/admin/stations', methods=['GET'])
 def admin_stations():
     return redirect('/admin/pending')

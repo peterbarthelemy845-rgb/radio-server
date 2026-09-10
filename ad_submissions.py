@@ -59,12 +59,12 @@ def register_submissions(app):
             filename = None
             try:
                 title = form.get('title', '').strip()
-                name = form.get('contact_name', '').strip()
+                name = title
                 email = form.get('email', '').strip()
                 phone = form.get('phone', '').strip()
                 notes = form.get('notes', '').strip()
-                if not title or len(title) > 100 or not name or len(name) > 100:
-                    raise ValueError('Enter a business/ad title and your name (up to 100 characters each).')
+                if not title or len(title) > 100:
+                    raise ValueError('Enter a business/ad title (up to 100 characters).')
                 if len(email) > 254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
                     raise ValueError('Enter a valid contact email.')
                 if len(phone) > 40 or len(notes) > 1000:
