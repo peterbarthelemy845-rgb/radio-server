@@ -208,8 +208,9 @@ const resolvedStationUrls=new Map();
 async function browserStreamUrl(url){
   if(!/\.(pls|m3u)$/i.test(new URL(url,location.href).pathname))return url;
   if(resolvedStationUrls.has(url))return resolvedStationUrls.get(url);
-  const response=await fetch('/api/resolve-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url}),signal:AbortSignal.timeout(20000)});
-  const result=await response.json();
+  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),20000);
+  let response,result;
+  try{response=await fetch('/api/resolve-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url}),signal:controller.signal});result=await response.json().catch(()=>({}));}finally{clearTimeout(timeout);}
   if(!response.ok||!result.url)throw new Error(result.error||'Unable to read station playlist');
   resolvedStationUrls.set(url,result.url);return result.url;
 }
@@ -217,8 +218,9 @@ async function playPreset(p){
   if(window.prerollBusy)return;
   const requestId=++stationPlayRequest;
   if(!p||!p.url){await loadState();if(requestId!==stationPlayRequest)return;p=currentPreset();if(!p||!p.url)return;}
+  if(window.PUBLIC_WEB){const audio=document.getElementById('webAudio');stopListenTracking();audio.pause();appState.playing=false;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();}
   let playbackUrl=p.url;
-  if(window.PUBLIC_WEB){try{playbackUrl=await browserStreamUrl(p.url);}catch(e){if(requestId!==stationPlayRequest)return;const status=document.getElementById('networkStatus');status.innerText='Unable to read station playlist. Try again.';status.style.color='#ffd166';return;}}
+  if(window.PUBLIC_WEB){try{playbackUrl=await browserStreamUrl(p.url);}catch(e){if(requestId!==stationPlayRequest)return;const status=document.getElementById('networkStatus');status.innerText='This station could not load. Tap Play to retry.';status.style.color='#ffd166';return;}}
   if(requestId!==stationPlayRequest)return;
   if(window.PUBLIC_WEB && stationRetryUrl!==p.url && !(await runPreroll()))return;
   if(requestId!==stationPlayRequest)return;
