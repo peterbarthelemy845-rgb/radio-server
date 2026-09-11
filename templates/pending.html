@@ -4,7 +4,8 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 
 <title>Admin Dashboard</title><style>:root{--bg:#071642;--card:#fff;--text:#0f172a;--muted:#64748b;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--line:#dbe4f0}
-*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#102a78,#071642);color:var(--text);min-height:100vh;padding:22px}.wrap{max-width:900px;margin:0 auto}.top{color:#fff;margin-bottom:18px}h1{margin:0;font-size:34px}.sub{opacity:.8;margin-top:6px}.card{background:var(--card);border-radius:22px;padding:20px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.22)}.station{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.station.suspended{background:#fff7ed;border-color:#fed7aa}.name{font-weight:900;font-size:20px}.url{color:var(--muted);font-size:14px;word-break:break-all;margin:8px 0}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:12px;padding:12px 16px;color:#fff;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block}.approve{background:var(--green)}.reject{background:var(--red)}.link{background:var(--blue)}.badge{display:inline-block;border-radius:999px;padding:6px 10px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:900;margin-top:8px}.empty{color:var(--muted);font-weight:700;padding:12px 0}.thumb{width:60px;height:60px;border-radius:14px;object-fit:cover;float:right;margin-left:12px}.field{margin:14px 0}label{font-weight:900;display:block;margin-bottom:7px}input{width:100%;min-height:52px;border:2px solid #dbe4f0;border-radius:14px;padding:12px 14px;font-size:17px}.error{background:#fee2e2;color:#991b1b;padding:12px;border-radius:12px;font-weight:900}@media(max-width:520px){body{padding:12px}h1{font-size:28px}.card{padding:16px;border-radius:18px}.btn{width:100%;text-align:center}.thumb{float:none;margin:0 0 10px 0}}</style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(180deg,#102a78,#071642);color:var(--text);min-height:100vh;padding:22px}.wrap{max-width:900px;margin:0 auto}.top{color:#fff;margin-bottom:18px}h1{margin:0;font-size:34px}.sub{opacity:.8;margin-top:6px}.card{background:var(--card);border-radius:22px;padding:20px;margin:16px 0;box-shadow:0 18px 45px rgba(0,0,0,.22)}.station{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.station.suspended{background:#fff7ed;border-color:#fed7aa}.name{font-weight:900;font-size:20px}.url{color:var(--muted);font-size:14px;word-break:break-all;margin:8px 0}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:12px;padding:12px 16px;color:#fff;font-weight:900;cursor:pointer;text-decoration:none;display:inline-block}.approve{background:var(--green)}.reject{background:var(--red)}.link{background:var(--blue)}.badge{display:inline-block;border-radius:999px;padding:6px 10px;background:#fee2e2;color:#991b1b;font-size:12px;font-weight:900;margin-top:8px}.empty{color:var(--muted);font-weight:700;padding:12px 0}.thumb{width:60px;height:60px;border-radius:14px;object-fit:cover;float:right;margin-left:12px}.field{margin:14px 0}label{font-weight:900;display:block;margin-bottom:7px}input{width:100%;min-height:52px;border:2px solid #dbe4f0;border-radius:14px;padding:12px 14px;font-size:17px}.error{background:#fee2e2;color:#991b1b;padding:12px;border-radius:12px;font-weight:900}@media(max-width:520px){body{padding:12px}h1{font-size:28px}.card{padding:16px;border-radius:18px}.btn{width:100%;text-align:center}.thumb{float:none;margin:0 0 10px 0}}.wrap{max-width:1120px}.overview{display:flex;gap:12px;flex-wrap:wrap}.overview a{flex:1;background:#fff;color:#173b85;padding:18px;border-radius:16px;text-decoration:none;min-width:160px}.overview strong{font-size:26px;display:block;margin-top:8px}.filter{display:flex;align-items:end;gap:12px;flex-wrap:wrap}.filter label{flex:1;min-width:160px;margin:0}.filter select{display:block;width:100%;min-height:52px;border:2px solid #dbe4f0;border-radius:14px;padding:10px;font:inherit}.pager{display:flex;gap:16px;align-items:center;justify-content:space-between;margin:18px 0}.pager a{color:#1d4ed8}.station .actions{align-items:center}.station details{margin-top:12px}.station summary{cursor:pointer;font-weight:bold;color:#1744a4}section{scroll-margin-top:16px}
+details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card[open]>summary{margin-bottom:20px}@media(max-width:520px){.wrap>.actions .btn{width:auto;flex:1;text-align:center}.filter label{flex-basis:100%}.overview a{font-size:14px}details.card>summary{font-size:20px}} </style>
 </head>
 <body>
 <div class="wrap">{% for message in get_flashed_messages(category_filter=['owner-access']) %}<div class="card" role="status" style="overflow-wrap:anywhere;user-select:text">{{ message }}</div>{% endfor %}
@@ -16,35 +17,37 @@
     <a class="btn approve" href="/admin/viewership">Viewership</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
   </div>
-  <div class="card">
-    <h2>Stations waiting for approval</h2>
+  <div class="overview"><a href="#pending-stations">Stations awaiting review<strong>{{ pending_count }}</strong></a><a href="#approved-stations">Approved stations<strong>{{ approved_count }}</strong></a><a href="#pending-ads">Ads awaiting review<strong>{{ pending_ads|length }}</strong></a><a href="#approved-ads">Approved ads<strong>{{ approved_ads|length }}</strong></a></div>
+  <form class="card filter" method="get"><label>Find a station<input name="q" value="{{ query }}" placeholder="Name, email, station code or stream URL"></label><label>Status<select name="status"><option value="all">All stations</option><option value="active" {% if station_status == 'active' %}selected{% endif %}>Not suspended</option><option value="suspended" {% if station_status == 'suspended' %}selected{% endif %}>Suspended</option></select></label><button class="btn link">Search</button><a href="/admin/pending">Clear</a></form>
+  <details class="card" id="pending-stations" {% if pending_count %}open{% endif %}><summary>Stations waiting for approval ({{ pending_count }})</summary>
+    {% set pager = pending_page %}{% include 'station_pager.html' %}
     {% if pending %}
       {% for s in pending %}
       <div class="station {% if s.suspended %}suspended{% endif %}">
         {% if s.logo_url or s.wallpaper %}<img class="thumb" src="{{ s.logo_url or s.wallpaper }}">{% endif %}
-        <div class="name">{{ s.flag or 'ðŸ‡­ðŸ‡¹' }} {{ s.name }}</div>
+        <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
         <p>Station code: {{ s.station_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
-          <form method="post" action="/admin/approve/{{ loop.index0 }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>
-          <form method="post" action="/admin/reject/{{ loop.index0 }}"><button class="btn reject">Reject</button></form>
+          <form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>
+          <form method="post" action="/admin/reject/{{ s._index }}"><button class="btn reject">Reject</button></form>
         </div>
       </div>
       {% endfor %}
     {% else %}
       <div class="empty">No pending stations.</div>
     {% endif %}
-  </div>
+  </details>
   {% include 'station_deletion_requests.html' %}
   <div id="pending-ads">{% include 'pending_ads_section.html' %}</div>
   <div class="card">
-    <h2>Approved custom stations</h2>
+    <h2 id="approved-stations">Approved custom stations</h2>{% set pager = approved_page %}{% include "station_pager.html" %}
     {% if approved %}
       {% for s in approved %}
       <div class="station">
-        <div class="name">{{ s.flag or 'ðŸ‡­ðŸ‡¹' }} {{ s.name }}</div>
+        <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
@@ -53,12 +56,11 @@
           {% if s.suspend_reason %}<div class="url">Reason: {{ s.suspend_reason }}</div>{% endif %}
         {% endif %}
         <div class="actions">
-          <a class="btn link" href="/admin/edit/{{ loop.index0 }}">Edit</a>
+          <a class="btn link" href="/admin/edit/{{ s._index }}">Edit</a>
           <p>Station code: {{ s.station_code or 'Not assigned' }}{% if s.owner_suspended %} · Suspended by owner{% endif %}</p>
-          <form method="post" action="{{ url_for('assign_station_owner', index=loop.index0) }}">
-          <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><p>Owner email: {{ s.contact_email }}</p><button class="btn link">Generate new access code</button><p class="small">Replaces this owner’s code for all their stations.</p></form>
+
           {% if s.suspended %}
-          <form method="post" action="/admin/restore/{{ loop.index0 }}"><button class="btn approve">Restore</button></form>
+          <form method="post" action="/admin/restore/{{ s._index }}"><button class="btn approve">Restore</button></form>
           {% elif s.name|lower != 'la voix divine' %}
           <form method="post" action="{{ url_for('admin_suspend_station') }}">
             <input type="hidden" name="url" value="{{ s.url }}">
@@ -68,14 +70,14 @@
             <button class="btn" style="background:#b45309">Suspend</button>
           </form>
           {% endif %}
-          <form method="post" action="/admin/delete/{{ loop.index0 }}"><button class="btn reject">Delete</button></form>
-        </div>
+          <form method="post" action="/admin/delete/{{ s._index }}"><button class="btn reject">Delete</button></form>
+        </div><details><summary>Owner access settings</summary>          <form method="post" action="{{ url_for('assign_station_owner', index=s._index) }}">
+          <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><p>Owner email: {{ s.contact_email }}</p><button class="btn link">Generate new access code</button><p class="small">Replaces this owner’s code for all their stations.</p></form></details>
       </div>
       {% endfor %}
     {% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}
   </div>
-  <div class="card">
-    <h2 id="approved-ads">Approved custom ads</h2>
+  <details class="card"><summary id="approved-ads">Approved custom ads ({{ approved_ads|length }})</summary>
     <p>Enabled ads rotate one at a time. Dates use UTC; blank dates have no limit. Play counts record when a video starts or a flyer loads, not completed views.</p>
     {% if request.args.get('ad_error') %}<p role="alert">Invalid dates. The end date must be on or after the start date.</p>{% endif %}
     {% for ad in approved_ads %}
@@ -92,13 +94,13 @@
       </form>
       {% if ad.email %}<div class="url">Contact: {{ ad.email }}</div>{% endif %}
       {% if ad.kind == 'video' %}
-      <video src="{{ ad.src }}" controls playsinline preload="metadata" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px"></video>
+      <video src="{{ ad.src }}" controls playsinline preload="none" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px"></video>
       {% else %}
       <img src="{{ ad.src }}" alt="{{ ad.title }}" loading="lazy" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px">
       {% endif %}
     </div>
     {% else %}<div class="empty">No approved custom ads yet.</div>{% endfor %}
     <div class="actions"><a class="btn link" href="{{ url_for('admin_ads') }}">Ad playback settings</a></div>
-  </div>
+  </details>
 </div>
 </body></html>

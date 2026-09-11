@@ -1290,7 +1290,26 @@ def api_listen_heartbeat():
 def admin_pending():
     from ad_submissions import approved_ads, pending_ads
     store = load_station_store()
-    return render_template('pending.html', pending=store.get('pending_stations', []), approved=store.get('custom_stations', []), approved_ads=approved_ads(), pending_ads=pending_ads())
+    query = request.args.get('q', '').strip()[:200]
+    status = request.args.get('status', 'all')
+    def station_page(group, key):
+        rows = [dict(row, _index=i) for i, row in enumerate(store.get(group, []))]
+        rows = [row for row in rows if query.casefold() in ' '.join(str(row.get(k, '')) for k in ('name','url','contact_email','station_code')).casefold()]
+        if status in ('active', 'suspended'):
+            rows = [row for row in rows if bool(row.get('suspended') or row.get('owner_suspended')) == (status == 'suspended')]
+        pages = max(1, (len(rows)+19)//20)
+        try:
+            page = max(1, min(pages, int(request.args.get(key, 1))))
+        except ValueError:
+            page = 1
+        def link(number):
+            args = request.args.to_dict()
+            args[key] = number
+            return url_for('admin_pending', **args)
+        return rows[(page-1)*20:page*20], dict(page=page, pages=pages, total=len(rows), previous=link(page-1), next=link(page+1))
+    pending, pending_page = station_page('pending_stations', 'pp')
+    approved, approved_page = station_page('custom_stations', 'ap')
+    return render_template('pending.html', pending=pending, approved=approved, approved_ads=approved_ads(), pending_ads=pending_ads(), pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
 
 @app.route('/admin/export-stations', methods=['GET'])
 def export_stations():

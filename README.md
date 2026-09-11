@@ -88,3 +88,8 @@ Owner dashboard:
 - The owner dashboard includes station management, listening time and recorded sessions for the owner's current station URLs, and a seven-day UTC chart. Recent metrics use retained analytics history; sessions are not unique people.
 - Uploaded ads are matched to the account's submission email and show review status and campaign play counts. Private previews require the matching owner session.
 - Station reference codes are available in a popup from the top toolbar. Private login access codes remain separate and are shown to the administrator only when generated.
+
+Admin dashboard scaling and deletion protection:
+- Station queues support server-side search (name, email, station reference and URL), suspension filters and 20-record pages. Empty review queues collapse; owner credential settings are expandable.
+- Every station deletion, pending-station rejection and approval of an owner deletion request requires a confirmation plus the current Google Authenticator code using the existing ADMIN_TOTP_SECRET. Deletion is disabled when that secret is not configured.
+- Confirmation expires after ten minutes and is bound to the selected station. Five incorrect deletion codes trigger a 15-minute cooldown. Google Authenticator setup remains the existing deployment configuration.

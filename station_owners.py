@@ -163,6 +163,49 @@ def register_owners(app, radio):
             db = connect()
             db.execute('BEGIN IMMEDIATE')
             g.owner_write_db = db
+        deleting = request.endpoint in ('admin_delete_station', 'admin_reject') or (request.endpoint == 'admin_station_deletion' and request.view_args.get('decision') == 'approve')
+        if deleting:
+            from itsdangerous import URLSafeTimedSerializer, BadSignature
+            if not session.get('admin_logged_in'):
+                abort(403)
+            if request.endpoint == 'admin_station_deletion':
+                with database() as db:
+                    row = db.execute("SELECT * FROM deletion_requests WHERE id=? AND status='pending'", (request.view_args['id'],)).fetchone()
+                if not row:
+                    abort(404)
+                identity = dict(code=row['code'], owner=row['owner_id'], name=row['name'])
+            else:
+                group = 'custom_stations' if request.endpoint == 'admin_delete_station' else 'pending_stations'
+                rows = radio.load_station_store().get(group, [])
+                index = request.view_args['index']
+                if not 0 <= index < len(rows):
+                    abort(404)
+                identity = dict(code=rows[index].get('station_code'), url=rows[index].get('url'), name=rows[index].get('name'))
+            signer = URLSafeTimedSerializer(app.secret_key, salt='station-deletion')
+            payload = dict(path=request.path, station=identity)
+            error = ''
+            if request.method == 'POST' and request.form.get('confirmation'):
+                check_token()
+                try:
+                    if signer.loads(request.form['confirmation'], max_age=600) != payload:
+                        abort(409, 'The station list changed. Return to the dashboard and select the station again.')
+                except BadSignature:
+                    abort(400, 'Confirmation expired. Return to the dashboard.')
+                now = int(time.time())
+                with database() as db:
+                    attempt = db.execute("SELECT * FROM login_attempts WHERE key='admin-delete'").fetchone()
+                    if attempt and attempt['until'] > now and attempt['count'] >= 5:
+                        error = 'Too many incorrect codes. Try again in 15 minutes.'
+                    elif not radio.is_totp_configured():
+                        error = 'Configure Google Authenticator (ADMIN_TOTP_SECRET) before deleting stations.'
+                    elif radio.verify_admin_totp(request.form.get('totp_code', '')):
+                        db.execute("DELETE FROM login_attempts WHERE key='admin-delete'")
+                        return None
+                    else:
+                        count = attempt['count'] + 1 if attempt and attempt['until'] > now else 1
+                        db.execute('INSERT OR REPLACE INTO login_attempts VALUES (?,?,?)', ('admin-delete', count, now + 900))
+                        error = 'Incorrect authenticator code. The station has not been deleted.'
+            return render_template('confirm_station_delete.html', station=identity, confirmation=signer.dumps(payload), error=error)
         if request.path == '/api/add-station' and request.method == 'POST':
             check_token()
 
