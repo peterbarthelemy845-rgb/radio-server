@@ -98,3 +98,10 @@ Playback performance:
 - Successful playlist resolutions are cached for five minutes in the browser (128 entries) and per server worker (256 entries). Failed resolutions are not cached. A retry after failed audio playback refreshes the playlist.
 - Switching stations cancels the previous browser playlist request and ignores obsolete playback results. Direct stream URLs bypass playlist lookup.
 - Recent successful starts are measured in window.radioPlaybackTimings (last 30, browser memory only) and the browser debug console: playlistMs, audioConnectMs, totalMs. Total includes any advertisement; audioConnectMs starts after the ad. These diagnostics are not sent to the server.
+
+Automatic backups:
+- After the first request in a serving process, a background worker checks hourly and creates a backup when the latest successful copy is at least 24 hours old. The app must be running. Admin > Backups offers manual creation, status and downloads.
+- Seven verified backups are retained. They include station/configuration data, owner and advertising SQLite databases, signing key, uploaded media, reports and analytics. SQLite databases are snapshotted using the SQLite backup API.
+- Keep private_backups/ across deployments, or set RADIO_BACKUP_DIR to a private persistent directory outside the public static folder. Never delete this directory when installing updates. Set RADIO_AUTO_BACKUP=0 to disable scheduling.
+- Download copies to a separate device. These backups are on the same server and do not protect against losing that server. Environment secrets, including ADMIN_TOTP_SECRET, must be saved separately.
+- Restore instructions are included in each archive. Stop the app before restoring. Individual databases are consistent snapshots; live files may represent slightly different moments.

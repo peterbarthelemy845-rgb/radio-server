@@ -1589,5 +1589,8 @@ import sys
 from station_owners import register_owners
 register_owners(app, sys.modules[__name__])
 
+from automatic_backups import register_backups
+register_backups(app, sys.modules[__name__])
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
