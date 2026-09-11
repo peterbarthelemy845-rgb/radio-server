@@ -38,20 +38,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
         <label for="url" data-i18n="streamUrlLabel">Stream URL</label>
         <input id="url" name="url" type="url" required value="{{ form.url if form else '' }}" placeholder="https://example.com/stream.mp3" inputmode="url" autocomplete="off">
         <div class="hint">Tip: MP3 stream links work best.</div>
-        <details class="stream-helper">
-          <summary data-i18n="streamHelperTitle">I don't know my Stream URL</summary>
-          <div class="stream-helper-grid">
-            <input id="streamHost" type="text" placeholder="Server / host" autocomplete="off">
-            <input id="streamPort" type="number" placeholder="Port" inputmode="numeric">
-          </div>
-          <select id="streamType" style="margin-top:10px">
-            <option value="icecast">Icecast</option>
-            <option value="shoutcast">Shoutcast</option>
-          </select>
-          <input id="streamMount" type="text" placeholder="Mount path, like /live or /stream" autocomplete="off" style="margin-top:10px">
-          <button type="button" class="build-btn" onclick="buildStreamUrl()" data-i18n="buildStreamUrl">Build Stream URL</button>
-          <div class="hint" data-i18n="streamHelperNote">Enter the server, port, and mount path. Example: radio.example.com, 8000, /live.</div>
-        </details>
+        
       </div>
       <div class="row">
         <label for="subtitle" data-i18n="websiteLabel">Website / subtitle optional</label>
@@ -70,11 +57,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
           <option value="fr" {% if form and form.language == 'fr' %}selected{% endif %}>🇫🇷 French</option>
         </select>
       </div>
-      <div class="row">
-        <label for="bio" data-i18n="bioLabel">Small bio optional</label>
-        <textarea id="bio" name="bio" maxlength="250" placeholder="Short station bio. 250 characters max." oninput="document.getElementById('bioCount').innerText=this.value.length + '/250'">{{ form.bio if form else '' }}</textarea>
-        <div class="hint"><span id="bioCount">0/250</span> characters</div>
-      </div>
+      
       <div class="row">
         <label for="logo_image" data-i18n="logoUploadLabel">Radio logo optional</label>
         <input id="logo_image" name="logo_image" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
