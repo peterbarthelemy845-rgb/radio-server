@@ -93,3 +93,8 @@ Admin dashboard scaling and deletion protection:
 - Station queues support server-side search (name, email, station reference and URL), suspension filters and 20-record pages. Empty review queues collapse; owner credential settings are expandable.
 - Every station deletion, pending-station rejection and approval of an owner deletion request requires a confirmation plus the current Google Authenticator code using the existing ADMIN_TOTP_SECRET. Deletion is disabled when that secret is not configured.
 - Confirmation expires after ten minutes and is bound to the selected station. Five incorrect deletion codes trigger a 15-minute cooldown. Google Authenticator setup remains the existing deployment configuration.
+
+Playback performance:
+- Successful playlist resolutions are cached for five minutes in the browser (128 entries) and per server worker (256 entries). Failed resolutions are not cached. A retry after failed audio playback refreshes the playlist.
+- Switching stations cancels the previous browser playlist request and ignores obsolete playback results. Direct stream URLs bypass playlist lookup.
+- Recent successful starts are measured in window.radioPlaybackTimings (last 30, browser memory only) and the browser debug console: playlistMs, audioConnectMs, totalMs. Total includes any advertisement; audioConnectMs starts after the ad. These diagnostics are not sent to the server.

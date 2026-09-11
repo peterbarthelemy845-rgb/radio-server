@@ -98,6 +98,13 @@ body.public-web .nav-item.active{border-radius:16px;}
 @media (min-width:701px){ #adsPage .bio-subpage{padding-top:34px;} body.public-web #adsPage .bio-subpage{overflow-y:auto;height:100vh;} }
 
 .library-slider{display:flex;gap:24px;overflow-x:auto;overflow-y:hidden;padding:6px 4px 22px;scroll-snap-type:x proximity;max-height:none}.library-slider::-webkit-scrollbar{height:8px}.library-slider::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:999px}.station-slide-card{flex:0 0 390px;height:188px;border:0;border-radius:22px;background:rgba(255,255,255,.1);color:white;display:grid;grid-template-columns:142px 1fr;gap:16px;padding:12px;text-align:left;cursor:pointer;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.22);scroll-snap-align:start}.station-slide-logo{width:142px;height:164px;border-radius:16px;background:linear-gradient(135deg,#1e3a8a,#020617);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:900;overflow:hidden}.station-slide-logo img{width:100%;height:100%;object-fit:cover;display:block}.station-slide-content{min-width:0;display:flex;flex-direction:column;justify-content:center}.station-slide-kicker{font-size:12px;font-weight:900;letter-spacing:2px;color:#9fd1ff;margin-bottom:8px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.station-slide-title{font-size:23px;font-weight:900;line-height:1.08;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.station-slide-subtitle{font-size:15px;font-weight:800;opacity:.82;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.station-slide-actions{display:flex;gap:8px;align-items:center;margin-top:12px}.station-slide-actions .favorite-star{margin-left:auto}@media(max-width:700px){.library-slider{gap:16px;padding-bottom:18px}.station-slide-card{flex-basis:min(360px,88vw);height:172px;grid-template-columns:124px 1fr;gap:12px}.station-slide-logo{width:124px;height:148px}.station-slide-title{font-size:20px}}
+
+/* One scroll surface for the entire submission form, above the navigation. */
+body.public-web #addPage .subpage{bottom:64px;padding:0 18px 32px;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;scroll-padding-bottom:32px}
+body.public-web #addPage .card-list{max-height:none;height:auto;overflow:visible;padding-right:0}
+body.public-web #addPage input,body.public-web #addPage textarea{user-select:text}
+@media(max-width:700px){body.public-web #addPage .subpage{bottom:82px;padding:0 16px 32px}}
+@media(max-width:390px){body.public-web #addPage .subpage{bottom:76px}}
 </style>
 <style>
 .add-card input[type=email]{width:100%;padding:16px;margin:8px 0 16px;border:0;border-radius:16px;font-size:22px}
@@ -205,23 +212,43 @@ function stopListenTracking(sendFinal=true){if(listenHeartbeatTimer){clearInterv
 let stationPlayRequest=0;
 let stationRetryUrl='';
 const resolvedStationUrls=new Map();
-async function browserStreamUrl(url){
+let stationResolveController=null;
+window.radioPlaybackTimings=[];
+function recordPlaybackTiming(started,resolved,connecting){
+  const timing={playlistMs:Math.round(resolved-started),audioConnectMs:Math.round(performance.now()-connecting),totalMs:Math.round(performance.now()-started)};
+  window.radioPlaybackTimings.push(timing);
+  if(window.radioPlaybackTimings.length>30)window.radioPlaybackTimings.shift();
+  console.debug('Radio playback timing (total includes any ad)',timing);
+}
+async function browserStreamUrl(url,signal,refresh=false){
   if(!/\.(pls|m3u)$/i.test(new URL(url,location.href).pathname))return url;
-  if(resolvedStationUrls.has(url))return resolvedStationUrls.get(url);
-  const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),20000);
+  const cached=resolvedStationUrls.get(url);
+  if(!refresh&&cached&&cached.expires>Date.now())return cached.url;
+  const controller=new AbortController();
+  const cancel=()=>controller.abort();
+  if(signal){if(signal.aborted)controller.abort();else signal.addEventListener('abort',cancel,{once:true});}
+  const timeout=setTimeout(cancel,20000);
   let response,result;
-  try{response=await fetch('/api/resolve-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url}),signal:controller.signal});result=await response.json().catch(()=>({}));}finally{clearTimeout(timeout);}
+  try{response=await fetch('/api/resolve-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,refresh}),signal:controller.signal});result=await response.json().catch(()=>({}));}
+  finally{clearTimeout(timeout);if(signal)signal.removeEventListener('abort',cancel);}
+  if(controller.signal.aborted)throw new DOMException('Cancelled','AbortError');
   if(!response.ok||!result.url)throw new Error(result.error||'Unable to read station playlist');
-  resolvedStationUrls.set(url,result.url);return result.url;
+  if(resolvedStationUrls.size>=128)resolvedStationUrls.delete(resolvedStationUrls.keys().next().value);
+  resolvedStationUrls.set(url,{url:result.url,expires:Date.now()+300000});return result.url;
 }
 async function playPreset(p){
   if(window.prerollBusy)return;
   const requestId=++stationPlayRequest;
+  if(stationResolveController)stationResolveController.abort();
+  const resolveController=new AbortController();stationResolveController=resolveController;
+  const started=performance.now();
   if(!p||!p.url){await loadState();if(requestId!==stationPlayRequest)return;p=currentPreset();if(!p||!p.url)return;}
   if(window.PUBLIC_WEB){const audio=document.getElementById('webAudio');stopListenTracking();audio.pause();appState.playing=false;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();}
+  if(window.PUBLIC_WEB){const status=document.getElementById('networkStatus');status.innerText='Connecting…';status.style.color='#9fd1ff';}
   let playbackUrl=p.url;
-  if(window.PUBLIC_WEB){try{playbackUrl=await browserStreamUrl(p.url);}catch(e){if(requestId!==stationPlayRequest)return;const status=document.getElementById('networkStatus');status.innerText='This station could not load. Tap Play to retry.';status.style.color='#ffd166';return;}}
+  if(window.PUBLIC_WEB){try{playbackUrl=await browserStreamUrl(p.url,resolveController.signal,stationRetryUrl===p.url);}catch(e){if(requestId!==stationPlayRequest)return;const status=document.getElementById('networkStatus');status.innerText='This station could not load. Tap Play to retry.';status.style.color='#ffd166';return;}}
   if(requestId!==stationPlayRequest)return;
+  const resolvedAt=performance.now();
   const firstStation=appState.presets&&appState.presets[0];
   const adFreeStation=firstStation && firstStation.url===p.url;
   if(window.PUBLIC_WEB && !adFreeStation && stationRetryUrl!==p.url && !(await runPreroll()))return;
@@ -230,9 +257,11 @@ async function playPreset(p){
   if(window.PUBLIC_WEB){
     const a=document.getElementById('webAudio');
     if(a.src!==playbackUrl){a.src=playbackUrl;a.load();}
-    try{await a.play();if(requestId!==stationPlayRequest)return;stationRetryUrl='';startListenTracking();}
+    const connectingAt=performance.now();
+    try{await a.play();if(requestId!==stationPlayRequest)return;stationRetryUrl='';recordPlaybackTiming(started,resolvedAt,connectingAt);startListenTracking();}
     catch(e){
       if(requestId!==stationPlayRequest)return;
+      if(e.name!=='NotAllowedError'&&e.name!=='AbortError')resolvedStationUrls.delete(p.url);
       stationRetryUrl=p.url;stopListenTracking(false);appState.playing=false;updateUI();loadNetwork();
       const status=document.getElementById('networkStatus');
       status.innerText=e.name==='NotAllowedError'?'Tap Play to start this station.':e.name==='AbortError'?'Playback interrupted. Tap Play to retry.':'Unable to play this station. Try again or choose another station.';

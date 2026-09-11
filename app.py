@@ -840,6 +840,26 @@ def resolve_playlist(url):
     raise ValueError('Too many playlist redirects')
 
 
+
+# Bounded per-worker cache. Only successful resolutions are retained.
+from threading import RLock
+playlist_cache = {}
+playlist_cache_lock = RLock()
+PLAYLIST_CACHE_SECONDS = 300
+
+def cached_playlist(url, refresh=False):
+    now = time.monotonic()
+    with playlist_cache_lock:
+        entry = playlist_cache.get(url)
+        if not refresh and entry and entry[1] > now:
+            return entry[0]
+    target = resolve_playlist(url)
+    with playlist_cache_lock:
+        if len(playlist_cache) >= 256:
+            playlist_cache.pop(next(iter(playlist_cache)))
+        playlist_cache[url] = (target, time.monotonic() + PLAYLIST_CACHE_SECONDS)
+    return target
+
 @app.route('/api/resolve-stream', methods=['POST'])
 def resolve_browser_stream():
     data = request.get_json(silent=True) or {}
@@ -847,7 +867,7 @@ def resolve_browser_stream():
     try:
         if not isinstance(url, str) or url not in {station.get('url') for station in get_all_streams()}:
             return jsonify(error='Station is not available'), 400
-        return jsonify(url=resolve_playlist(url))
+        return jsonify(url=cached_playlist(url, refresh=data.get('refresh') is True))
     except Exception:
         app.logger.exception('Station playlist resolution failed')
         return jsonify(error='Unable to read this station playlist. Please try again.'), 502
