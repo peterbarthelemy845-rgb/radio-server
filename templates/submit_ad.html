@@ -1,7 +1,7 @@
 {% extends 'ad_public_base.html' %}{% block title %}Submit an ad{% endblock %}
 {% block home_link %}{% endblock %}
 {% block content %}
-<section class="card">{% if error %}<p class="error" role="alert">{{ error }} Please reselect your file before trying again.</p>{% endif %}
+<a class="home" style="display:inline-block;margin:16px 0" href="{{ url_for('ads_gallery', embedded=request.args.get('embedded', '0')) }}">← Back to ads</a><section class="card">{% if error %}<p class="error" role="alert">{{ error }} Please reselect your file before trying again.</p>{% endif %}
 {% if submitted %}<p role="status">Thank you for your submission. Your ad is under review.</p>{% endif %}
 <form method="post" enctype="multipart/form-data" id="adSubmissionForm">
 <input type="hidden" name="csrf_token" value="{{ ad_csrf_token() }}">
@@ -39,6 +39,6 @@ window.addEventListener('pageshow',()=>{const b=document.getElementById('adSubmi
 <a href="{{ url_for('index') }}#radio">Radio</a>
 <a href="{{ url_for('index') }}#library">Library</a>
 <a href="{{ url_for('index') }}#add-station">Add Station</a>
-<a href="{{ url_for('submit_ad') }}" aria-current="page">Buy Ads</a>
+<a href="{{ url_for('index', _anchor='ads') }}" aria-current="page">Ads</a>
 </nav>
 {% endif %}{% endblock %}

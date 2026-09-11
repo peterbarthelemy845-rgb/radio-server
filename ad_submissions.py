@@ -46,6 +46,13 @@ def check_csrf():
 def register_submissions(app):
     app.jinja_env.globals['ad_csrf_token'] = csrf_token
 
+    @app.route('/ads')
+    def ads_gallery():
+        from ad_rotation import campaigns
+        # Public cards contain only published creative fields.
+        cards = [{key: row[key] for key in ('title', 'src', 'kind')} for row in campaigns() if row['active']]
+        return render_template('ads_gallery.html', cards=cards)
+
     @app.route('/account')
     def account_options():
         return redirect(url_for('owner_login'))
