@@ -14,6 +14,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
     <a class="btn link" href="/admin/reports">Reports</a>
     <a class="btn link" href="{{ url_for('index') }}">Home</a>
     <a class="btn link" href="{{ url_for('export_stations') }}">Export stations</a>
+    <a class="btn link" href="/admin/manage-ads">Manage Ads</a>
     <a class="btn link" href="/admin/backups">Backups</a>
     <a class="btn approve" href="/admin/viewership">Viewership</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
@@ -79,20 +80,12 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
     {% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}
   </div>
   <details class="card"><summary id="approved-ads">Approved custom ads ({{ approved_ads|length }})</summary>
-    <p>Enabled ads rotate one at a time. Dates use UTC; blank dates have no limit. Play counts record when a video starts or a flyer loads, not completed views.</p>
+    <p>Approved advertisements. Use Manage Ads to enable ads and set their schedules.</p>
     {% if request.args.get('ad_error') %}<p role="alert">Invalid dates. The end date must be on or after the start date.</p>{% endif %}
     {% for ad in approved_ads %}
     <div class="station">
       <div class="name">{{ ad.title }}</div>
       <div class="url">{{ 'Active pre-roll' if ad.active else 'Approved Â· Not currently active' }} Â· {{ ad.duration }} seconds</div>
-      <p>Plays: {{ ad.plays }}</p>
-      <form method="post" action="{{ url_for('update_campaign', campaign_id=ad.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ ad_csrf_token() }}">
-        <label><input type="checkbox" name="enabled" style="width:20px;min-height:20px" {% if ad.enabled %}checked{% endif %}> Enabled</label>
-        <label>Start date (UTC)<input type="date" name="start" value="{{ ad.start }}"></label>
-        <label>End date (UTC)<input type="date" name="end" value="{{ ad.end }}"></label>
-        <button class="btn link" type="submit">Save schedule</button>
-      </form>
       {% if ad.email %}<div class="url">Contact: {{ ad.email }}</div>{% endif %}
       {% if ad.kind == 'video' %}
       <video src="{{ ad.src }}" controls playsinline preload="none" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px"></video>
@@ -101,7 +94,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
       {% endif %}
     </div>
     {% else %}<div class="empty">No approved custom ads yet.</div>{% endfor %}
-    <div class="actions"><a class="btn link" href="{{ url_for('admin_ads') }}">Ad playback settings</a></div>
+    <div class="actions"><a class="btn link" href="{{ url_for('manage_ads') }}">Manage Ads</a></div>
   </details>
 </div>
 </body></html>

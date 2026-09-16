@@ -1,10 +1,36 @@
+import os
+from zoneinfo import ZoneInfo
 import secrets
 import time
 from datetime import date, datetime, timezone
-from flask import request, jsonify, redirect, url_for, abort, current_app
+from flask import render_template, request, jsonify, redirect, url_for, abort, current_app
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 import ads
 import ad_submissions as submissions
+
+def schedule_zone():
+    return ZoneInfo('America/New_York')
+
+def schedule_now():
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M')
+
+def local_schedule(value, end=False):
+    if not value:
+        return ''
+    if len(value) == 10:
+        value += 'T23:59' if end else 'T00:00'
+    return datetime.fromisoformat(value).replace(tzinfo=timezone.utc).astimezone(schedule_zone()).strftime('%Y-%m-%dT%H:%M')
+
+def utc_schedule(value):
+    if not value:
+        return ''
+    naive = datetime.strptime(value, '%Y-%m-%dT%H:%M')
+    local = naive.replace(tzinfo=schedule_zone())
+    if local.astimezone(timezone.utc).astimezone(schedule_zone()).replace(tzinfo=None) != naive:
+        raise ValueError('This local time does not exist because of daylight saving time.')
+    if local.utcoffset() != naive.replace(tzinfo=schedule_zone(), fold=1).utcoffset():
+        raise ValueError('Choose a time outside the repeated daylight-saving hour.')
+    return local.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M')
 
 def today():
     return datetime.now(timezone.utc).date().isoformat()
@@ -32,7 +58,7 @@ def campaigns():
         rows = [dict(row) for row in db.execute('SELECT c.*, s.email FROM campaigns c LEFT JOIN submissions s ON s.id=c.id ORDER BY c.rowid DESC')]
     global_enabled = ads.load_ad().get('enabled', False)
     for row in rows:
-        row['active'] = bool(global_enabled and row['enabled'] and (not row['start'] or row['start'] <= today()) and (not row['end'] or row['end'] >= today()))
+        row['active'] = bool(global_enabled and row['enabled'] and (not row['start'] or row['start'] <= schedule_now()) and (not row['end'] or (row['end'] + ('T23:59' if len(row['end']) == 10 else '')) >= schedule_now()))
     return rows
 
 def signer():
@@ -47,7 +73,7 @@ def register_rotation(app):
         with submissions.database() as db:
             db.execute('BEGIN IMMEDIATE')
             prepare(db)
-            row = db.execute('SELECT * FROM campaigns WHERE enabled=1 AND (start="" OR start<=?) AND (end="" OR end>=?) ORDER BY last_served, rowid LIMIT 1', (today(), today())).fetchone()
+            row = db.execute("SELECT * FROM campaigns WHERE enabled=1 AND (start='' OR start<=?) AND (end='' OR (CASE WHEN length(end)=10 THEN end || 'T23:59' ELSE end END)>=?) ORDER BY last_served, rowid LIMIT 1", (schedule_now(), schedule_now())).fetchone()
             if row is None:
                 return jsonify(ad=None)
             db.execute('UPDATE campaigns SET last_served=? WHERE id=?', (time.time_ns(), row['id']))
@@ -71,22 +97,28 @@ def register_rotation(app):
                 db.execute('UPDATE campaigns SET plays=plays+1 WHERE id=?', (payload['id'],))
         return jsonify(ok=True)
 
+    @app.route('/admin/manage-ads')
+    def manage_ads():
+        rows = campaigns()
+        for row in rows:
+            row['local_start'] = local_schedule(row['start'])
+            row['local_end'] = local_schedule(row['end'], end=True)
+        return render_template('manage_ads.html', campaigns=rows, global_enabled=ads.load_ad().get('enabled', False))
+
     @app.route('/admin/ads/campaign/<campaign_id>', methods=['POST'])
     def update_campaign(campaign_id):
         submissions.check_csrf()
-        start, end = request.form.get('start', ''), request.form.get('end', '')
         try:
-            for value in (start, end):
-                if value and date.fromisoformat(value).isoformat() != value:
-                    raise ValueError()
+            start = utc_schedule(request.form.get('start', ''))
+            end = utc_schedule(request.form.get('end', ''))
             if start and end and start > end:
                 raise ValueError()
         except ValueError:
-            return redirect(url_for('admin_pending', ad_error='dates', _anchor='approved-ads'))
+            return redirect(url_for('manage_ads', error='schedule'))
         with submissions.database() as db:
             prepare(db)
             changed = db.execute('UPDATE campaigns SET enabled=?, start=?, end=? WHERE id=?',
                 (int(request.form.get('enabled') == 'on'), start, end, campaign_id)).rowcount
             if not changed:
                 abort(404)
-        return redirect(url_for('admin_pending', _anchor='approved-ads'))
+        return redirect(url_for('manage_ads', saved='1'))

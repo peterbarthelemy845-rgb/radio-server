@@ -158,7 +158,7 @@ def register_owners(app, radio):
 
     @app.before_request
     def owner_guards():
-        mutation = request.method == 'POST' and (request.path.startswith('/owner/') or request.path.startswith('/admin/') or request.path == '/api/add-station')
+        mutation = request.endpoint != 'restore_backup' and request.method == 'POST' and (request.path.startswith('/owner/') or request.path.startswith('/admin/') or request.path == '/api/add-station')
         if mutation:
             db = connect()
             db.execute('BEGIN IMMEDIATE')
