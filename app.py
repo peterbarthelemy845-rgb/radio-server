@@ -13,6 +13,7 @@ import requests
 import xml.etree.ElementTree as ET
 import re
 import base64
+from logo_images import device_logo
 from email.message import EmailMessage
 from html import unescape
 from urllib.parse import urlparse, quote, urljoin
@@ -313,6 +314,9 @@ def save_uploaded_image(field_name="wallpaper"):
             raw = base64.b64decode(encoded, validate=True)
             if len(raw) > 6 * 1024 * 1024:
                 return "", "Image is too large"
+            if field_name == "logo_image":
+                raw = device_logo(raw)
+                subtype = "png"
             filename = f"{int(time.time())}_{secrets.token_hex(6)}.{subtype}"
             save_path = os.path.join(UPLOAD_FOLDER, filename)
             with open(save_path, "wb") as f:
@@ -326,6 +330,18 @@ def save_uploaded_image(field_name="wallpaper"):
         return "", ""
     if not allowed_image(image.filename):
         return "", "Image must be PNG, JPG, JPEG, GIF, or WEBP"
+    if field_name == "logo_image":
+        try:
+            raw = image.read(6 * 1024 * 1024 + 1)
+            if len(raw) > 6 * 1024 * 1024:
+                return "", "Image is too large"
+            raw = device_logo(raw)
+            filename = f"{int(time.time())}_{secrets.token_hex(6)}.png"
+            with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as output:
+                output.write(raw)
+            return f"/static/wallpapers/{filename}", ""
+        except Exception:
+            return "", "Could not open logo image"
     safe = secure_filename(image.filename)
     filename = f"{int(time.time())}_{safe}"
     save_path = os.path.join(UPLOAD_FOLDER, filename)

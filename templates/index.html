@@ -105,6 +105,7 @@ body.public-web #addPage .card-list{max-height:none;height:auto;overflow:visible
 body.public-web #addPage input,body.public-web #addPage textarea{user-select:text}
 @media(max-width:700px){body.public-web #addPage .subpage{bottom:82px;padding:0 16px 32px}}
 @media(max-width:390px){body.public-web #addPage .subpage{bottom:76px}}
+.logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
 </style>
 <style>
 .add-card input[type=email]{width:100%;padding:16px;margin:8px 0 16px;border:0;border-radius:16px;font-size:22px}
@@ -128,6 +129,7 @@ body.public-web .station-logo{display:flex}
 @media(max-width:700px){.library-slider{display:flex;flex-direction:column;gap:14px;overflow-x:hidden;overflow-y:auto;padding:4px 0 18px}.station-slide-card{flex:0 0 auto;width:100%;height:154px;grid-template-columns:116px 1fr;gap:12px}.station-slide-logo{width:116px;height:130px}.station-slide-title{font-size:19px}.station-slide-kicker{font-size:11px}.station-slide-actions{margin-top:8px}}
 body.public-web #stationLogo{position:fixed;left:122px;top:112px;z-index:22;width:58px;height:58px;margin:0;border-radius:16px}
 @media (max-width:700px){body.public-web #stationLogo{left:116px;top:18px;width:46px;height:46px;border-radius:14px}}
+.logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
 </style>
 <style>
 .account-link{position:absolute;left:192px;top:112px;z-index:22;width:48px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(255,255,255,.15);color:white;text-decoration:none}
@@ -149,10 +151,12 @@ body.public-web #buyAdsFrame{height:calc(100% - 64px);}
   body.public-web .home-bio-btn{right:56px;width:44px}
   body.public-web .fav-btn{right:8px;width:44px}
 }
+.logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
 </style>
 </head>
 <body class="{{ 'public-web' if public_web else '' }}">
 <audio id="webAudio" preload="auto" playsinline></audio>
+<script src="/static/logo-cropper.js?v=2"></script>
 <script>window.PUBLIC_WEB = {{ "true" if public_web else "false" }};</script>
 <div class="screen" id="screen">
 <div id="radioPage" class="page active">
@@ -354,7 +358,6 @@ async function scanBluetooth(){let box=document.getElementById('btInfo');box.inn
 async function connectBluetooth(mac){let r=await fetch('/api/bluetooth-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac})});let d=await r.json();alert(d.message||d.status);loadBluetooth()}
 const addStationForm=document.getElementById('addStationForm');
 if(addStationForm&&!addStationForm.querySelector('input[name="logo_image"]')){let emailInput=addStationForm.querySelector('input[name="contact_email"]');if(emailInput){let logoWrap=document.createElement('div');logoWrap.innerHTML='<label data-i18n="logoUploadLabel">Radio logo optional</label><input type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif"><input type="hidden" name="logo_image_cropped"><div class="logo-cropper"><canvas width="400" height="400"></canvas><label>Zoom</label><input type="range" class="crop-zoom" min="1" max="3" step="0.05" value="1"><label>Move left / right</label><input type="range" class="crop-x" min="0" max="100" value="50"><label>Move up / down</label><input type="range" class="crop-y" min="0" max="100" value="50"></div>';emailInput.insertAdjacentElement('afterend',logoWrap);}}
-function setupLogoCropper(form){let input=form&&form.querySelector('input[name="logo_image"]');if(!input)return;let hidden=form.querySelector('input[name="logo_image_cropped"]');if(!hidden){hidden=document.createElement('input');hidden.type='hidden';hidden.name='logo_image_cropped';input.insertAdjacentElement('afterend',hidden)}let panel=form.querySelector('.logo-cropper');if(!panel){panel=document.createElement('div');panel.className='logo-cropper';panel.innerHTML='<canvas width="400" height="400"></canvas><label>Zoom</label><input type="range" class="crop-zoom" min="1" max="3" step="0.05" value="1"><label>Move left / right</label><input type="range" class="crop-x" min="0" max="100" value="50"><label>Move up / down</label><input type="range" class="crop-y" min="0" max="100" value="50">';input.insertAdjacentElement('afterend',panel)}let canvas=panel.querySelector('canvas'),ctx=canvas.getContext('2d'),zoom=panel.querySelector('.crop-zoom'),xRange=panel.querySelector('.crop-x'),yRange=panel.querySelector('.crop-y');let img=null;function draw(){if(!img)return;let z=parseFloat(zoom.value||'1');let base=Math.min(img.naturalWidth,img.naturalHeight);let size=base/z;let maxX=Math.max(0,img.naturalWidth-size);let maxY=Math.max(0,img.naturalHeight-size);let sx=maxX*(parseFloat(xRange.value||'50')/100);let sy=maxY*(parseFloat(yRange.value||'50')/100);ctx.clearRect(0,0,400,400);ctx.drawImage(img,sx,sy,size,size,0,0,400,400);hidden.value=canvas.toDataURL('image/png')}[zoom,xRange,yRange].forEach(el=>el.addEventListener('input',draw));input.addEventListener('change',()=>{hidden.value='';let file=input.files&&input.files[0];if(!file){panel.classList.remove('active');return}img=new Image();img.onload=()=>{panel.classList.add('active');zoom.value='1';xRange.value='50';yRange.value='50';draw();URL.revokeObjectURL(img.src)};img.src=URL.createObjectURL(file)});form.addEventListener('reset',()=>{hidden.value='';panel.classList.remove('active');img=null})}
 setupLogoCropper(addStationForm);
 const homeAddBio=document.getElementById('homeAddBio');
 const homeAddBioCount=document.getElementById('homeAddBioCount');
