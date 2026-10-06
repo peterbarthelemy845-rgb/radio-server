@@ -6,17 +6,10 @@ import shlex
 import time
 import socket
 import secrets
-import smtplib
 import urllib.request
 import requests
-import xml.etree.ElementTree as ET
-import re
-import base64
-from email.message import EmailMessage
-from html import unescape
-from urllib.parse import urlparse, quote, urljoin
+from urllib.parse import urlparse, quote
 from werkzeug.utils import secure_filename
-import pyotp
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
@@ -26,46 +19,17 @@ ADMIN_MFA_PHONE = os.environ.get("ADMIN_MFA_PHONE", "").strip()
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
 TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "").strip()
-ADMIN_TOTP_SECRET = os.environ.get("ADMIN_TOTP_SECRET", "").replace(" ", "").strip()
-SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "587") or 587)
-SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "").strip()
-SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", SMTP_USERNAME).strip()
 MFA_CODE_TTL_SECONDS = 300
 CONFIG_FILE = "config.json"
 STATIONS_FILE = "stations.json"
 REPORTS_FILE = "reports.json"
-ANALYTICS_FILE = "analytics.json"
-HAITIAN_TIMES_RSS_URL = os.environ.get("HAITIAN_TIMES_RSS_URL", "https://haitiantimes.com/feed/")
-LE_NOUVELLISTE_URL = os.environ.get("LE_NOUVELLISTE_URL", "https://lenouvelliste.com/")
-HAITILIBRE_URL = os.environ.get("HAITILIBRE_URL", "https://www.haitilibre.com/")
-HAITILIBRE_RSS_URL = os.environ.get("HAITILIBRE_RSS_URL", "https://www.haitilibre.com/rss-flash-en.php")
-NEWS_CACHE_TTL_SECONDS = 900
 SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiolavoixdivine.com/api/stations")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wallpapers")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
-RADIO_LA_VOIX_LOGO_URL = "/static/logos/radiolavoixdivine.png"
 
 def allowed_image(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
-
-
-def is_valid_email(value):
-    value = (value or "").strip()
-    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value))
-
-
-def station_submission_form(name="", url="", subtitle="Custom Station", bio="", language="ht", contact_email=""):
-    return {
-        "name": name,
-        "url": url,
-        "subtitle": subtitle,
-        "bio": bio,
-        "language": language,
-        "contact_email": contact_email,
-    }
 
 
 player_process = None
@@ -75,10 +39,8 @@ current_playing = {
     "station_subtitle": "Internet Stream",
     "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live",
     "website": "radiolavoixdivine.com",
-    "logo_url": RADIO_LA_VOIX_LOGO_URL,
     "logo": "🎧",
 }
-news_cache = {"items": [], "fetched_at": 0}
 
 
 PUBLIC_HOSTS = {"www.radiolavoixdivine.com", "radiolavoixdivine.com", "radio-server-z0hb.onrender.com"}
@@ -92,7 +54,6 @@ TEST_STREAMS = [
     {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live", "logo": "🎧"},
     {"name": "181 FM The Buzz", "subtitle": "https://www.181.fm", "website": "https://www.181.fm", "url": "http://listen.181fm.com/181-buzz_128k.mp3", "logo": "📻"},
 ]
-TEST_STREAMS[0]["logo_url"] = RADIO_LA_VOIX_LOGO_URL
 
 def get_config_version():
     mtimes = []
@@ -167,110 +128,6 @@ def save_reports(reports):
     os.replace(tmp, REPORTS_FILE)
 
 
-def find_station_for_report(name="", url=""):
-    name = (name or "").strip().lower()
-    url = (url or "").strip().lower()
-    try:
-        store = load_station_store()
-        for raw in store.get("custom_stations", []):
-            station = normalize_station(raw)
-            station_url = (station.get("url") or "").strip().lower()
-            station_name = (station.get("name") or "").strip().lower()
-            if url and station_url == url:
-                return station
-            if name and station_name == name:
-                return station
-    except Exception as e:
-        print("Report station lookup failed:", e)
-    return None
-
-
-def send_report_email(station, report):
-    to_email = (station or {}).get("contact_email", "")
-    if not is_valid_email(to_email) or not SMTP_HOST or not SMTP_FROM_EMAIL:
-        return False
-    try:
-        message = EmailMessage()
-        message["Subject"] = f"Station report: {report.get('name') or 'Radio station'}"
-        message["From"] = SMTP_FROM_EMAIL
-        message["To"] = to_email
-        message.set_content(
-            "A listener submitted a report about your station on Radio La Voix Divine.\n\n"
-            f"Station: {report.get('name') or ''}\n"
-            f"Stream URL: {report.get('url') or ''}\n"
-            f"Website: {report.get('website') or ''}\n"
-            f"Report: {report.get('reason') or ''}\n\n"
-            "Please review your stream and content. Stations that violate the terms, copyright rules, or community standards may be removed."
-        )
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-            smtp.starttls()
-            if SMTP_USERNAME or SMTP_PASSWORD:
-                smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
-            smtp.send_message(message)
-        return True
-    except Exception as e:
-        print("Report email failed:", e, flush=True)
-        return False
-
-
-def load_analytics():
-    default = {"sessions": [], "totals": {}}
-    if os.path.exists(ANALYTICS_FILE):
-        try:
-            with open(ANALYTICS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                return default
-            data.setdefault("sessions", [])
-            data.setdefault("totals", {})
-            if not isinstance(data["sessions"], list):
-                data["sessions"] = []
-            if not isinstance(data["totals"], dict):
-                data["totals"] = {}
-            return data
-        except Exception as e:
-            print("Analytics load failed:", e)
-    return default
-
-
-def save_analytics(data):
-    data.setdefault("sessions", [])
-    data.setdefault("totals", {})
-    tmp = ANALYTICS_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, ANALYTICS_FILE)
-
-
-def analytics_station_key(name, url):
-    return (url or name or "unknown").strip().lower()
-
-
-def format_duration(seconds):
-    seconds = max(0, int(seconds or 0))
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    secs = seconds % 60
-    if hours:
-        return f"{hours}h {minutes}m"
-    if minutes:
-        return f"{minutes}m {secs}s"
-    return f"{secs}s"
-
-
-def find_custom_station_index(custom, url="", name=""):
-    url = (url or "").strip().lower()
-    name = (name or "").strip().lower()
-    for i, station in enumerate(custom):
-        station_url = (station.get("url") or station.get("stream_url") or "").strip().lower()
-        station_name = (station.get("name") or "").strip().lower()
-        if url and station_url == url:
-            return i
-        if name and station_name == name:
-            return i
-    return -1
-
-
 def normalize_station(station):
     language = (station.get("language") or "ht").strip().lower()
     flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
@@ -285,37 +142,11 @@ def normalize_station(station):
         "logo_url": station.get("logo_url", ""),
         "wallpaper": station.get("wallpaper", ""),
         "bio": (station.get("bio") or station.get("description") or "").strip(),
-        "contact_email": (station.get("contact_email") or station.get("email") or "").strip(),
-        "terms_agreed": bool(station.get("terms_agreed")),
-        "terms_agreed_at": station.get("terms_agreed_at"),
         "submitted_at": station.get("submitted_at"),
-        "suspended": bool(station.get("suspended")),
-        "suspended_at": station.get("suspended_at"),
-        "suspend_reason": (station.get("suspend_reason") or "").strip(),
     }
 
 
 def save_uploaded_image(field_name="wallpaper"):
-    cropped = (request.form.get(f"{field_name}_cropped") or "").strip()
-    if cropped.startswith("data:image/"):
-        try:
-            header, encoded = cropped.split(",", 1)
-            subtype = header.split(";", 1)[0].split("/", 1)[1].lower()
-            if subtype == "jpeg":
-                subtype = "jpg"
-            if subtype not in ALLOWED_IMAGE_EXTENSIONS:
-                return "", "Image must be PNG, JPG, JPEG, GIF, or WEBP"
-            raw = base64.b64decode(encoded, validate=True)
-            if len(raw) > 6 * 1024 * 1024:
-                return "", "Image is too large"
-            filename = f"{int(time.time())}_{secrets.token_hex(6)}.{subtype}"
-            save_path = os.path.join(UPLOAD_FOLDER, filename)
-            with open(save_path, "wb") as f:
-                f.write(raw)
-            return f"/static/wallpapers/{filename}", ""
-        except Exception as e:
-            print("Cropped image save failed:", e)
-            return "", "Could not save cropped image"
     image = request.files.get(field_name) if request.files else None
     if not image or not image.filename:
         return "", ""
@@ -379,7 +210,7 @@ def get_all_streams():
         store = load_station_store()
         for raw in store.get("custom_stations", []):
             station = normalize_station(raw)
-            if station.get("name") and station.get("url") and not station.get("suspended"):
+            if station.get("name") and station.get("url"):
                 streams.append(station)
     except Exception as e:
         print("Saved custom station load failed:", e)
@@ -411,18 +242,6 @@ def run_command(cmd: str) -> subprocess.CompletedProcess:
 def is_mfa_configured():
     return all([ADMIN_MFA_PHONE, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER])
 
-def is_totp_configured():
-    return bool(ADMIN_TOTP_SECRET)
-
-def verify_admin_totp(code):
-    if not is_totp_configured():
-        return False
-    try:
-        return pyotp.TOTP(ADMIN_TOTP_SECRET).verify((code or "").strip().replace(" ", ""), valid_window=1)
-    except Exception as e:
-        print("Authenticator verification failed:", e, flush=True)
-        return False
-
 def send_admin_mfa_code(code):
     if not is_mfa_configured():
         return False, "Text verification is not configured on this server."
@@ -441,19 +260,9 @@ def send_admin_mfa_code(code):
         )
         if response.status_code in (200, 201):
             return True, ""
-        try:
-            details = response.json()
-        except Exception:
-            details = response.text
-        print("Twilio MFA send failed:", {
-            "status_code": response.status_code,
-            "to": ADMIN_MFA_PHONE,
-            "from": TWILIO_FROM_NUMBER,
-            "response": details,
-        }, flush=True)
         return False, "Could not send the verification text. Check your SMS settings."
     except Exception as e:
-        print("MFA text failed:", e, flush=True)
+        print("MFA text failed:", e)
         return False, "Could not send the verification text. Try again."
 
 def load_config():
@@ -528,101 +337,6 @@ def get_add_station_url():
         if ip and ip != "No IP":
             return f"http://{ip}:5000/add-station"
     return request.host_url.rstrip("/") + "/add-station"
-
-def text_from_xml(node, name):
-    child = node.find(name)
-    return (child.text or "").strip() if child is not None else ""
-
-def image_from_rss_item(item):
-    namespaces = {
-        "media": "http://search.yahoo.com/mrss/",
-        "content": "http://purl.org/rss/1.0/modules/content/",
-    }
-    media = item.find("media:content", namespaces) or item.find("media:thumbnail", namespaces)
-    if media is not None and media.get("url"):
-        return media.get("url")
-    enclosure = item.find("enclosure")
-    if enclosure is not None and enclosure.get("url") and "image" in (enclosure.get("type") or ""):
-        return enclosure.get("url")
-    for field in ("description", "content:encoded"):
-        html = text_from_xml(item, field) if ":" not in field else ""
-        if field == "content:encoded":
-            child = item.find(field, namespaces)
-            html = (child.text or "").strip() if child is not None else ""
-        match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html or "", re.I)
-        if match:
-            return match.group(1)
-    return ""
-
-def clean_news_text(value):
-    value = re.sub(r"<[^>]+>", " ", value or "")
-    value = unescape(value)
-    return re.sub(r"\s+", " ", value).strip()
-
-def fetch_url(url):
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "RadioLaVoixDivine/1.0 (+https://radiolavoixdivine.com)"},
-    )
-    with urllib.request.urlopen(req, timeout=8) as response:
-        return response.read().decode("utf-8", errors="ignore")
-
-def get_rss_items(source_name, rss_url, limit=1):
-    try:
-        raw = fetch_url(rss_url)
-        root = ET.fromstring(raw.encode("utf-8"))
-        items = []
-        for item in root.findall("./channel/item")[:limit]:
-            title = clean_news_text(text_from_xml(item, "title"))
-            link = text_from_xml(item, "link")
-            published = text_from_xml(item, "pubDate")
-            image = image_from_rss_item(item)
-            if title:
-                items.append({"source": source_name, "title": title, "link": link, "published": published, "image": image})
-        return items
-    except Exception as e:
-        print(f"{source_name} RSS unavailable:", e)
-        return []
-
-def get_homepage_items(source_name, home_url, limit=1):
-    try:
-        html = fetch_url(home_url)
-        article_matches = re.findall(r"<article[\s\S]*?</article>", html, re.I) or [html]
-        items = []
-        seen = set()
-        for block in article_matches:
-            link_match = re.search(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)</a>', block, re.I)
-            title_match = re.search(r"<h[1-4][^>]*>([\s\S]*?)</h[1-4]>", block, re.I)
-            image_match = re.search(r'<img[^>]+(?:src|data-src|data-lazy-src)=["\']([^"\']+)["\']', block, re.I)
-            link = urljoin(home_url, link_match.group(1)) if link_match else home_url
-            title = clean_news_text(title_match.group(1) if title_match else (link_match.group(2) if link_match else ""))
-            image = urljoin(home_url, image_match.group(1)) if image_match else ""
-            if title and link not in seen and len(title) > 12:
-                seen.add(link)
-                items.append({"source": source_name, "title": title, "link": link, "published": "", "image": image})
-                if len(items) >= limit:
-                    break
-        return items
-    except Exception as e:
-        print(f"{source_name} homepage unavailable:", e)
-        return []
-
-def get_haitian_times_items():
-    now = time.time()
-    if news_cache["items"] and now - news_cache["fetched_at"] < NEWS_CACHE_TTL_SECONDS:
-        return news_cache["items"]
-    try:
-        candidates = []
-        candidates.extend(get_rss_items("HAITIAN TIMES", HAITIAN_TIMES_RSS_URL, 10))
-        candidates.extend(get_rss_items("HAITILIBRE", HAITILIBRE_RSS_URL, 5))
-        candidates.extend(get_homepage_items("LE NOUVELLISTE", LE_NOUVELLISTE_URL, 5))
-        items = [item for item in candidates if item.get("image")][:8]
-        news_cache["items"] = items
-        news_cache["fetched_at"] = now
-        return items
-    except Exception as e:
-        print("News feeds unavailable:", e)
-        return news_cache["items"]
 
 def get_saved_wifi_networks():
     result = run_command("nmcli -t -f NAME,TYPE connection show")
@@ -725,23 +439,30 @@ def admin_login():
         action = (request.form.get('action') or 'password').strip()
         if action == 'verify':
             code = (request.form.get('code') or '').strip()
-            if not session.get('admin_password_ok'):
-                error = 'Please enter your password first.'
+            expires_at = int(session.get('admin_mfa_expires_at') or 0)
+            expected = session.get('admin_mfa_code')
+            attempts = int(session.get('admin_mfa_attempts') or 0)
+            if not expected or time.time() > expires_at:
+                error = 'Verification code expired. Please log in again.'
+                session.pop('admin_mfa_code', None)
+                session.pop('admin_mfa_expires_at', None)
+                session.pop('admin_mfa_attempts', None)
                 return render_template('admin_login.html', error=error, step='password')
-            attempts = int(session.get('admin_totp_attempts') or 0)
             if attempts >= 5:
                 error = 'Too many attempts. Please log in again.'
-                session.pop('admin_password_ok', None)
-                session.pop('admin_totp_attempts', None)
+                session.pop('admin_mfa_code', None)
+                session.pop('admin_mfa_expires_at', None)
+                session.pop('admin_mfa_attempts', None)
                 return render_template('admin_login.html', error=error, step='password')
-            if verify_admin_totp(code):
-                session.pop('admin_password_ok', None)
-                session.pop('admin_totp_attempts', None)
+            if code == expected:
+                session.pop('admin_mfa_code', None)
+                session.pop('admin_mfa_expires_at', None)
+                session.pop('admin_mfa_attempts', None)
                 session['admin_role'] = 'full'
                 session['admin_logged_in'] = True
                 return redirect(session.pop('admin_next', None) or '/admin/pending')
-            session['admin_totp_attempts'] = attempts + 1
-            error = 'Wrong authenticator code'
+            session['admin_mfa_attempts'] = attempts + 1
+            error = 'Wrong verification code'
             return render_template('admin_login.html', error=error, step='verify')
 
         password = (request.form.get('password') or '').strip()
@@ -753,10 +474,16 @@ def admin_login():
         if password == ADMIN_PASSWORD:
             session.clear()
             session['admin_next'] = request.args.get('next') or '/admin/pending'
-            if is_totp_configured():
-                session['admin_password_ok'] = True
-                session['admin_totp_attempts'] = 0
-                return render_template('admin_login.html', error='', step='verify')
+            if is_mfa_configured():
+                code = f"{secrets.randbelow(1000000):06d}"
+                session['admin_mfa_code'] = code
+                session['admin_mfa_expires_at'] = int(time.time() + MFA_CODE_TTL_SECONDS)
+                session['admin_mfa_attempts'] = 0
+                sent, message = send_admin_mfa_code(code)
+                if sent:
+                    return render_template('admin_login.html', error='', step='verify')
+                error = message
+                return render_template('admin_login.html', error=error, step='password')
             session['admin_role'] = 'full'
             session['admin_logged_in'] = True
             return redirect(session.pop('admin_next', None) or '/admin/pending')
@@ -771,10 +498,6 @@ def admin_logout():
 @app.route("/api/stations", methods=["GET"])
 def local_stations():
     return jsonify(get_all_streams())
-
-@app.route("/api/haitian-times", methods=["GET"])
-def haitian_times_news():
-    return jsonify({"status": "ok", "items": get_haitian_times_items()})
 
 
 @app.route("/qr")
@@ -1077,14 +800,9 @@ def add_station_page():
     add_url = get_add_station_url()
     return render_template('add_station.html', add_url=add_url, ssid=wifi.get("ssid", ""))
 
-@app.route('/terms', methods=['GET'])
-def terms_page():
-    return render_template('terms.html')
-
 @app.route('/api/add-station', methods=['POST'])
 def api_add_station():
     is_json = request.is_json
-    wants_json = is_json or request.headers.get("X-Requested-With") == "fetch"
     data = request.get_json(silent=True) if is_json else request.form
     data = data or {}
     name = (data.get('name') or '').strip()
@@ -1092,48 +810,26 @@ def api_add_station():
     subtitle = (data.get('subtitle') or 'Custom Station').strip()
     website = (data.get('website') or subtitle).strip()
     bio = (data.get('bio') or '').strip()[:250]
-    contact_email = (data.get('contact_email') or data.get('email') or '').strip()
-    terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
     language = (data.get('language') or 'ht').strip().lower()
-    form = station_submission_form(name, url, subtitle, bio, language, contact_email)
     flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
     if language not in flags:
         language = "ht"
-        form["language"] = language
     flag = flags[language]
     image_path = ""
-    logo_path = ""
     if not is_json:
-        logo_path, logo_error = save_uploaded_image('logo_image')
-        if logo_error:
-            wifi = get_wifi_status_data()
-            return render_template('add_station.html', status='error', message=logo_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             wifi = get_wifi_status_data()
-            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
+            return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio,"language":language}), 400
     if not name or not url:
         message = "Station name and stream URL are required"
-        if wants_json:
+        if is_json:
             return jsonify({"status": "error", "message": message}), 400
         wifi = get_wifi_status_data()
-        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
-    if not is_valid_email(contact_email):
-        message = "A valid contact email is required"
-        if wants_json:
-            return jsonify({"status": "error", "message": message}), 400
-        wifi = get_wifi_status_data()
-        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
-    if not terms_agreed:
-        message = "You must agree to the station submission terms"
-        if wants_json:
-            return jsonify({"status": "error", "message": message}), 400
-        wifi = get_wifi_status_data()
-        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
+        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":name,"url":url,"subtitle":subtitle,"bio":bio,"language":language}), 400
     store = load_station_store()
     pending = store.get('pending_stations', [])
-    now = int(time.time())
-    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
+    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": image_path, "submitted_at": int(time.time())})
     for i, item in enumerate(pending):
         if (item.get('url') or '').strip() == url:
             pending[i] = station
@@ -1143,10 +839,10 @@ def api_add_station():
     store['pending_stations'] = pending
     save_station_store(store)
     message = "Station submitted. Waiting for approval."
-    if wants_json:
+    if is_json:
         return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "version": get_config_version()})
     wifi = get_wifi_status_data()
-    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
+    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form={"name":"","url":"","subtitle":"Custom Station","bio":"","language":"ht"})
 
 @app.route('/api/report-station', methods=['POST'])
 def api_report_station():
@@ -1157,66 +853,16 @@ def api_report_station():
     if not name and not url:
         return jsonify({"status": "error", "message": "Station is required"}), 400
     reports = load_reports()
-    station = find_station_for_report(name=name, url=url)
-    report = {
+    reports.append({
         "name": name,
         "url": url,
         "website": (data.get('website') or '').strip(),
-        "contact_email": (station or {}).get("contact_email", ""),
         "reason": reason,
         "reported_at": int(time.time()),
         "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
-    }
-    report["email_sent"] = send_report_email(station, report)
-    reports.append(report)
+    })
     save_reports(reports[-500:])
     return jsonify({"status": "ok", "message": "Report sent. Thank you."})
-
-@app.route('/api/listen-heartbeat', methods=['POST'])
-def api_listen_heartbeat():
-    data = request.get_json(silent=True) or {}
-    session_id = (data.get('session_id') or '').strip()[:80]
-    name = (data.get('name') or 'Unknown station').strip()[:120]
-    url = (data.get('url') or '').strip()[:500]
-    website = (data.get('website') or '').strip()[:300]
-    try:
-        seconds = int(float(data.get('seconds') or 0))
-    except Exception:
-        seconds = 0
-    seconds = max(0, min(seconds, 60))
-    if not session_id or not url or seconds < 5:
-        return jsonify({"status": "ok", "ignored": True})
-
-    now = int(time.time())
-    analytics = load_analytics()
-    key = analytics_station_key(name, url)
-    totals = analytics["totals"].setdefault(key, {
-        "name": name,
-        "url": url,
-        "website": website,
-        "seconds": 0,
-        "heartbeats": 0,
-        "last_listened_at": now,
-    })
-    totals["name"] = name or totals.get("name") or "Unknown station"
-    totals["url"] = url or totals.get("url") or ""
-    totals["website"] = website or totals.get("website") or ""
-    totals["seconds"] = int(totals.get("seconds") or 0) + seconds
-    totals["heartbeats"] = int(totals.get("heartbeats") or 0) + 1
-    totals["last_listened_at"] = now
-
-    analytics["sessions"].append({
-        "session_id": session_id,
-        "name": name,
-        "url": url,
-        "website": website,
-        "seconds": seconds,
-        "listened_at": now,
-        "ip": request.headers.get("X-Forwarded-For", request.remote_addr),
-    })
-    analytics["sessions"] = analytics["sessions"][-10000:]
-    save_analytics(analytics)
-    return jsonify({"status": "ok", "seconds": seconds})
 
 @app.route('/admin/pending', methods=['GET'])
 def admin_pending():
@@ -1229,119 +875,8 @@ def admin_stations():
 
 @app.route('/admin/reports', methods=['GET'])
 def admin_reports():
-    raw_reports = load_reports()
-    reports = []
-    for original_index, report in reversed(list(enumerate(raw_reports))):
-        item = dict(report)
-        item["index"] = original_index
-        reports.append(item)
-    store = load_station_store()
-    approved = [normalize_station(s) for s in store.get('custom_stations', [])]
-    return render_template('reports.html', reports=reports, approved=approved)
-
-@app.route('/admin/report/delete/<int:index>', methods=['POST', 'GET'])
-def admin_delete_report(index):
-    reports = load_reports()
-    if 0 <= index < len(reports):
-        reports.pop(index)
-        save_reports(reports)
-    return redirect('/admin/reports')
-
-@app.route('/admin/reports/clear', methods=['POST'])
-def admin_clear_reports():
-    save_reports([])
-    return redirect('/admin/reports')
-
-@app.route('/admin/viewership', methods=['GET'])
-def admin_viewership():
-    analytics = load_analytics()
-    now = int(time.time())
-    day_start = now - 86400
-    week_start = now - (7 * 86400)
-    month_start = now - (30 * 86400)
-    sessions_by_key = {}
-    for event in analytics.get("sessions", []):
-        key = analytics_station_key(event.get("name"), event.get("url"))
-        sessions_by_key.setdefault(key, []).append(event)
-    totals = []
-    for key, item in analytics.get("totals", {}).items():
-        seconds = int(item.get("seconds") or 0)
-        events = sessions_by_key.get(key, [])
-        def window_seconds(start):
-            return sum(int(e.get("seconds") or 0) for e in events if int(e.get("listened_at") or 0) >= start)
-        def window_plays(start=None):
-            seen = set()
-            for e in events:
-                if start is not None and int(e.get("listened_at") or 0) < start:
-                    continue
-                sid = e.get("session_id") or f"{e.get('listened_at')}-{e.get('ip')}"
-                seen.add(sid)
-            return len(seen)
-        last = item.get("last_listened_at") or ""
-        totals.append({
-            "name": item.get("name") or "Unknown station",
-            "url": item.get("url") or "",
-            "website": item.get("website") or "",
-            "seconds": seconds,
-            "duration": format_duration(seconds),
-            "today": format_duration(window_seconds(day_start)),
-            "week": format_duration(window_seconds(week_start)),
-            "month": format_duration(window_seconds(month_start)),
-            "plays": window_plays(),
-            "plays_today": window_plays(day_start),
-            "plays_week": window_plays(week_start),
-            "plays_month": window_plays(month_start),
-            "hours": round(seconds / 3600, 2),
-            "minutes": round(seconds / 60, 1),
-            "heartbeats": int(item.get("heartbeats") or 0),
-            "last_listened_at": time.strftime("%Y-%m-%d %I:%M %p", time.localtime(int(last))) if last else "",
-        })
-    totals.sort(key=lambda x: x["seconds"], reverse=True)
-    recent = list(reversed(analytics.get("sessions", [])[-200:]))
-    for event in recent:
-        event["duration"] = format_duration(event.get("seconds") or 0)
-        ts = event.get("listened_at") or ""
-        event["listened_at"] = time.strftime("%Y-%m-%d %I:%M %p", time.localtime(int(ts))) if ts else ""
-    return render_template("viewership.html", totals=totals, recent=recent)
-
-@app.route('/admin/viewership/clear', methods=['POST'])
-def admin_clear_viewership():
-    save_analytics({"sessions": [], "totals": {}})
-    return redirect('/admin/viewership')
-
-@app.route('/admin/suspend-station', methods=['POST'])
-def admin_suspend_station():
-    url = (request.form.get('url') or '').strip()
-    name = (request.form.get('name') or '').strip()
-    reason = (request.form.get('reason') or 'Suspended from report').strip()[:300]
-    if name.lower() == 'la voix divine':
-        return redirect('/admin/reports')
-    store = load_station_store()
-    custom = store.get('custom_stations', [])
-    index = find_custom_station_index(custom, url=url, name=name)
-    if index >= 0:
-        station = normalize_station(custom[index])
-        station['suspended'] = True
-        station['suspended_at'] = int(time.time())
-        station['suspend_reason'] = reason
-        custom[index] = station
-        store['custom_stations'] = custom
-        save_station_store(store)
-    return redirect('/admin/reports')
-
-@app.route('/admin/restore/<int:index>', methods=['POST', 'GET'])
-def admin_restore_station(index):
-    store = load_station_store()
-    custom = store.get('custom_stations', [])
-    if 0 <= index < len(custom):
-        station = normalize_station(custom[index])
-        station['suspended'] = False
-        station.pop('suspended_at', None)
-        station.pop('suspend_reason', None)
-        custom[index] = station
-        store['custom_stations'] = custom
-        save_station_store(store)
-    return redirect('/admin/pending')
+    reports = list(reversed(load_reports()))
+    return render_template('reports.html', reports=reports)
 
 @app.route('/admin/approve/<int:index>', methods=['POST', 'GET'])
 def admin_approve(index):
@@ -1396,7 +931,6 @@ def admin_edit_station(index):
         subtitle = (request.form.get('subtitle') or 'Custom Station').strip()
         website = (request.form.get('website') or subtitle).strip()
         bio = (request.form.get('bio') or '').strip()[:250]
-        contact_email = (request.form.get('contact_email') or station.get('contact_email') or '').strip()
         language = (request.form.get('language') or station.get('language') or 'ht').strip().lower()
         flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
         if language not in flags:
@@ -1406,10 +940,8 @@ def admin_edit_station(index):
             error = image_error
         elif not name or not url:
             error = 'Station name and stream URL are required'
-        elif contact_email and not is_valid_email(contact_email):
-            error = 'Contact email is not valid'
         else:
-            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio, 'contact_email': contact_email, 'language': language, 'flag': flags[language]})
+            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio, 'language': language, 'flag': flags[language]})
             if image_path:
                 station['wallpaper'] = image_path
                 station['logo_url'] = image_path
