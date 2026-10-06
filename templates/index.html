@@ -98,14 +98,6 @@ body.public-web .nav-item.active{border-radius:16px;}
 @media (min-width:701px){ #adsPage .bio-subpage{padding-top:34px;} body.public-web #adsPage .bio-subpage{overflow-y:auto;height:100vh;} }
 
 .library-slider{display:flex;gap:24px;overflow-x:auto;overflow-y:hidden;padding:6px 4px 22px;scroll-snap-type:x proximity;max-height:none}.library-slider::-webkit-scrollbar{height:8px}.library-slider::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:999px}.station-slide-card{flex:0 0 390px;height:188px;border:0;border-radius:22px;background:rgba(255,255,255,.1);color:white;display:grid;grid-template-columns:142px 1fr;gap:16px;padding:12px;text-align:left;cursor:pointer;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.22);scroll-snap-align:start}.station-slide-logo{width:142px;height:164px;border-radius:16px;background:linear-gradient(135deg,#1e3a8a,#020617);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:900;overflow:hidden}.station-slide-logo img{width:100%;height:100%;object-fit:cover;display:block}.station-slide-content{min-width:0;display:flex;flex-direction:column;justify-content:center}.station-slide-kicker{font-size:12px;font-weight:900;letter-spacing:2px;color:#9fd1ff;margin-bottom:8px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.station-slide-title{font-size:23px;font-weight:900;line-height:1.08;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.station-slide-subtitle{font-size:15px;font-weight:800;opacity:.82;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.station-slide-actions{display:flex;gap:8px;align-items:center;margin-top:12px}.station-slide-actions .favorite-star{margin-left:auto}@media(max-width:700px){.library-slider{gap:16px;padding-bottom:18px}.station-slide-card{flex-basis:min(360px,88vw);height:172px;grid-template-columns:124px 1fr;gap:12px}.station-slide-logo{width:124px;height:148px}.station-slide-title{font-size:20px}}
-
-/* One scroll surface for the entire submission form, above the navigation. */
-body.public-web #addPage .subpage{bottom:64px;padding:0 18px 32px;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;scroll-padding-bottom:32px}
-body.public-web #addPage .card-list{max-height:none;height:auto;overflow:visible;padding-right:0}
-body.public-web #addPage input,body.public-web #addPage textarea{user-select:text}
-@media(max-width:700px){body.public-web #addPage .subpage{bottom:82px;padding:0 16px 32px}}
-@media(max-width:390px){body.public-web #addPage .subpage{bottom:76px}}
-.logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
 </style>
 <style>
 .add-card input[type=email]{width:100%;padding:16px;margin:8px 0 16px;border:0;border-radius:16px;font-size:22px}
@@ -129,38 +121,13 @@ body.public-web .station-logo{display:flex}
 @media(max-width:700px){.library-slider{display:flex;flex-direction:column;gap:14px;overflow-x:hidden;overflow-y:auto;padding:4px 0 18px}.station-slide-card{flex:0 0 auto;width:100%;height:154px;grid-template-columns:116px 1fr;gap:12px}.station-slide-logo{width:116px;height:130px}.station-slide-title{font-size:19px}.station-slide-kicker{font-size:11px}.station-slide-actions{margin-top:8px}}
 body.public-web #stationLogo{position:fixed;left:122px;top:112px;z-index:22;width:58px;height:58px;margin:0;border-radius:16px}
 @media (max-width:700px){body.public-web #stationLogo{left:116px;top:18px;width:46px;height:46px;border-radius:14px}}
-.logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
-</style>
-<style>
-.account-link{position:absolute;left:192px;top:112px;z-index:22;width:48px;height:50px;display:flex;align-items:center;justify-content:center;border-radius:16px;background:rgba(255,255,255,.15);color:white;text-decoration:none}
-.account-link:hover{background:rgba(255,255,255,.26)}
-.account-link:focus-visible{outline:3px solid #9fd1ff;outline-offset:3px}
-.account-link svg{width:24px;height:24px}
-#buyAdsFrame{position:absolute;inset:0;width:100%;height:calc(100% - 144px);border:0;}
-body.public-web #buyAdsFrame{height:calc(100% - 64px);}
-@media(max-width:700px){ #buyAdsFrame{height:calc(100% - 96px);}body.public-web #buyAdsFrame{height:calc(100% - 82px);}}
-@media(max-width:390px){body.public-web #buyAdsFrame{height:calc(100% - 76px);}}
-.bottom-nav .buy-ads-link{text-decoration:none;}
-.bottom-nav .buy-ads-link:focus-visible{outline:3px solid #9fd1ff;outline-offset:-4px;border-radius:16px}
-@media(max-width:700px){body.public-web .bottom-nav .nav-item{font-size:clamp(13px,3.2vw,20px);min-width:0;padding:0 4px}}
-@media(max-width:700px){
-  body.public-web .language-menu{left:8px;width:70px;padding:0 4px;font-size:13px}
-  body.public-web #stationLogo{left:82px;width:38px}
-  body.public-web .account-link{left:124px;top:18px;width:44px;height:46px;border-radius:14px}
-  body.public-web .report-btn{right:104px;width:44px}
-  body.public-web .home-bio-btn{right:56px;width:44px}
-  body.public-web .fav-btn{right:8px;width:44px}
-}
-.logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
 </style>
 </head>
 <body class="{{ 'public-web' if public_web else '' }}">
 <audio id="webAudio" preload="auto" playsinline></audio>
-<script src="/static/logo-cropper.js?v=2"></script>
 <script>window.PUBLIC_WEB = {{ "true" if public_web else "false" }};</script>
 <div class="screen" id="screen">
 <div id="radioPage" class="page active">
-  <a class="account-link" href="{{ url_for('account_options') }}" aria-label="Account options" title="Account options"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg></a>
   <div class="top-bar"><div class="top-left"><button class="icon-box" onclick="showPage('wifiPage')">WiFi</button></div><button class="vol-btn" onclick="showPage('soundPage')">VOL</button></div>
   <div class="connection" id="connectionText">Connected...</div>
   <select class="language-menu" id="languageSelect" onchange="setLanguage(this.value)" aria-label="Language"><option value="en">🇺🇸 EN</option><option value="es">🇪🇸 ES</option><option value="fr">🇫🇷 FR</option><option value="ht">🇭🇹 HT</option></select><button class="report-btn" onclick="reportStation(currentPreset())" title="Report station" aria-label="Report station">🚩</button><button class="home-bio-btn" id="homeBioBtn" onclick="showStationBio(currentPreset())" title="Station bio" aria-label="Station bio">Bio</button><button class="fav-btn" id="favoriteBtn" onclick="toggleFavorite()">☆</button><div class="radio-main"><div class="stream-label" data-i18n="streamLabel">INTERNET STREAM</div><div class="station-logo" id="stationLogo">🇭🇹</div><div class="station-name" id="stationName">La Voix Divine</div><div class="station-url" id="stationWebsite">radiolavoixdivine.com</div><div class="status-line" id="networkStatus">● STOPPED</div><div class="controls"><button class="control-btn" onclick="prevPreset()">⏮</button><button class="play-btn" id="playBtn" onclick="togglePlayback()">▶</button><button class="control-btn" onclick="nextPreset()">⏭</button></div><div class="news-carousel" id="newsCarousel" aria-label="Haitian Times headlines"></div></div>
@@ -171,11 +138,10 @@ body.public-web #buyAdsFrame{height:calc(100% - 64px);}
 <div id="wifiPage" class="page"><div class="subpage"><div class="header"><div class="title">WiFi</div></div><button class="card" onclick="scanWifi()">Scan WiFi Networks</button><div class="card-list" id="wifiInfo"><div class="card">Loading WiFi...</div></div></div></div>
 <div id="bluetoothPage" class="page"><div class="subpage"><div class="header"><div class="title">Bluetooth</div></div><button class="card" onclick="scanBluetooth()">Scan Bluetooth Devices</button><div class="card-list" id="btInfo"><div class="card">Loading Bluetooth...</div></div></div></div>
 <div id="soundPage" class="page"><div class="subpage"><div class="header"><div class="title">Sound</div></div><div class="card">Volume: <span id="volumeValue">50</span></div><input class="slider" id="volumeSlider" type="range" min="0" max="100" value="50" oninput="setVolume(this.value)"></div></div>
-<div id="addPage" class="page"><div class="subpage"><div class="header"><div class="title" data-i18n="addStation">Add Station</div></div><div class="card-list add-panel"><div class="card add-card"><form id="addStationForm">{% include 'owner_submission_fields.html' %}<label data-i18n="stationNameLabel">Station name</label><input type="text" name="name" placeholder="Example: Test Radio" required><label data-i18n="streamUrlLabel">Stream URL</label><input type="url" name="url" id="homeStreamUrl" placeholder="https://example.com/stream.mp3" required><label data-i18n="websiteLabel">Website / subtitle optional</label><input type="text" name="subtitle" value="Custom Station"><label data-i18n="emailLabel">Contact email</label><input type="email" name="contact_email" placeholder="owner@example.com" required value="{{ form.contact_email|default('') if form is defined else '' }}" ><div class="terms-box"><label class="terms-check"><input type="checkbox" name="terms_agreed" value="1" required><span>I agree to the <a href="/terms" target="_blank">station submission terms</a>.</span></label></div><button class="save-btn" type="submit" data-i18n="saveStation">Save Station</button><div id="addMsg" class="msg"></div></form></div></div></div></div>
+<div id="addPage" class="page"><div class="subpage"><div class="header"><div class="title" data-i18n="addStation">Add Station</div></div><div class="card-list add-panel"><div class="card add-card"><form id="addStationForm"><label data-i18n="stationNameLabel">Station name</label><input type="text" name="name" placeholder="Example: Test Radio" required><label data-i18n="streamUrlLabel">Stream URL</label><input type="url" name="url" id="homeStreamUrl" placeholder="https://example.com/stream.mp3" required><details class="stream-helper"><summary data-i18n="streamHelperTitle">I don't know my Stream URL</summary><div class="stream-helper-grid"><input type="text" id="homeStreamHost" placeholder="Server / host"><input type="number" id="homeStreamPort" placeholder="Port"><select id="homeStreamType"><option value="icecast">Icecast</option><option value="shoutcast">Shoutcast</option></select></div><input type="text" id="homeStreamMount" placeholder="Mount path, like /live or /stream" style="margin:10px 0 0"><button type="button" class="build-btn" onclick="buildStreamUrl('home')" data-i18n="buildStreamUrl">Build Stream URL</button><div class="helper-note" data-i18n="streamHelperNote">Enter the server, port, and mount path. Example: radio.example.com, 8000, /live.</div></details><label data-i18n="websiteLabel">Website / subtitle optional</label><input type="text" name="subtitle" value="Custom Station"><label data-i18n="emailLabel">Contact email</label><input type="email" name="contact_email" placeholder="owner@example.com" required><label data-i18n="languageFlagLabel">Language / flag</label><select name="language" style="width:100%;padding:16px;margin:8px 0 16px;border:0;border-radius:16px;font-size:22px"><option value="en">🇺🇸 English</option><option value="es">🇪🇸 Spanish</option><option value="ht" selected>🇭🇹 Haitian Creole</option><option value="fr">🇫🇷 French</option></select><label data-i18n="bioLabel">Small bio optional</label><textarea name="bio" id="homeAddBio" maxlength="250" placeholder="Short station bio. 250 characters max." style="width:100%;min-height:105px;padding:14px;border-radius:14px;border:0;margin:8px 0 4px;font-size:16px;font-family:inherit;resize:vertical"></textarea><div class="small" id="homeAddBioCount" style="text-align:right;margin-bottom:10px">0/250</div><div class="terms-box"><label class="terms-check"><input type="checkbox" name="terms_agreed" value="1" required><span>I agree to the <a href="/terms" target="_blank">station submission terms</a>.</span></label></div><button class="save-btn" type="submit" data-i18n="saveStation">Save Station</button><div id="addMsg" class="msg"></div></form></div></div></div></div>
 
 <div id="stationBioModal" class="bio-modal" onclick="closeStationBio(event)"><div class="bio-modal-card"><div class="bio-modal-head"><div><div class="bio-modal-title" id="bioModalTitle">Station Bio</div><div class="small" id="bioModalWebsite"></div></div><button class="bio-modal-close" onclick="hideStationBio()">×</button></div><img id="bioModalPhoto" class="bio-modal-photo" alt="Station photo"><div class="bio-modal-body" id="bioModalBody"></div><a class="bio-modal-link" id="bioModalLink" href="#" target="_blank" style="display:none">Open Website</a></div></div>
-<div id="buyAdsPage" class="page"><iframe id="buyAdsFrame" title="Advertisements" data-src="{{ url_for('ads_gallery', embedded='1') }}"></iframe></div>
-<div class="bottom-nav"><button class="nav-item active" onclick="showPage('radioPage',this)" data-i18n="radio">Radio</button><button class="nav-item" onclick="showPage('libraryPage',this);renderLibrary()" data-i18n="library">Library</button><button class="nav-item" onclick="showPage('addPage',this)" data-i18n="addStation">Add Station</button><button class="nav-item buy-ads-link" type="button" onclick="showPage('buyAdsPage',this)">Ads</button></div>
+<div class="bottom-nav"><button class="nav-item active" onclick="showPage('radioPage',this)" data-i18n="radio">Radio</button><button class="nav-item" onclick="showPage('libraryPage',this);renderLibrary()" data-i18n="library">Library</button><button class="nav-item" onclick="showPage('addPage',this)" data-i18n="addStation">Add Station</button></div>
 </div>
 <script>
 let appState={presets:[],preset_index:0,playing:false,volume:50,station_name:"La Voix Divine",station_website:"",logo:"🎧",wallpaper:""};
@@ -201,8 +167,8 @@ function cleanDisplayUrl(v){return (v||'').replace(/^https?:\/\//,'').replace(/^
 function isFavorite(p){return favorites.includes(stationKey(p))}
 function saveFavorites(){localStorage.setItem('radioFavorites',JSON.stringify(favorites))}
 function toggleFavorite(){let p=currentPreset();let k=stationKey(p);if(!k)return;if(isFavorite(p)){favorites=favorites.filter(x=>x!==k)}else{favorites.push(k)}saveFavorites();updateUI();renderLibrary()}
-function showPage(id,btn){if(id==='buyAdsPage'){const frame=document.getElementById('buyAdsFrame');if(!frame.getAttribute('src'))frame.src=frame.dataset.src;}document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));if(btn){btn.classList.add('active')}else{let map={radioPage:0,libraryPage:1,addPage:2,buyAdsPage:3};let nav=document.querySelectorAll('.nav-item');if(map[id]!==undefined&&nav[map[id]])nav[map[id]].classList.add('active')}if(id==='wifiPage')loadWifi();if(id==='bluetoothPage')loadBluetooth();}
-function openPageFromHash(){if((location.hash==='#buy-ads'||location.hash==='#ads')){showPage('buyAdsPage')}else if(location.hash==='#add-station'){showPage('addPage')}else if(location.hash==='#library'){showPage('libraryPage');renderLibrary()}else if(location.hash==='#radio'){showPage('radioPage')}}
+function showPage(id,btn){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));if(btn){btn.classList.add('active')}else{let map={radioPage:0,libraryPage:1,addPage:2};let nav=document.querySelectorAll('.nav-item');if(map[id]!==undefined&&nav[map[id]])nav[map[id]].classList.add('active')}if(id==='wifiPage')loadWifi();if(id==='bluetoothPage')loadBluetooth();}
+function openPageFromHash(){if(location.hash==='#add-station'){showPage('addPage')}else if(location.hash==='#library'){showPage('libraryPage');renderLibrary()}else if(location.hash==='#radio'){showPage('radioPage')}}
 window.addEventListener('hashchange',openPageFromHash);
 function currentPreset(){if(appState.preset_index<0||appState.preset_index>=appState.presets.length){appState.preset_index=0}return appState.presets[appState.preset_index]||null}
 function applyWallpaper(w){let s=document.getElementById('screen');if(w){s.style.backgroundImage=`linear-gradient(rgba(0,20,70,.45),rgba(3,8,30,.72)),url('${w}')`;s.style.backgroundSize='cover';s.style.backgroundPosition='center'}else{s.style.backgroundImage='radial-gradient(circle at top,#1d4ed8,#07143a 70%)'}}
@@ -213,71 +179,10 @@ function currentListenPayload(seconds){let p=currentPreset()||{};return {session
 function sendListenHeartbeat(seconds){let payload=currentListenPayload(seconds);if(!payload.url||seconds<5)return;fetch('/api/listen-heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),keepalive:true}).catch(()=>{});}
 function startListenTracking(){stopListenTracking(false);lastListenHeartbeatAt=Date.now();listenHeartbeatTimer=setInterval(()=>{if(!appState.playing)return;let now=Date.now();let seconds=Math.round((now-lastListenHeartbeatAt)/1000);lastListenHeartbeatAt=now;sendListenHeartbeat(seconds);},30000);}
 function stopListenTracking(sendFinal=true){if(listenHeartbeatTimer){clearInterval(listenHeartbeatTimer);listenHeartbeatTimer=null;}if(sendFinal&&lastListenHeartbeatAt){let seconds=Math.round((Date.now()-lastListenHeartbeatAt)/1000);sendListenHeartbeat(seconds);}lastListenHeartbeatAt=0;}
-let stationPlayRequest=0;
-let stationRetryUrl='';
-const resolvedStationUrls=new Map();
-let stationResolveController=null;
-window.radioPlaybackTimings=[];
-function recordPlaybackTiming(started,resolved,connecting){
-  const timing={playlistMs:Math.round(resolved-started),audioConnectMs:Math.round(performance.now()-connecting),totalMs:Math.round(performance.now()-started)};
-  window.radioPlaybackTimings.push(timing);
-  if(window.radioPlaybackTimings.length>30)window.radioPlaybackTimings.shift();
-  console.debug('Radio playback timing (total includes any ad)',timing);
-}
-async function browserStreamUrl(url,signal,refresh=false){
-  if(!/\.(pls|m3u)$/i.test(new URL(url,location.href).pathname))return url;
-  const cached=resolvedStationUrls.get(url);
-  if(!refresh&&cached&&cached.expires>Date.now())return cached.url;
-  const controller=new AbortController();
-  const cancel=()=>controller.abort();
-  if(signal){if(signal.aborted)controller.abort();else signal.addEventListener('abort',cancel,{once:true});}
-  const timeout=setTimeout(cancel,20000);
-  let response,result;
-  try{response=await fetch('/api/resolve-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,refresh}),signal:controller.signal});result=await response.json().catch(()=>({}));}
-  finally{clearTimeout(timeout);if(signal)signal.removeEventListener('abort',cancel);}
-  if(controller.signal.aborted)throw new DOMException('Cancelled','AbortError');
-  if(!response.ok||!result.url)throw new Error(result.error||'Unable to read station playlist');
-  if(resolvedStationUrls.size>=128)resolvedStationUrls.delete(resolvedStationUrls.keys().next().value);
-  resolvedStationUrls.set(url,{url:result.url,expires:Date.now()+300000});return result.url;
-}
-async function playPreset(p){
-  if(window.prerollBusy)return;
-  const requestId=++stationPlayRequest;
-  if(stationResolveController)stationResolveController.abort();
-  const resolveController=new AbortController();stationResolveController=resolveController;
-  const started=performance.now();
-  if(!p||!p.url){await loadState();if(requestId!==stationPlayRequest)return;p=currentPreset();if(!p||!p.url)return;}
-  if(window.PUBLIC_WEB){const audio=document.getElementById('webAudio');stopListenTracking();audio.pause();appState.playing=false;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();}
-  if(window.PUBLIC_WEB){const status=document.getElementById('networkStatus');status.innerText='Connecting…';status.style.color='#9fd1ff';}
-  let playbackUrl=p.url;
-  if(window.PUBLIC_WEB){try{playbackUrl=await browserStreamUrl(p.url,resolveController.signal,stationRetryUrl===p.url);}catch(e){if(requestId!==stationPlayRequest)return;const status=document.getElementById('networkStatus');status.innerText='This station could not load. Tap Play to retry.';status.style.color='#ffd166';return;}}
-  if(requestId!==stationPlayRequest)return;
-  const resolvedAt=performance.now();
-  const firstStation=appState.presets&&appState.presets[0];
-  const adFreeStation=firstStation && firstStation.url===p.url;
-  if(window.PUBLIC_WEB && !adFreeStation && stationRetryUrl!==p.url && !(await runPreroll()))return;
-  if(requestId!==stationPlayRequest)return;
-  appState.playing=true;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();loadNetwork();
-  if(window.PUBLIC_WEB){
-    const a=document.getElementById('webAudio');
-    if(a.src!==playbackUrl){a.src=playbackUrl;a.load();}
-    const connectingAt=performance.now();
-    try{await a.play();if(requestId!==stationPlayRequest)return;stationRetryUrl='';recordPlaybackTiming(started,resolvedAt,connectingAt);startListenTracking();}
-    catch(e){
-      if(requestId!==stationPlayRequest)return;
-      if(e.name!=='NotAllowedError'&&e.name!=='AbortError')resolvedStationUrls.delete(p.url);
-      stationRetryUrl=p.url;stopListenTracking(false);appState.playing=false;updateUI();loadNetwork();
-      const status=document.getElementById('networkStatus');
-      status.innerText=e.name==='NotAllowedError'?'Tap Play to start this station.':e.name==='AbortError'?'Playback interrupted. Tap Play to retry.':'Unable to play this station. Try again or choose another station.';
-      status.style.color='#ffd166';
-    }
-  }else{
-    fetch('/api/play-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:p.url,name:p.name,subtitle:p.subtitle||'Internet Stream',website:p.website||'',logo:p.logo||'🎧'})}).catch(console.log);startListenTracking();
-  }
-}
-async function togglePlayback(){if(window.prerollBusy)return;if(appState.playing){++stationPlayRequest;stopListenTracking();appState.playing=false;updateUI();loadNetwork();if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');a.pause();a.currentTime=0;}else{await fetch('/api/stop-stream',{method:'POST'});}}else{await playPreset(currentPreset())}}
-async function nextPreset(){if(window.prerollBusy||!appState.presets.length)return;appState.preset_index=(appState.preset_index+1)%appState.presets.length;await playPreset(currentPreset())}
-async function prevPreset(){if(window.prerollBusy||!appState.presets.length)return;appState.preset_index=(appState.preset_index-1+appState.presets.length)%appState.presets.length;await playPreset(currentPreset())}
+async function playPreset(p){if(!p||!p.url){await loadState();p=currentPreset();if(!p||!p.url)return;}appState.playing=true;appState.station_name=p.name;appState.station_website=cleanDisplayUrl(p.website||p.subtitle||'');appState.logo=p.logo||'🎧';appState.logo_url=p.logo_url||'';appState.wallpaper=p.wallpaper||'';updateUI();loadNetwork();if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');if(a.src!==p.url){a.src=p.url;a.load();}try{await a.play();startListenTracking();}catch(e){console.log(e);stopListenTracking(false)}}else{fetch('/api/play-stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:p.url,name:p.name,subtitle:p.subtitle||'Internet Stream',website:p.website||'',logo:p.logo||'🎧'})}).catch(console.log);startListenTracking();}}
+async function togglePlayback(){if(appState.playing){stopListenTracking();appState.playing=false;updateUI();loadNetwork();if(window.PUBLIC_WEB){const a=document.getElementById('webAudio');a.pause();a.currentTime=0;}else{await fetch('/api/stop-stream',{method:'POST'});}}else{appState.playing=true;updateUI();loadNetwork();await playPreset(currentPreset())}}
+async function nextPreset(){if(!appState.presets.length)return;appState.preset_index=(appState.preset_index+1)%appState.presets.length;await playPreset(currentPreset())}
+async function prevPreset(){if(!appState.presets.length)return;appState.preset_index=(appState.preset_index-1+appState.presets.length)%appState.presets.length;await playPreset(currentPreset())}
 async function setVolume(v){appState.volume=parseInt(v);updateUI();await fetch('/api/volume',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({volume:appState.volume})})}
 function renderNews(){
   const carousel=document.getElementById('newsCarousel');
@@ -358,6 +263,7 @@ async function scanBluetooth(){let box=document.getElementById('btInfo');box.inn
 async function connectBluetooth(mac){let r=await fetch('/api/bluetooth-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac})});let d=await r.json();alert(d.message||d.status);loadBluetooth()}
 const addStationForm=document.getElementById('addStationForm');
 if(addStationForm&&!addStationForm.querySelector('input[name="logo_image"]')){let emailInput=addStationForm.querySelector('input[name="contact_email"]');if(emailInput){let logoWrap=document.createElement('div');logoWrap.innerHTML='<label data-i18n="logoUploadLabel">Radio logo optional</label><input type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif"><input type="hidden" name="logo_image_cropped"><div class="logo-cropper"><canvas width="400" height="400"></canvas><label>Zoom</label><input type="range" class="crop-zoom" min="1" max="3" step="0.05" value="1"><label>Move left / right</label><input type="range" class="crop-x" min="0" max="100" value="50"><label>Move up / down</label><input type="range" class="crop-y" min="0" max="100" value="50"></div>';emailInput.insertAdjacentElement('afterend',logoWrap);}}
+function setupLogoCropper(form){let input=form&&form.querySelector('input[name="logo_image"]');if(!input)return;let hidden=form.querySelector('input[name="logo_image_cropped"]');if(!hidden){hidden=document.createElement('input');hidden.type='hidden';hidden.name='logo_image_cropped';input.insertAdjacentElement('afterend',hidden)}let panel=form.querySelector('.logo-cropper');if(!panel){panel=document.createElement('div');panel.className='logo-cropper';panel.innerHTML='<canvas width="400" height="400"></canvas><label>Zoom</label><input type="range" class="crop-zoom" min="1" max="3" step="0.05" value="1"><label>Move left / right</label><input type="range" class="crop-x" min="0" max="100" value="50"><label>Move up / down</label><input type="range" class="crop-y" min="0" max="100" value="50">';input.insertAdjacentElement('afterend',panel)}let canvas=panel.querySelector('canvas'),ctx=canvas.getContext('2d'),zoom=panel.querySelector('.crop-zoom'),xRange=panel.querySelector('.crop-x'),yRange=panel.querySelector('.crop-y');let img=null;function draw(){if(!img)return;let z=parseFloat(zoom.value||'1');let base=Math.min(img.naturalWidth,img.naturalHeight);let size=base/z;let maxX=Math.max(0,img.naturalWidth-size);let maxY=Math.max(0,img.naturalHeight-size);let sx=maxX*(parseFloat(xRange.value||'50')/100);let sy=maxY*(parseFloat(yRange.value||'50')/100);ctx.clearRect(0,0,400,400);ctx.drawImage(img,sx,sy,size,size,0,0,400,400);hidden.value=canvas.toDataURL('image/png')}[zoom,xRange,yRange].forEach(el=>el.addEventListener('input',draw));input.addEventListener('change',()=>{hidden.value='';let file=input.files&&input.files[0];if(!file){panel.classList.remove('active');return}img=new Image();img.onload=()=>{panel.classList.add('active');zoom.value='1';xRange.value='50';yRange.value='50';draw();URL.revokeObjectURL(img.src)};img.src=URL.createObjectURL(file)});form.addEventListener('reset',()=>{hidden.value='';panel.classList.remove('active');img=null})}
 setupLogoCropper(addStationForm);
 const homeAddBio=document.getElementById('homeAddBio');
 const homeAddBioCount=document.getElementById('homeAddBioCount');
@@ -383,14 +289,11 @@ function buildStreamUrl(prefix){
   urlBox.value=host+mount;
   urlBox.focus();
 }
-if(addStationForm){addStationForm.addEventListener('submit',async e=>{e.preventDefault();let msg=document.getElementById('addMsg');msg.innerText='Saving...';msg.className='msg';try{let fd=new FormData(e.target);let r=await fetch('/api/add-station',{method:'POST',headers:{'X-Requested-With':'fetch'},body:fd});let d=await r.json().catch(()=>({status:r.ok?'ok':'error',message:r.ok?'Station saved':'Save failed'}));if(r.ok&&d.status==='ok'){msg.innerText='';msg.className='msg';showSubmissionSuccess(d.station_code);e.target.reset();if(homeAddBioCount)homeAddBioCount.innerText='0/250';await loadState();renderLibrary()}else{msg.innerText=d.message||'Save failed';msg.className='msg err'}}catch(err){msg.innerText='Save failed';msg.className='msg err'}})}
+if(addStationForm){addStationForm.addEventListener('submit',async e=>{e.preventDefault();let msg=document.getElementById('addMsg');msg.innerText='Saving...';msg.className='msg';try{let fd=new FormData(e.target);let r=await fetch('/api/add-station',{method:'POST',headers:{'X-Requested-With':'fetch'},body:fd});let d=await r.json().catch(()=>({status:r.ok?'ok':'error',message:r.ok?'Station saved':'Save failed'}));if(r.ok&&d.status==='ok'){msg.innerText='Station submitted. Waiting for approval.';msg.className='msg ok';e.target.reset();if(homeAddBioCount)homeAddBioCount.innerText='0/250';await loadState();renderLibrary()}else{msg.innerText=d.message||'Save failed';msg.className='msg err'}}catch(err){msg.innerText='Save failed';msg.className='msg err'}})}
 const webAudioEl=document.getElementById('webAudio');
 if(webAudioEl){webAudioEl.addEventListener('play',()=>{appState.playing=true;updateUI();loadNetwork();startListenTracking();});webAudioEl.addEventListener('playing',()=>{appState.playing=true;updateUI();loadNetwork();});webAudioEl.addEventListener('waiting',()=>{appState.playing=true;updateUI();});webAudioEl.addEventListener('pause',()=>{if(window.PUBLIC_WEB){stopListenTracking();appState.playing=false;updateUI();loadNetwork();}});webAudioEl.addEventListener('ended',()=>{stopListenTracking();appState.playing=false;updateUI();loadNetwork();});}
 window.addEventListener('beforeunload',()=>stopListenTracking(true));
 applyLanguage();openPageFromHash();loadState();loadNetwork();loadWifi();loadHaitianTimesNews();setInterval(loadNetwork,5000);setInterval(loadState,30000);setInterval(loadHaitianTimesNews,900000);
 </script>
-{% include 'preroll.html' %}
-{% include 'submission_success.html' %}
 </body>
 </html>
-

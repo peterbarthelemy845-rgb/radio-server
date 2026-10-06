@@ -1,6 +1,5 @@
-from flask import Flask, render_template, request, jsonify, redirect, session, url_for
+from flask import Flask, render_template, request, jsonify, redirect, session, url_for, abort
 import json
-import ipaddress
 import os
 import subprocess
 import shlex
@@ -13,7 +12,6 @@ import requests
 import xml.etree.ElementTree as ET
 import re
 import base64
-from logo_images import device_logo
 from email.message import EmailMessage
 from html import unescape
 from urllib.parse import urlparse, quote, urljoin
@@ -21,10 +19,9 @@ from werkzeug.utils import secure_filename
 import pyotp
 
 app = Flask(__name__)
-from ads import register_ads, public_ad
-register_ads(app)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
+JUNIOR_ADMIN_CODE = os.environ.get("JUNIOR_ADMIN_CODE", "845517").strip()
 ADMIN_MFA_PHONE = os.environ.get("ADMIN_MFA_PHONE", "").strip()
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
@@ -292,9 +289,6 @@ def normalize_station(station):
         "terms_agreed": bool(station.get("terms_agreed")),
         "terms_agreed_at": station.get("terms_agreed_at"),
         "submitted_at": station.get("submitted_at"),
-        "station_code": station.get("station_code", ""),
-        "owner_id": station.get("owner_id", ""),
-        "owner_suspended": bool(station.get("owner_suspended")),
         "suspended": bool(station.get("suspended")),
         "suspended_at": station.get("suspended_at"),
         "suspend_reason": (station.get("suspend_reason") or "").strip(),
@@ -314,9 +308,6 @@ def save_uploaded_image(field_name="wallpaper"):
             raw = base64.b64decode(encoded, validate=True)
             if len(raw) > 6 * 1024 * 1024:
                 return "", "Image is too large"
-            if field_name == "logo_image":
-                raw = device_logo(raw)
-                subtype = "png"
             filename = f"{int(time.time())}_{secrets.token_hex(6)}.{subtype}"
             save_path = os.path.join(UPLOAD_FOLDER, filename)
             with open(save_path, "wb") as f:
@@ -330,18 +321,6 @@ def save_uploaded_image(field_name="wallpaper"):
         return "", ""
     if not allowed_image(image.filename):
         return "", "Image must be PNG, JPG, JPEG, GIF, or WEBP"
-    if field_name == "logo_image":
-        try:
-            raw = image.read(6 * 1024 * 1024 + 1)
-            if len(raw) > 6 * 1024 * 1024:
-                return "", "Image is too large"
-            raw = device_logo(raw)
-            filename = f"{int(time.time())}_{secrets.token_hex(6)}.png"
-            with open(os.path.join(UPLOAD_FOLDER, filename), "wb") as output:
-                output.write(raw)
-            return f"/static/wallpapers/{filename}", ""
-        except Exception:
-            return "", "Could not open logo image"
     safe = secure_filename(image.filename)
     filename = f"{int(time.time())}_{safe}"
     save_path = os.path.join(UPLOAD_FOLDER, filename)
@@ -400,7 +379,7 @@ def get_all_streams():
         store = load_station_store()
         for raw in store.get("custom_stations", []):
             station = normalize_station(raw)
-            if station.get("name") and station.get("url") and not station.get("suspended") and not station.get("owner_suspended"):
+            if station.get("name") and station.get("url") and not station.get("suspended"):
                 streams.append(station)
     except Exception as e:
         print("Saved custom station load failed:", e)
@@ -412,10 +391,7 @@ def get_all_streams():
     # Remove duplicates by URL/name.
     clean = []
     seen = set()
-    blocked_urls = {s.get("url") for s in load_station_store().get("custom_stations", []) if s.get("suspended") or s.get("owner_suspended")}
     for s in streams:
-        if s.get("url") in blocked_urls or s.get("owner_suspended") or s.get("suspended"):
-            continue
         if not s.get("flag"):
             language = (s.get("language") or "ht").strip().lower()
             s["flag"] = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}.get(language, "🇭🇹")
@@ -426,7 +402,7 @@ def get_all_streams():
         key = (s.get("url") or s.get("name") or "").strip().lower()
         if key and key not in seen:
             seen.add(key)
-            clean.append({k: v for k, v in s.items() if k not in ("owner_id", "station_code", "contact_email", "email", "terms_agreed_at", "terms_agreed")})
+            clean.append(s)
     return clean
 
 def run_command(cmd: str) -> subprocess.CompletedProcess:
@@ -735,9 +711,11 @@ def build_state():
 
 @app.before_request
 def require_admin_login():
-    if (request.path.startswith('/admin') or request.path.startswith('/api/admin/')) and request.endpoint not in ('admin_login', 'admin_logout'):
+    if (request.path.startswith('/admin') or request.path.startswith('/api/admin')) and request.endpoint not in ('admin_login', 'admin_logout'):
         if not session.get('admin_logged_in'):
             return redirect(url_for('admin_login', next=request.path))
+        if session.get('admin_role') == 'junior' and request.endpoint not in ('admin_pending', 'admin_stations', 'admin_approve', 'admin_reject'):
+            abort(403)
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
@@ -759,6 +737,7 @@ def admin_login():
             if verify_admin_totp(code):
                 session.pop('admin_password_ok', None)
                 session.pop('admin_totp_attempts', None)
+                session['admin_role'] = 'full'
                 session['admin_logged_in'] = True
                 return redirect(session.pop('admin_next', None) or '/admin/pending')
             session['admin_totp_attempts'] = attempts + 1
@@ -766,12 +745,19 @@ def admin_login():
             return render_template('admin_login.html', error=error, step='verify')
 
         password = (request.form.get('password') or '').strip()
+        if JUNIOR_ADMIN_CODE and secrets.compare_digest(password, JUNIOR_ADMIN_CODE):
+            session.clear()
+            session['admin_logged_in'] = True
+            session['admin_role'] = 'junior'
+            return redirect('/admin/pending')
         if password == ADMIN_PASSWORD:
+            session.clear()
             session['admin_next'] = request.args.get('next') or '/admin/pending'
             if is_totp_configured():
                 session['admin_password_ok'] = True
                 session['admin_totp_attempts'] = 0
                 return render_template('admin_login.html', error='', step='verify')
+            session['admin_role'] = 'full'
             session['admin_logged_in'] = True
             return redirect(session.pop('admin_next', None) or '/admin/pending')
         error = 'Wrong password'
@@ -779,7 +765,7 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
-    session.pop('admin_logged_in', None)
+    session.clear()
     return redirect('/admin/login')
 
 @app.route("/api/stations", methods=["GET"])
@@ -798,95 +784,7 @@ def qr_image():
 
 @app.route("/")
 def index():
-    return render_template("index.html", public_web=is_public_website(), preroll_ad=public_ad())
-
-def is_playlist(url):
-    return urlparse(url).path.lower().endswith(('.pls', '.m3u'))
-
-def validate_public_url(url):
-    parsed = urlparse(url)
-    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
-        raise ValueError('Invalid stream address')
-    addresses = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80), type=socket.SOCK_STREAM)
-    if not addresses or any(not ipaddress.ip_address(item[4][0]).is_global for item in addresses):
-        raise ValueError('Stream address must be public')
-
-def parse_playlist(text, base):
-    if '#EXT-X-' in text:
-        return base  # HLS is a media playlist, not a station-list wrapper.
-    entries = re.findall(r'^\s*File(\d+)\s*=\s*(.+?)\s*$', text, re.I | re.M)
-    if entries:
-        return urljoin(base, min(entries, key=lambda entry: int(entry[0]))[1])
-    for line in text.splitlines():
-        line = line.strip()
-        if line and not line.startswith(('#', '[')) and '=' not in line.split('?', 1)[0]:
-            return urljoin(base, line)
-    raise ValueError('Playlist contains no playable stream')
-
-def resolve_playlist(url):
-    if not is_playlist(url):
-        return url
-    seen = set()
-    for _ in range(6):
-        if url in seen:
-            raise ValueError('Playlist redirects in a loop')
-        seen.add(url)
-        validate_public_url(url)
-        with requests.get(url, timeout=(4, 6), stream=True, allow_redirects=False) as response:
-            if response.status_code in (301, 302, 303, 307, 308):
-                location = response.headers.get('Location')
-                if not location:
-                    raise ValueError('Invalid playlist redirect')
-                url = urljoin(url, location)
-                continue
-            response.raise_for_status()
-            content_type = response.headers.get('Content-Type', '').split(';')[0].lower()
-            if content_type in ('audio/mpeg', 'audio/aac', 'audio/aacp', 'audio/ogg'):
-                return url
-            body = bytearray()
-            for chunk in response.iter_content(4096):
-                body.extend(chunk)
-                if len(body) > 65536:
-                    raise ValueError('Playlist is too large')
-            target = parse_playlist(body.decode('utf-8-sig', errors='replace'), url)
-        validate_public_url(target)
-        if target == url or not is_playlist(target):
-            return target
-        url = target
-    raise ValueError('Too many playlist redirects')
-
-
-
-# Bounded per-worker cache. Only successful resolutions are retained.
-from threading import RLock
-playlist_cache = {}
-playlist_cache_lock = RLock()
-PLAYLIST_CACHE_SECONDS = 300
-
-def cached_playlist(url, refresh=False):
-    now = time.monotonic()
-    with playlist_cache_lock:
-        entry = playlist_cache.get(url)
-        if not refresh and entry and entry[1] > now:
-            return entry[0]
-    target = resolve_playlist(url)
-    with playlist_cache_lock:
-        if len(playlist_cache) >= 256:
-            playlist_cache.pop(next(iter(playlist_cache)))
-        playlist_cache[url] = (target, time.monotonic() + PLAYLIST_CACHE_SECONDS)
-    return target
-
-@app.route('/api/resolve-stream', methods=['POST'])
-def resolve_browser_stream():
-    data = request.get_json(silent=True) or {}
-    url = data.get('url')
-    try:
-        if not isinstance(url, str) or url not in {station.get('url') for station in get_all_streams()}:
-            return jsonify(error='Station is not available'), 400
-        return jsonify(url=cached_playlist(url, refresh=data.get('refresh') is True))
-    except Exception:
-        app.logger.exception('Station playlist resolution failed')
-        return jsonify(error='Unable to read this station playlist. Please try again.'), 502
+    return render_template("index.html", public_web=is_public_website())
 
 @app.route("/api/state", methods=["GET"])
 def get_state():
@@ -1194,8 +1092,7 @@ def api_add_station():
     subtitle = (data.get('subtitle') or 'Custom Station').strip()
     website = (data.get('website') or subtitle).strip()
     bio = (data.get('bio') or '').strip()[:250]
-    from station_owners import attach_station
-    contact_email = (data.get('contact_email') or data.get('email') or '').strip().casefold()
+    contact_email = (data.get('contact_email') or data.get('email') or '').strip()
     terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
     language = (data.get('language') or 'ht').strip().lower()
     form = station_submission_form(name, url, subtitle, bio, language, contact_email)
@@ -1237,18 +1134,17 @@ def api_add_station():
     pending = store.get('pending_stations', [])
     now = int(time.time())
     station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
-    if any((item.get('url') or '').strip() == url for item in store.get('custom_stations', []) + pending):
-        message = 'This stream is already submitted. Manage it from your owner dashboard.'
-        if wants_json:
-            return jsonify(status='error', message=message), 409
-        return render_template('add_station.html', status='error', message=message, form=form), 409
-    station = attach_station(station)
-    pending.append(station)
+    for i, item in enumerate(pending):
+        if (item.get('url') or '').strip() == url:
+            pending[i] = station
+            break
+    else:
+        pending.append(station)
     store['pending_stations'] = pending
     save_station_store(store)
     message = "Station submitted. Waiting for approval."
     if wants_json:
-        return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "station_code": station["station_code"], "version": get_config_version()})
+        return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "version": get_config_version()})
     wifi = get_wifi_status_data()
     return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
 
@@ -1324,72 +1220,8 @@ def api_listen_heartbeat():
 
 @app.route('/admin/pending', methods=['GET'])
 def admin_pending():
-    from ad_submissions import approved_ads, pending_ads
     store = load_station_store()
-    query = request.args.get('q', '').strip()[:200]
-    status = request.args.get('status', 'all')
-    def station_page(group, key):
-        rows = [dict(row, _index=i) for i, row in enumerate(store.get(group, []))]
-        rows = [row for row in rows if query.casefold() in ' '.join(str(row.get(k, '')) for k in ('name','url','contact_email','station_code')).casefold()]
-        if status in ('active', 'suspended'):
-            rows = [row for row in rows if bool(row.get('suspended') or row.get('owner_suspended')) == (status == 'suspended')]
-        pages = max(1, (len(rows)+19)//20)
-        try:
-            page = max(1, min(pages, int(request.args.get(key, 1))))
-        except ValueError:
-            page = 1
-        def link(number):
-            args = request.args.to_dict()
-            args[key] = number
-            return url_for('admin_pending', **args)
-        return rows[(page-1)*20:page*20], dict(page=page, pages=pages, total=len(rows), previous=link(page-1), next=link(page+1))
-    pending, pending_page = station_page('pending_stations', 'pp')
-    approved, approved_page = station_page('custom_stations', 'ap')
-    return render_template('pending.html', pending=pending, approved=approved, approved_ads=approved_ads(), pending_ads=pending_ads(), pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
-
-@app.route('/admin/export-stations', methods=['GET'])
-def export_stations():
-    from io import BytesIO
-    from pathlib import Path
-    from zipfile import ZipFile, ZIP_DEFLATED
-    from flask import send_file
-    store = load_station_store()
-    available = get_all_streams()
-    payload = BytesIO()
-    base = Path(app.root_path).resolve()
-    static = (base / 'static').resolve()
-    missing = []
-    with ZipFile(payload, 'w', ZIP_DEFLATED) as archive:
-        archive.writestr('stations.json', json.dumps(store, indent=2, ensure_ascii=False))
-        from station_owners import DATABASE
-        if DATABASE.exists():
-            import sqlite3
-            import tempfile
-            from contextlib import closing
-            with tempfile.TemporaryDirectory() as folder:
-                snapshot = Path(folder) / 'owners.sqlite3'
-                with closing(sqlite3.connect(DATABASE)) as source_db, closing(sqlite3.connect(snapshot)) as backup_db:
-                    source_db.backup(backup_db)
-                archive.write(snapshot, 'owner_data/owners.sqlite3')
-        archive.writestr('available-stations.json', json.dumps(available, indent=2, ensure_ascii=False))
-        copied = set()
-        for station in list(store.get('custom_stations', [])) + list(store.get('pending_stations', [])) + available:
-            for field in ('logo_url', 'wallpaper'):
-                path = station.get(field) or ''
-                if not path.startswith('/static/') or path in copied:
-                    continue
-                copied.add(path)
-                candidate = (base / path.lstrip('/')).resolve()
-                if static not in candidate.parents or not candidate.is_file():
-                    missing.append(path)
-                    continue
-                archive.write(candidate, candidate.relative_to(base).as_posix())
-        archive.writestr('RESTORE.txt', 'Station backup\n\nCopy stations.json into the app directory and merge the static/ folder to restore station images. Restore owner_data/owners.sqlite3 when included to retain owner accounts and assignments. This backup contains private contact details and password hashes; keep it private. Restart the app. Back up current data before restoring.\n\nIncludes pending, approved and suspended records with contact details and metadata. available-stations.json is a reference snapshot of public/default stations; external images are represented by their URLs.\nMissing local image files: ' + (', '.join(missing) or 'None') + '\n')
-    payload.seek(0)
-    response = send_file(payload, mimetype='application/zip', as_attachment=True,
-                         download_name='stations-backup-' + time.strftime('%Y%m%d-%H%M%S', time.gmtime()) + '.zip')
-    response.headers['Cache-Control'] = 'private, no-store'
-    return response
+    return render_template('pending.html', pending=store.get('pending_stations', []), approved=store.get('custom_stations', []) if session.get('admin_role') != 'junior' else [], junior=session.get('admin_role') == 'junior')
 
 @app.route('/admin/stations', methods=['GET'])
 def admin_stations():
@@ -1479,12 +1311,11 @@ def admin_clear_viewership():
 
 @app.route('/admin/suspend-station', methods=['POST'])
 def admin_suspend_station():
-    destination = 'admin_pending' if request.form.get('return_to') == 'pending' else 'admin_reports'
     url = (request.form.get('url') or '').strip()
     name = (request.form.get('name') or '').strip()
     reason = (request.form.get('reason') or 'Suspended from report').strip()[:300]
     if name.lower() == 'la voix divine':
-        return redirect(url_for(destination))
+        return redirect('/admin/reports')
     store = load_station_store()
     custom = store.get('custom_stations', [])
     index = find_custom_station_index(custom, url=url, name=name)
@@ -1496,7 +1327,7 @@ def admin_suspend_station():
         custom[index] = station
         store['custom_stations'] = custom
         save_station_store(store)
-    return redirect(url_for(destination))
+    return redirect('/admin/reports')
 
 @app.route('/admin/restore/<int:index>', methods=['POST', 'GET'])
 def admin_restore_station(index):
@@ -1512,16 +1343,13 @@ def admin_restore_station(index):
         save_station_store(store)
     return redirect('/admin/pending')
 
-@app.route('/admin/approve/<int:index>', methods=['POST'])
+@app.route('/admin/approve/<int:index>', methods=['POST', 'GET'])
 def admin_approve(index):
-    from station_owners import check_token, provision_owner
-    check_token()
     store = load_station_store()
     pending = store.get('pending_stations', [])
     custom = store.get('custom_stations', [])
     if 0 <= index < len(pending):
         station = normalize_station(pending.pop(index))
-        provision_owner(station)
         station.pop('submitted_at', None)
         for item in custom:
             if (item.get('url') or '').strip() == station.get('url'):
@@ -1600,13 +1428,6 @@ def api_admin_stations():
 @app.route('/api/qr-link', methods=['GET'])
 def qr_link():
     return jsonify({"status": "ok", "url": get_add_station_url()})
-
-import sys
-from station_owners import register_owners
-register_owners(app, sys.modules[__name__])
-
-from automatic_backups import register_backups
-register_backups(app, sys.modules[__name__])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

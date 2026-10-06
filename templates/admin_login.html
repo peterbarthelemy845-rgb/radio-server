@@ -14,7 +14,7 @@
     {% if step == 'verify' %}
     <div class="sub">Enter the 6-digit code from Google Authenticator.</div>
     {% else %}
-    <div class="sub">Enter your admin password to approve or reject submitted stations.</div>
+    <div class="sub">Enter your admin password or junior admin code to review submitted stations.</div>
     {% endif %}
     {% if error %}<div class="error">{{ error }}</div>{% endif %}
     {% if step == 'verify' %}
@@ -24,7 +24,7 @@
     <button type="submit">Verify Code</button>
     {% else %}
     <input type="hidden" name="action" value="password">
-    <label for="password">Password</label>
+    <label for="password">Password or junior admin code</label>
     <input id="password" name="password" type="password" autocomplete="current-password" autofocus>
     <button type="submit">Unlock Admin</button>
     {% endif %}
