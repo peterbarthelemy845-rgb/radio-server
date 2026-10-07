@@ -164,7 +164,7 @@ def register_owners(app, radio):
             db.execute('BEGIN IMMEDIATE')
             g.owner_write_db = db
         deleting = request.endpoint in ('admin_delete_station', 'admin_reject') or (request.endpoint == 'admin_station_deletion' and request.view_args.get('decision') == 'approve')
-        if deleting:
+        if deleting and not (request.endpoint == 'admin_reject' and session.get('admin_role') == 'junior'):
             from itsdangerous import URLSafeTimedSerializer, BadSignature
             if not session.get('admin_logged_in'):
                 abort(403)
