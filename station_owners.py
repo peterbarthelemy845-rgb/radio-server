@@ -78,8 +78,12 @@ def provision_owner(station, rotate=False):
         if rotate or not credential:
             access_code = 'OWN-' + secrets.token_hex(12).upper()
             db.execute('INSERT OR REPLACE INTO owner_access VALUES (?,?,?)', (owner['id'], generate_password_hash(access_code), secrets.token_hex(16)))
-            flash('Owner login for ' + email + ': ' + access_code + '. Copy this access code and give it privately to the owner. It is shown once.', 'owner-access')
-        else:
+            messages = getattr(g, 'owner_access_emails', [])
+            messages.append((email, access_code, station.get('name', 'Your station')))
+            g.owner_access_emails = messages
+            if request.path.startswith('/admin/'):
+                flash('Owner login for ' + email + ': ' + access_code + '. An email delivery will be attempted. Keep this code privately if the mailbox is not configured.', 'owner-access')
+        elif request.path.startswith('/admin/'):
             flash('Station linked to ' + email + '. Their existing access code still works.', 'owner-access')
         code = station.get('station_code') or 'ST-' + secrets.token_hex(8).upper()
         db.execute('INSERT OR REPLACE INTO station_ownership VALUES (?,?)', (code, owner['id']))
@@ -214,6 +218,11 @@ def register_owners(app, radio):
         db = getattr(g, 'owner_write_db', None)
         if db:
             db.commit() if response.status_code < 400 else db.rollback()
+        if response.status_code < 400:
+            from access_email import send_access_code
+            for email, code, name in getattr(g, 'owner_access_emails', []):
+                if not send_access_code(email, code, name):
+                    app.logger.warning('Owner access email could not be delivered; check mailbox configuration or regenerate the owner code in admin.')
         if request.path.startswith(('/owner', '/admin/')):
             response.headers['Cache-Control'] = 'private, no-store'
         return response

@@ -1262,10 +1262,10 @@ def api_add_station():
             return jsonify(status='error', message=message), 409
         return render_template('add_station.html', status='error', message=message, form=form), 409
     station = attach_station(station)
+    from station_owners import provision_owner
+    provision_owner(station)
     auto_approved = store.get('auto_approve_stations', False) is True
     if auto_approved:
-        from station_owners import provision_owner
-        provision_owner(station)
         station.pop('submitted_at', None)
         store.setdefault('custom_stations', []).append(station)
     else:
