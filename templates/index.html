@@ -107,7 +107,7 @@ body.public-web #addPage input,body.public-web #addPage textarea{user-select:tex
 @media(max-width:390px){body.public-web #addPage .subpage{bottom:76px}}
 .logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
 
-#shopPage .subpage{overflow-y:auto;padding-bottom:160px}.shop-product{max-width:850px;margin:0 auto;background:rgba(8,16,38,.86);border:1px solid rgba(159,209,255,.22);border-radius:26px;overflow:hidden}.shop-product img{display:block;width:100%;height:auto}.shop-details{padding:24px}.shop-details h2{font-size:30px;margin:0 0 14px}.coming-soon{display:inline-block;background:#9fd1ff;color:#07143a;border-radius:999px;padding:10px 18px;font-size:18px;font-weight:900}.shop-details p{font-size:18px;line-height:1.5;color:#dbeafe}@media(max-width:700px){ #shopPage .subpage{padding:24px 14px 110px}.shop-details{padding:20px}.shop-details h2{font-size:26px}}
+#shopPage .subpage{overflow-y:auto;padding-bottom:100px}#shopPage .header{margin-bottom:16px}#shopPage .title{font-size:36px}.shop-product{max-width:420px;margin:0 auto;background:rgba(8,16,38,.86);border:1px solid rgba(159,209,255,.22);border-radius:26px;overflow:hidden}.shop-product img{display:block;width:100%;height:auto;max-height:clamp(140px,30dvh,240px);object-fit:contain}.shop-details{padding:18px 20px}.shop-details h2{font-size:24px;margin:0 0 14px}.coming-soon{display:inline-block;background:#9fd1ff;color:#07143a;border-radius:999px;padding:10px 18px;font-size:18px;font-weight:900}.shop-details p{font-size:18px;line-height:1.5;color:#dbeafe}@media(max-width:700px){ #shopPage .subpage{padding:24px 14px 110px}.shop-details{padding:20px}.shop-details h2{font-size:24px}}
 </style>
 <style>
 .add-card input[type=email]{width:100%;padding:16px;margin:8px 0 16px;border:0;border-radius:16px;font-size:22px}
@@ -385,5 +385,6 @@ applyLanguage();openPageFromHash();loadState();loadNetwork();loadWifi();loadHait
 {% include 'submission_success.html' %}
 </body>
 </html>
+
 
 
