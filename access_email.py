@@ -1,5 +1,6 @@
 """Send station owner access codes using the configured mailbox."""
 import os
+import logging
 import smtplib
 import ssl
 from email.message import EmailMessage
@@ -9,6 +10,7 @@ def send_access_code(email, code, station_name):
     username = os.environ.get('SMTP_USERNAME', 'info@radiolavoixdivine.com').strip()
     password = os.environ.get('SMTP_PASSWORD', '')
     if not host or not username or not password:
+        logging.getLogger(__name__).warning("Owner email skipped: SMTP configuration incomplete")
         return False
     try:
         port = int(os.environ.get('SMTP_PORT', '587'))
@@ -25,5 +27,6 @@ def send_access_code(email, code, station_name):
             smtp.login(username, password)
             smtp.send_message(message)
         return True
-    except (OSError, ValueError, smtplib.SMTPException):
+    except (OSError, ValueError, smtplib.SMTPException) as error:
+        logging.getLogger(__name__).warning("Owner email failed: %s; SMTP status=%s", type(error).__name__, getattr(error, "smtp_code", "unavailable"))
         return False
