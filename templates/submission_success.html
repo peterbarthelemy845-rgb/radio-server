@@ -6,9 +6,10 @@
 #submissionSuccess button{min-height:46px;padding:12px 28px;border:0;border-radius:14px;background:#2563eb;color:white;font-size:17px;font-weight:700;cursor:pointer}
 #submissionSuccess button:focus-visible{outline:3px solid #9fd1ff;outline-offset:3px}
 </style>
-<dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage">
+<dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage submissionAccessMessage">
   <h2 id="submissionSuccessTitle">Waiting for approval</h2>
   <p id="submissionSuccessMessage">Thank you for your submission. Your station is waiting for admin approval.</p>
+  <p id="submissionAccessMessage">Your new access code will be emailed to the contact email you provided. Use that email and code to log in and manage your station. Check your inbox and spam folder. Already have an owner account? Keep using your existing code.</p>
   <form method="dialog"><button autofocus>OK</button></form>
 </dialog>
 <script>
