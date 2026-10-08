@@ -1,13 +1,10 @@
-{% extends 'ad_public_base.html' %}{% block title %}Station Owner Login{% endblock %}
- {% block home_link %}{% endblock %}
-{% block extra_head %}<style>
-body{padding:48px 18px 120px}main{max-width:640px}h1{margin:0 0 22px;font-size:32px}.card{margin-top:0;padding:30px}.intro{margin-top:0;color:#475569}.admin-link{text-align:center;margin:22px 0 0}.admin-link a{font-size:14px;color:#64748b;text-underline-offset:4px}.login-nav{position:fixed;bottom:0;left:0;right:0;z-index:30;display:flex;background:#080f26;border-radius:20px 20px 0 0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -6px 24px #0003}.login-nav a{flex:1;display:flex;align-items:center;justify-content:center;min-height:76px;color:white;text-decoration:none;font-weight:bold;padding:12px 4px;text-align:center}.login-nav a:hover{background:#ffffff12;color:#9fd1ff}.login-nav a:focus-visible{outline:3px solid #38bdf8;outline-offset:-4px}input:focus-visible{outline:3px solid #93c5fd;border-color:#2563eb}@media(max-width:500px){body{padding:28px 14px 116px}h1{font-size:27px}.card{padding:22px}.login-nav a{font-size:14px;min-height:72px}}
-</style>{% endblock %}
-{% block bottom_nav %}<nav class="login-nav" aria-label="Main navigation"><a href="{{ url_for('index') }}#radio">Radio</a><a href="{{ url_for('index') }}#library">Library</a><a href="{{ url_for('index') }}#add-station">Add Station</a><a href="{{ url_for('index') }}#shop">Shop</a></nav>{% endblock %}
-{% block content %}<h1>Station Owner Login</h1><section class="card">
-<p class="intro">Your owner access code is emailed when you submit your first station. Sign in to manage your stations; pending stations still need approval before appearing in the library.</p>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Station Owner Login</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;min-height:100dvh;background:#dbe7f0;font:18px Arial,sans-serif;color:#334155;display:grid;place-items:center;padding:24px 16px}.login{width:100%;max-width:364px;background:#f4f9f8;border-radius:12px;padding:26px 24px 20px;box-shadow:0 8px 14px #64748b20}form{display:grid;gap:13px}input:not([type=hidden]){width:100%;height:46px;padding:10px 13px;border:1px solid #d7dddf;border-radius:8px;background:#fff;font:20px Arial;color:#334155;box-shadow:inset 0 1px 3px #00000008}input::placeholder{color:#52616b;opacity:1}button{margin-top:3px;width:100%;min-height:46px;border:0;border-radius:7px;background:#4d80bb;color:#fff;font:20px Arial;cursor:pointer}button:hover{background:#3d6fa9}input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #245b92;outline-offset:3px}.error{margin:0 0 16px;color:#991b1b;font-size:15px}.home{display:block;text-align:center;margin-top:16px;color:#52677a;font-size:14px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style></head><body><main class="login"><h1 class="sr-only">Station Owner Login</h1>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-<form method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
-<label>Email<input name="email" type="email" maxlength="254" required autocomplete="email"></label>
-<label>Access code<input name="access_code" type="password" maxlength="128" required autocomplete="current-password"></label>
-<button class="wide">Sign in</button></form><p class="hint">Check your inbox and spam folder for an email from info@radiolavoixdivine.com. Already an owner? Use your existing code. For help, contact the administrator. No separate registration is required.</p><p class="admin-link"><a href="/admin/login">Admin Login</a></p></section>{% endblock %}
+<form method="post" action="{{ url_for('owner_login') }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
+<label class="sr-only" for="email">Email</label><input id="email" name="email" type="email" placeholder="Email" maxlength="254" required autocomplete="email">
+<label class="sr-only" for="access-code">Owner access code</label><input id="access-code" name="access_code" type="password" placeholder="Access code" maxlength="128" required autocomplete="current-password">
+<button type="submit">LOG IN</button></form><a class="home" href="{{ url_for('index') }}">Back to radio</a></main></body></html>
