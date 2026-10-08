@@ -11,6 +11,7 @@
   <div class="field"><label>Stream URL</label><input name="url" type="url" required value="{{ station.url }}"></div>
   <div class="field"><label>Website / subtitle</label><input name="subtitle" value="{{ station.subtitle }}"></div>
   <div class="field"><label>Website</label><input name="website" value="{{ station.website }}"></div>
+  <div class="field"><label>Contact email</label><input name="contact_email" type="email" value="{{ station.contact_email }}"></div>
   <div class="field"><label>Language / flag</label><select name="language" style="width:100%;min-height:52px;border:2px solid #dbe4f0;border-radius:14px;padding:12px 14px;font-size:17px"><option value="en" {% if station.language == 'en' %}selected{% endif %}>🇺🇸 English</option><option value="es" {% if station.language == 'es' %}selected{% endif %}>🇪🇸 Spanish</option><option value="ht" {% if not station.language or station.language == 'ht' %}selected{% endif %}>🇭🇹 Haitian Creole</option><option value="fr" {% if station.language == 'fr' %}selected{% endif %}>🇫🇷 French</option></select></div>
   {% if station.logo_url or station.wallpaper %}<img class="thumb" src="{{ station.logo_url or station.wallpaper }}">{% endif %}
   <div class="field"><label>Replace logo / wallpaper</label><input name="wallpaper" type="file" accept="image/*"></div>

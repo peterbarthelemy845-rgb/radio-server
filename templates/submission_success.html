@@ -12,9 +12,11 @@
   <form method="dialog"><button autofocus>OK</button></form>
 </dialog>
 <script>
-function showSubmissionSuccess(code){
+function showSubmissionSuccess(code,autoApproved=false){
+  document.getElementById('submissionSuccessTitle').innerText=autoApproved?'Station approved':'Waiting for approval';
+  document.getElementById('submissionSuccessMessage').innerText=autoApproved?'Your station was approved automatically and is now available in the library.':'Thank you for your submission. Your station is waiting for admin approval.';
   const dialog=document.getElementById('submissionSuccess');
   if(!dialog.open)dialog.showModal();
 }
-{% if status == 'ok' %}showSubmissionSuccess();{% endif %}
+{% if status == 'ok' %}showSubmissionSuccess(null,{{ auto_approved|default(false)|tojson }});{% endif %}
 </script>

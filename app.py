@@ -810,6 +810,11 @@ def qr_image():
     data = get_add_station_url()
     return redirect("https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=" + quote(data, safe=""))
 
+@app.route('/account')
+def account_options():
+    return render_template('account_options.html')
+
+
 @app.route("/")
 def index():
     return render_template("index.html", public_web=is_public_website())
@@ -1271,7 +1276,7 @@ def api_add_station():
     if wants_json:
         return jsonify({"status": "ok", "message": message, "auto_approved": auto_approved, "pending_count": len(pending), "station_code": station["station_code"], "version": get_config_version()})
     wifi = get_wifi_status_data()
-    return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
+    return render_template('add_station.html', status='ok', auto_approved=auto_approved, message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
 
 @app.route('/api/report-station', methods=['POST'])
 def api_report_station():
