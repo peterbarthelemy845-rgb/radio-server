@@ -10,7 +10,8 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from flask import render_template, redirect, url_for, send_file, abort, request, g, session
 
 def register_backups(app, radio):
-    directory = Path(os.environ.get('RADIO_BACKUP_DIR', str(Path(app.root_path) / 'private_backups'))).resolve()
+    from persistent_storage import data_directory
+    directory = Path(os.environ.get('RADIO_BACKUP_DIR', data_directory('private_backups'))).resolve()
     started = False
     start_lock = threading.Lock()
 
@@ -47,9 +48,11 @@ def register_backups(app, radio):
                             with closing(sqlite3.connect(source)) as live, closing(sqlite3.connect(snapshot)) as copy:
                                 live.backup(copy)
                             archive.write(snapshot, destination)
-                    for folder, prefix in [(base / 'static', 'static'), (ad_submissions.PRIVATE, 'ad_submissions')]:
+                    for folder, prefix in [(base / 'static', 'static'), (Path(radio.UPLOAD_FOLDER), 'static/wallpapers'), (ad_submissions.PRIVATE, 'ad_submissions')]:
                         if folder.exists():
                             for source in folder.rglob('*'):
+                                if prefix == 'static' and os.environ.get('RADIO_DATA_DIR') and 'wallpapers' in source.relative_to(folder).parts:
+                                    continue
                                 if source.is_file() and not source.is_symlink() and source.suffix.lower() in ('.jpg','.jpeg','.png','.gif','.webp','.mp4','.webm','.svg','.ico'):
                                     archive.write(source, prefix + '/' + source.relative_to(folder).as_posix())
                     archive.writestr('RESTORE.txt', 'Stop the radio app before restoring. Keep a copy of current data. Extract this backup into the app directory, preserving paths, then restart. Keep your deployment environment variables, including ADMIN_TOTP_SECRET, separately; they are not in this archive. This archive contains private account records, signing keys, contact details and media. Store it privately. Each SQLite database uses its backup API; files may reflect slightly different moments during live writes.\n')
@@ -163,8 +166,8 @@ def register_backups(app, radio):
                            'ad_submissions/submissions.sqlite3':ad_submissions.DATABASE}
                 destinations = {}
                 for name in names:
-                    dest = mapping.get(name, root/name)
-                    if name not in mapping and root not in dest.resolve().parents:
+                    dest = mapping.get(name, Path(radio.UPLOAD_FOLDER)/name.removeprefix('static/wallpapers/') if name.startswith('static/wallpapers/') else root/name)
+                    if name not in mapping and root not in dest.resolve().parents and not (name.startswith('static/wallpapers/') and Path(radio.UPLOAD_FOLDER).resolve() in dest.resolve().parents):
                         abort(400, 'Invalid media destination.')
                     destinations[name] = dest
                 apply_backup(stage, names, destinations, Path(temp)/'rollback')

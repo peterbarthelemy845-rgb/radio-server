@@ -19,6 +19,7 @@ from html import unescape
 from urllib.parse import urlparse, quote, urljoin
 from werkzeug.utils import secure_filename
 import pyotp
+from persistent_storage import data_path, data_directory
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
@@ -35,20 +36,25 @@ SMTP_USERNAME = os.environ.get("SMTP_USERNAME", "").strip()
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "").strip()
 SMTP_FROM_EMAIL = os.environ.get("SMTP_FROM_EMAIL", SMTP_USERNAME).strip()
 MFA_CODE_TTL_SECONDS = 300
-CONFIG_FILE = "config.json"
-STATIONS_FILE = "stations.json"
-REPORTS_FILE = "reports.json"
-ANALYTICS_FILE = "analytics.json"
+CONFIG_FILE = data_path("config.json")
+STATIONS_FILE = data_path("stations.json")
+REPORTS_FILE = data_path("reports.json")
+ANALYTICS_FILE = data_path("analytics.json")
 HAITIAN_TIMES_RSS_URL = os.environ.get("HAITIAN_TIMES_RSS_URL", "https://haitiantimes.com/feed/")
 LE_NOUVELLISTE_URL = os.environ.get("LE_NOUVELLISTE_URL", "https://lenouvelliste.com/")
 HAITILIBRE_URL = os.environ.get("HAITILIBRE_URL", "https://www.haitilibre.com/")
 HAITILIBRE_RSS_URL = os.environ.get("HAITILIBRE_RSS_URL", "https://www.haitilibre.com/rss-flash-en.php")
 NEWS_CACHE_TTL_SECONDS = 900
 SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiolavoixdivine.com/api/stations")
-UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wallpapers")
+UPLOAD_FOLDER = data_directory("static/wallpapers")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 RADIO_LA_VOIX_LOGO_URL = "/static/logos/radiolavoixdivine.png"
+
+@app.route("/static/wallpapers/<path:filename>")
+def uploaded_station_image(filename):
+    from flask import send_from_directory
+    return send_from_directory(UPLOAD_FOLDER, filename)
 
 def allowed_image(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
@@ -78,7 +84,7 @@ current_playing = {
     "stream_url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live",
     "website": "radiolavoixdivine.com",
     "logo_url": RADIO_LA_VOIX_LOGO_URL,
-    "logo": "🎧",
+    "logo": "ðŸŽ§",
 }
 news_cache = {"items": [], "fetched_at": 0}
 
@@ -91,8 +97,8 @@ def is_public_website():
     return host in PUBLIC_HOSTS or host.endswith(".onrender.com")
 
 TEST_STREAMS = [
-    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live", "logo": "🎧"},
-    {"name": "181 FM The Buzz", "subtitle": "https://www.181.fm", "website": "https://www.181.fm", "url": "http://listen.181fm.com/181-buzz_128k.mp3", "logo": "📻"},
+    {"name": "La Voix Divine", "subtitle": "radiolavoixdivine.com", "website": "radiolavoixdivine.com", "url": "https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live", "logo": "ðŸŽ§"},
+    {"name": "181 FM The Buzz", "subtitle": "https://www.181.fm", "website": "https://www.181.fm", "url": "http://listen.181fm.com/181-buzz_128k.mp3", "logo": "ðŸ“»"},
 ]
 TEST_STREAMS[0]["logo_url"] = RADIO_LA_VOIX_LOGO_URL
 
@@ -108,12 +114,12 @@ def get_config_version():
 def station_logo(name):
     name_lower = (name or "").lower()
     if "voix" in name_lower or "divine" in name_lower:
-        return "🎧"
+        return "ðŸŽ§"
     if "fm" in name_lower or "radio" in name_lower:
-        return "📻"
+        return "ðŸ“»"
     if "buzz" in name_lower:
-        return "🎵"
-    return "🎧"
+        return "ðŸŽµ"
+    return "ðŸŽ§"
 
 
 def load_station_store():
@@ -275,7 +281,7 @@ def find_custom_station_index(custom, url="", name=""):
 
 def normalize_station(station):
     language = (station.get("language") or "ht").strip().lower()
-    flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
+    flags = {"en": "ðŸ‡ºðŸ‡¸", "es": "ðŸ‡ªðŸ‡¸", "ht": "ðŸ‡­ðŸ‡¹", "fr": "ðŸ‡«ðŸ‡·"}
     return {
         "name": (station.get("name") or "").strip(),
         "url": (station.get("url") or station.get("stream_url") or "").strip(),
@@ -283,7 +289,7 @@ def normalize_station(station):
         "website": (station.get("website") or station.get("subtitle") or "").strip(),
         "logo": station.get("logo") or station_logo(station.get("name")),
         "language": language,
-        "flag": station.get("flag") or flags.get(language, "🇭🇹"),
+        "flag": station.get("flag") or flags.get(language, "ðŸ‡­ðŸ‡¹"),
         "logo_url": station.get("logo_url", ""),
         "wallpaper": station.get("wallpaper", ""),
         "bio": (station.get("bio") or station.get("description") or "").strip(),
@@ -373,7 +379,7 @@ def get_remote_streams():
                     "url": url,
                     "logo": station.get("logo") or station_logo(name),
                     "language": station.get("language", "ht"),
-                    "flag": station.get("flag", "🇭🇹"),
+                    "flag": station.get("flag", "ðŸ‡­ðŸ‡¹"),
                     "logo_url": station.get("logo_url", ""),
                     "wallpaper": station.get("wallpaper", ""),
                     "bio": station.get("bio") or station.get("description") or "",
@@ -417,11 +423,11 @@ def get_all_streams():
             continue
         if not s.get("flag"):
             language = (s.get("language") or "ht").strip().lower()
-            s["flag"] = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}.get(language, "🇭🇹")
+            s["flag"] = {"en": "ðŸ‡ºðŸ‡¸", "es": "ðŸ‡ªðŸ‡¸", "ht": "ðŸ‡­ðŸ‡¹", "fr": "ðŸ‡«ðŸ‡·"}.get(language, "ðŸ‡­ðŸ‡¹")
         if (s.get("name") or "").lower() == "la voix divine":
-            s["flag"] = "🇭🇹"
+            s["flag"] = "ðŸ‡­ðŸ‡¹"
             s["language"] = "ht"
-            s["logo"] = s.get("logo") or "🇭🇹"
+            s["logo"] = s.get("logo") or "ðŸ‡­ðŸ‡¹"
         key = (s.get("url") or s.get("name") or "").strip().lower()
         if key and key not in seen:
             seen.add(key)
@@ -1218,7 +1224,7 @@ def api_add_station():
     terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
     language = (data.get('language') or 'ht').strip().lower()
     form = station_submission_form(name, url, subtitle, bio, language, contact_email)
-    flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
+    flags = {"en": "ðŸ‡ºðŸ‡¸", "es": "ðŸ‡ªðŸ‡¸", "ht": "ðŸ‡­ðŸ‡¹", "fr": "ðŸ‡«ðŸ‡·"}
     if language not in flags:
         language = "ht"
         form["language"] = language
@@ -1264,7 +1270,7 @@ def api_add_station():
     station = attach_station(station)
     from station_owners import provision_owner
     provision_owner(station)
-    auto_approved = store.get('auto_approve_stations', False) is True
+    auto_approved = store.get('auto_approve_stations', True) is True
     if auto_approved:
         station.pop('submitted_at', None)
         store.setdefault('custom_stations', []).append(station)
@@ -1372,7 +1378,7 @@ def admin_pending():
     if session.get('admin_role') == 'junior':
         return render_template('junior_pending.html', pending=pending, pending_page=pending_page, query=query, pending_count=len(store.get('pending_stations', [])))
     approved, approved_page = station_page('custom_stations', 'ap')
-    return render_template('pending.html', auto_approve_stations=store.get('auto_approve_stations', False) is True, pending=pending, approved=approved, pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
+    return render_template('pending.html', auto_approve_stations=store.get('auto_approve_stations', True) is True, pending=pending, approved=approved, pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
 
 @app.route('/admin/auto-approval', methods=['POST'])
 def admin_auto_approval():
@@ -1421,11 +1427,12 @@ def export_stations():
                 if not path.startswith('/static/') or path in copied:
                     continue
                 copied.add(path)
-                candidate = (base / path.lstrip('/')).resolve()
-                if static not in candidate.parents or not candidate.is_file():
+                media_root = Path(UPLOAD_FOLDER).resolve() if path.startswith('/static/wallpapers/') else static
+                candidate = (media_root / path.removeprefix('/static/wallpapers/')).resolve() if path.startswith('/static/wallpapers/') else (base / path.lstrip('/')).resolve()
+                if media_root not in candidate.parents or not candidate.is_file():
                     missing.append(path)
                     continue
-                archive.write(candidate, candidate.relative_to(base).as_posix())
+                archive.write(candidate, path.lstrip('/'))
         archive.writestr('RESTORE.txt', 'Station backup\n\nCopy stations.json into the app directory and merge the static/ folder to restore station images. Restore owner_data/owners.sqlite3 when included to retain owner accounts and assignments. This backup contains private contact details and password hashes; keep it private. Restart the app. Back up current data before restoring.\n\nIncludes pending, approved and suspended records with contact details and metadata. available-stations.json is a reference snapshot of public/default stations; external images are represented by their URLs.\nMissing local image files: ' + (', '.join(missing) or 'None') + '\n')
     payload.seek(0)
     response = send_file(payload, mimetype='application/zip', as_attachment=True,
@@ -1617,7 +1624,7 @@ def admin_edit_station(index):
         bio = (request.form.get('bio') or '').strip()[:250]
         contact_email = (request.form.get('contact_email') or station.get('contact_email') or '').strip()
         language = (request.form.get('language') or station.get('language') or 'ht').strip().lower()
-        flags = {"en": "🇺🇸", "es": "🇪🇸", "ht": "🇭🇹", "fr": "🇫🇷"}
+        flags = {"en": "ðŸ‡ºðŸ‡¸", "es": "ðŸ‡ªðŸ‡¸", "ht": "ðŸ‡­ðŸ‡¹", "fr": "ðŸ‡«ðŸ‡·"}
         if language not in flags:
             language = "ht"
         image_path, image_error = save_uploaded_image('wallpaper')

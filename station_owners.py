@@ -7,7 +7,8 @@ from contextlib import contextmanager
 from flask import request, session, g, abort, redirect, url_for, render_template, jsonify, flash, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 
-DATA = Path(__file__).resolve().parent / 'owner_data'
+from persistent_storage import data_directory
+DATA = Path(data_directory('owner_data'))
 DATABASE = DATA / 'owners.sqlite3'
 
 def connect():
@@ -76,7 +77,7 @@ def provision_owner(station, rotate=False):
             db.execute('INSERT INTO accounts VALUES (?,?,?)', (owner['id'], email, generate_password_hash(secrets.token_hex(32))))
         credential = db.execute('SELECT * FROM owner_access WHERE owner_id=?', (owner['id'],)).fetchone()
         if rotate or not credential:
-            access_code = 'OWN-' + secrets.token_hex(12).upper()
+            access_code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
             db.execute('INSERT OR REPLACE INTO owner_access VALUES (?,?,?)', (owner['id'], generate_password_hash(access_code), secrets.token_hex(16)))
             messages = getattr(g, 'owner_access_emails', [])
             messages.append((email, access_code, station.get('name', 'Your station')))
