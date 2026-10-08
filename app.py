@@ -21,8 +21,6 @@ from werkzeug.utils import secure_filename
 import pyotp
 
 app = Flask(__name__)
-from ads import register_ads, public_ad
-register_ads(app)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
 JUNIOR_ADMIN_CODE = os.environ.get("JUNIOR_ADMIN_CODE", "845517").strip()
@@ -814,7 +812,7 @@ def qr_image():
 
 @app.route("/")
 def index():
-    return render_template("index.html", public_web=is_public_website(), preroll_ad=public_ad())
+    return render_template("index.html", public_web=is_public_website())
 
 def is_playlist(url):
     return urlparse(url).path.lower().endswith(('.pls', '.m3u'))
@@ -1347,7 +1345,6 @@ def api_listen_heartbeat():
 
 @app.route('/admin/pending', methods=['GET'])
 def admin_pending():
-    from ad_submissions import approved_ads, pending_ads
     store = load_station_store()
     query = request.args.get('q', '').strip()[:200]
     status = request.args.get('status', 'all')
@@ -1370,7 +1367,7 @@ def admin_pending():
     if session.get('admin_role') == 'junior':
         return render_template('junior_pending.html', pending=pending, pending_page=pending_page, query=query, pending_count=len(store.get('pending_stations', [])))
     approved, approved_page = station_page('custom_stations', 'ap')
-    return render_template('pending.html', auto_approve_stations=store.get('auto_approve_stations', False) is True, pending=pending, approved=approved, approved_ads=approved_ads(), pending_ads=pending_ads(), pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
+    return render_template('pending.html', auto_approve_stations=store.get('auto_approve_stations', False) is True, pending=pending, approved=approved, pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
 
 @app.route('/admin/auto-approval', methods=['POST'])
 def admin_auto_approval():

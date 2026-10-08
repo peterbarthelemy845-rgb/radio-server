@@ -9,12 +9,11 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
 </head>
 <body>
 <div class="wrap">{% for message in get_flashed_messages(category_filter=['owner-access']) %}<div class="card" role="status" style="overflow-wrap:anywhere;user-select:text">{{ message }}</div>{% endfor %}
-  <div class="top"><h1>Admin Dashboard</h1><div class="sub">Manage stations and advertisements.</div></div>
+  <div class="top"><h1>Admin Dashboard</h1><div class="sub">Manage stations.</div></div>
   <div class="card actions">
     <a class="btn link" href="/admin/reports">Reports</a>
     <a class="btn link" href="{{ url_for('index') }}">Home</a>
     <a class="btn link" href="{{ url_for('export_stations') }}">Export stations</a>
-    <a class="btn link" href="/admin/manage-ads">Manage Ads</a>
     <a class="btn link" href="/admin/backups">Backups</a>
     <a class="btn approve" href="/admin/viewership">Viewership</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
@@ -28,7 +27,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
       <button class="btn {{ 'reject' if auto_approve_stations else 'approve' }}">Turn automatic approval {{ 'OFF' if auto_approve_stations else 'ON' }}</button>
     </form>
   </section>
-  <div class="overview"><a href="#pending-stations">Stations awaiting review<strong>{{ pending_count }}</strong></a><a href="#approved-stations">Approved stations<strong>{{ approved_count }}</strong></a><a href="#pending-ads">Ads awaiting review<strong>{{ pending_ads|length }}</strong></a><a href="#approved-ads">Approved ads<strong>{{ approved_ads|length }}</strong></a></div>
+  <div class="overview"><a href="#pending-stations">Stations awaiting review<strong>{{ pending_count }}</strong></a><a href="#approved-stations">Approved stations<strong>{{ approved_count }}</strong></a></div>
   <form class="card filter" method="get"><label>Find a station<input name="q" value="{{ query }}" placeholder="Name, email, station code or stream URL"></label><label>Status<select name="status"><option value="all">All stations</option><option value="active" {% if station_status == 'active' %}selected{% endif %}>Not suspended</option><option value="suspended" {% if station_status == 'suspended' %}selected{% endif %}>Suspended</option></select></label><button class="btn link">Search</button><a href="/admin/pending">Clear</a></form>
   <details class="card" id="pending-stations" {% if pending_count %}open{% endif %}><summary>Stations waiting for approval ({{ pending_count }})</summary>
     {% set pager = pending_page %}{% include 'station_pager.html' %}
@@ -52,7 +51,6 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
     {% endif %}
   </details>
   {% include 'station_deletion_requests.html' %}
-  <div id="pending-ads">{% include 'pending_ads_section.html' %}</div>
   <div class="card">
     <h2 id="approved-stations">Approved custom stations</h2>{% set pager = approved_page %}{% include "station_pager.html" %}
     {% if approved %}
@@ -88,22 +86,6 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
       {% endfor %}
     {% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}
   </div>
-  <details class="card"><summary id="approved-ads">Approved custom ads ({{ approved_ads|length }})</summary>
-    <p>Approved advertisements. Use Manage Ads to enable ads and set their schedules.</p>
-    {% if request.args.get('ad_error') %}<p role="alert">Invalid dates. The end date must be on or after the start date.</p>{% endif %}
-    {% for ad in approved_ads %}
-    <div class="station">
-      <div class="name">{{ ad.title }}</div>
-      <div class="url">{{ 'Active pre-roll' if ad.active else 'Approved Â· Not currently active' }} Â· {{ ad.duration }} seconds</div>
-      {% if ad.email %}<div class="url">Contact: {{ ad.email }}</div>{% endif %}
-      {% if ad.kind == 'video' %}
-      <video src="{{ ad.src }}" controls playsinline preload="none" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px"></video>
-      {% else %}
-      <img src="{{ ad.src }}" alt="{{ ad.title }}" loading="lazy" style="display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:14px">
-      {% endif %}
-    </div>
-    {% else %}<div class="empty">No approved custom ads yet.</div>{% endfor %}
-    <div class="actions"><a class="btn link" href="{{ url_for('manage_ads') }}">Manage Ads</a></div>
-  </details>
+
 </div>
 </body></html>
