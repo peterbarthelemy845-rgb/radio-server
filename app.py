@@ -1259,12 +1259,19 @@ def api_add_station():
             return jsonify(status='error', message=message), 409
         return render_template('add_station.html', status='error', message=message, form=form), 409
     station = attach_station(station)
-    pending.append(station)
-    store['pending_stations'] = pending
+    auto_approved = store.get('auto_approve_stations', False) is True
+    if auto_approved:
+        from station_owners import provision_owner
+        provision_owner(station)
+        station.pop('submitted_at', None)
+        store.setdefault('custom_stations', []).append(station)
+    else:
+        pending.append(station)
+        store['pending_stations'] = pending
     save_station_store(store)
-    message = "Station submitted. Waiting for approval."
+    message = 'Station approved automatically. It is now available in the library.' if auto_approved else 'Station submitted. Waiting for approval.'
     if wants_json:
-        return jsonify({"status": "ok", "message": message, "pending_count": len(pending), "station_code": station["station_code"], "version": get_config_version()})
+        return jsonify({"status": "ok", "message": message, "auto_approved": auto_approved, "pending_count": len(pending), "station_code": station["station_code"], "version": get_config_version()})
     wifi = get_wifi_status_data()
     return render_template('add_station.html', status='ok', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
 
@@ -1363,7 +1370,22 @@ def admin_pending():
     if session.get('admin_role') == 'junior':
         return render_template('junior_pending.html', pending=pending, pending_page=pending_page, query=query, pending_count=len(store.get('pending_stations', [])))
     approved, approved_page = station_page('custom_stations', 'ap')
-    return render_template('pending.html', pending=pending, approved=approved, approved_ads=approved_ads(), pending_ads=pending_ads(), pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
+    return render_template('pending.html', auto_approve_stations=store.get('auto_approve_stations', False) is True, pending=pending, approved=approved, approved_ads=approved_ads(), pending_ads=pending_ads(), pending_page=pending_page, approved_page=approved_page, query=query, station_status=status, pending_count=len(store.get('pending_stations', [])), approved_count=len(store.get('custom_stations', [])))
+
+@app.route('/admin/auto-approval', methods=['POST'])
+def admin_auto_approval():
+    if not session.get('admin_logged_in') or session.get('admin_role') == 'junior':
+        abort(403)
+    from station_owners import check_token
+    check_token()
+    enabled = request.form.get('enabled')
+    if enabled not in ('true', 'false'):
+        abort(400)
+    store = load_station_store()
+    store['auto_approve_stations'] = enabled == 'true'
+    save_station_store(store)
+    return redirect(url_for('admin_pending'))
+
 
 @app.route('/admin/export-stations', methods=['GET'])
 def export_stations():
