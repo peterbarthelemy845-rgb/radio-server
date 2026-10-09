@@ -280,6 +280,10 @@ def find_custom_station_index(custom, url="", name=""):
     return -1
 
 
+def normalize_station_location(value):
+    return {"ny": "New York", "new york": "New York", "nj": "New Jersey", "new jersey": "New Jersey", "ct": "Connecticut", "connecticut": "Connecticut"}.get(str(value or "").strip().lower(), "")
+
+
 def normalize_station(station):
     language = (station.get("language") or "ht").strip().lower()
     flags = {"en": "ðŸ‡ºðŸ‡¸", "es": "ðŸ‡ªðŸ‡¸", "ht": "ðŸ‡­ðŸ‡¹", "fr": "ðŸ‡«ðŸ‡·"}
@@ -290,6 +294,7 @@ def normalize_station(station):
         "website": (station.get("website") or station.get("subtitle") or "").strip(),
         "logo": station.get("logo") or station_logo(station.get("name")),
         "language": language,
+        "location": normalize_station_location(station.get("location")),
         "flag": station.get("flag") or flags.get(language, "ðŸ‡­ðŸ‡¹"),
         "logo_url": station.get("logo_url", ""),
         "wallpaper": station.get("wallpaper", ""),
@@ -380,6 +385,7 @@ def get_remote_streams():
                     "url": url,
                     "logo": station.get("logo") or station_logo(name),
                     "language": station.get("language", "ht"),
+                    "location": normalize_station_location(station.get("location")),
                     "flag": station.get("flag", "ðŸ‡­ðŸ‡¹"),
                     "logo_url": station.get("logo_url", ""),
                     "wallpaper": station.get("wallpaper", ""),
@@ -1237,6 +1243,7 @@ def api_add_station():
     terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
     language = (data.get('language') or 'ht').strip().lower()
     form = station_submission_form(name, url, subtitle, bio, language, contact_email)
+    form["location"] = normalize_station_location(data.get("location"))
     flags = {"en": "ðŸ‡ºðŸ‡¸", "es": "ðŸ‡ªðŸ‡¸", "ht": "ðŸ‡­ðŸ‡¹", "fr": "ðŸ‡«ðŸ‡·"}
     if language not in flags:
         language = "ht"
@@ -1282,7 +1289,7 @@ def api_add_station():
     store = load_station_store()
     pending = store.get('pending_stations', [])
     now = int(time.time())
-    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
+    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "location": form["location"], "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
     if any((item.get('url') or '').strip() == url for item in store.get('custom_stations', []) + pending):
         message = 'This stream is already submitted. Manage it from your owner dashboard.'
         if wants_json:
@@ -1664,7 +1671,7 @@ def admin_edit_station(index):
         elif contact_email and not is_valid_email(contact_email):
             error = 'Contact email is not valid'
         else:
-            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio, 'contact_email': contact_email, 'language': language, 'flag': flags[language]})
+            station.update({'name': name, 'url': url, 'subtitle': subtitle, 'website': website, 'bio': bio, 'contact_email': contact_email, 'language': language, 'location': normalize_station_location(request.form.get('location', station.get('location', ''))), 'flag': flags[language]})
             if image_path:
                 station['wallpaper'] = image_path
                 station['logo_url'] = image_path

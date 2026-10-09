@@ -5,4 +5,5 @@
 <label>Stream URL<input name="url" type="url" maxlength="2000" required value="{{ station.url }}"></label>
 <label>Website / subtitle<input name="subtitle" maxlength="300" value="{{ station.subtitle }}"></label>
 <label>Language<select name="language">{% for code,label in [('ht','Haitian Creole'),('en','English'),('fr','French'),('es','Spanish')] %}<option value="{{ code }}" {% if station.language == code %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>Location (optional)<select name="location"><option value="">Not set</option>{% for place in ['New York','New Jersey','Connecticut'] %}<option value="{{ place }}" {% if (station is defined and station.location == place) or (form is defined and form and form.location == place) %}selected{% endif %}>{{ place }}</option>{% endfor %}</select></label>
 <label>Bio<textarea name="bio" maxlength="250">{{ station.bio }}</textarea></label><label>Replace logo (optional)<input type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif"></label><button class="wide">Save changes</button></form></section>{% endblock %}

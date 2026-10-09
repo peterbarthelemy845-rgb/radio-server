@@ -1,1 +1,2 @@
 <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
+<label>Location (optional)<select name="location"><option value="">Not set</option>{% for place in ['New York','New Jersey','Connecticut'] %}<option value="{{ place }}" {% if (station is defined and station.location == place) or (form is defined and form and form.location == place) %}selected{% endif %}>{{ place }}</option>{% endfor %}</select></label>

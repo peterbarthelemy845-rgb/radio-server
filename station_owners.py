@@ -358,7 +358,7 @@ def register_owners(app, radio):
                     return render_template('owner_edit.html', station=station, error=logo_error), 400
                 if logo:
                     station['logo_url'] = logo
-                station.update(name=name, url=url, subtitle=request.form.get('subtitle', '')[:300], website=request.form.get('subtitle', '')[:300], bio=request.form.get('bio', '')[:250], language=language,
+                station.update(name=name, url=url, subtitle=request.form.get('subtitle', '')[:300], website=request.form.get('subtitle', '')[:300], bio=request.form.get('bio', '')[:250], language=language, location=radio.normalize_station_location(request.form.get('location', station.get('location', ''))),
                                flag={'en':'ðŸ‡ºðŸ‡¸','es':'ðŸ‡ªðŸ‡¸','fr':'ðŸ‡«ðŸ‡·','ht':'ðŸ‡­ðŸ‡¹'}[language])
                 radio.save_station_store(store)
                 return redirect(url_for('owner_dashboard'))
