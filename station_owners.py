@@ -2,6 +2,7 @@ import os
 import secrets
 import sqlite3
 import time
+from datetime import timedelta
 from pathlib import Path
 from contextlib import contextmanager
 from flask import request, session, g, abort, redirect, url_for, render_template, jsonify, flash, send_file
@@ -164,6 +165,7 @@ def register_owners(app, radio):
             pass
         app.secret_key = key.read_text(encoding='utf-8')
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax', SESSION_COOKIE_SECURE=os.environ.get('SESSION_COOKIE_SECURE', 'true').lower() != 'false')
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
     app.jinja_env.globals.update(owner_csrf=token, station_owner=account, station_deletion_requests=deletion_requests)
 
     @app.before_request
@@ -264,6 +266,7 @@ def register_owners(app, radio):
                             row = dict(row);row['version']=recovery['version']
                         db.execute('DELETE FROM login_attempts WHERE key=?', (key,))
                         session.clear()
+                        session.permanent = True
                         session['owner_id'] = row['id']
                         session['owner_version'] = row['version']
                         return redirect(url_for('owner_dashboard'))
@@ -301,6 +304,8 @@ def register_owners(app, radio):
     def owner_logout():
         check_token()
         session.pop('owner_id', None)
+        session.pop('owner_version', None)
+        session.permanent = False
         return redirect(url_for('owner_login'))
 
     @app.route('/owner')
@@ -314,8 +319,7 @@ def register_owners(app, radio):
             requests = [dict(r) for r in db.execute('SELECT * FROM deletion_requests WHERE owner_id=? ORDER BY created DESC', (owner['id'],))]
         rows = [dict(s, approval='Pending review' if group == 'pending_stations' else 'Approved') for group, s in all_station_rows(store) if s.get('owner_id') == owner['id'] and s.get('station_code') in codes]
         stats = owner_viewership(rows, radio.load_analytics(), radio)
-        uploaded_ads = owner_ad_rows(owner)
-        return render_template('owner_dashboard.html', owner=owner, stations=rows, deletion_history=requests, viewership=stats, uploaded_ads=uploaded_ads, total_duration=radio.format_duration(sum(s['total_seconds'] for s in stats)), daily_sessions=sum(s['windows'][0]['sessions'] for s in stats))
+        return render_template('owner_dashboard.html', owner=owner, stations=rows, deletion_history=requests, viewership=stats, total_duration=radio.format_duration(sum(s['total_seconds'] for s in stats)), daily_sessions=sum(s['windows'][0]['sessions'] for s in stats))
 
     @app.route('/owner/ad/<id>/media')
     def owner_ad_media(id):
