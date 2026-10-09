@@ -9,7 +9,7 @@
 </style>
 </head>
 <body>
-  <form class="card" method="post">
+  <form class="card" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
     <h1>Admin Locked</h1>
     {% if step == 'verify' %}
     <div class="sub">Enter the 6-digit code from Google Authenticator.</div>

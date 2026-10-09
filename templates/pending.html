@@ -21,7 +21,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
   <section class="card" aria-labelledby="auto-approval-title">
     <h2 id="auto-approval-title">Automatic station approval: {{ 'ON' if auto_approve_stations else 'OFF' }}</h2>
     <p>When on, new valid station submissions appear in the library automatically. When off, new submissions wait for admin review. Stations already awaiting review stay pending.</p>
-    <form method="post" action="{{ url_for('admin_auto_approval') }}">
+    <form method="post" action="{{ url_for('admin_auto_approval') }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
       <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
       <input type="hidden" name="enabled" value="{{ 'false' if auto_approve_stations else 'true' }}">
       <button class="btn {{ 'reject' if auto_approve_stations else 'approve' }}">Turn automatic approval {{ 'OFF' if auto_approve_stations else 'ON' }}</button>
@@ -41,8 +41,8 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
         <p>Station code: {{ s.station_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
-          <form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>
-          <form method="post" action="/admin/reject/{{ s._index }}"><button class="btn reject">Reject</button></form>
+          <form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>
+          <form method="post" action="/admin/reject/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn reject">Reject</button></form>
         </div>
       </div>
       {% endfor %}
@@ -69,9 +69,9 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
           <p>Station code: {{ s.station_code or 'Not assigned' }}{% if s.owner_suspended %} · Suspended by owner{% endif %}</p>
 
           {% if s.suspended %}
-          <form method="post" action="/admin/restore/{{ s._index }}"><button class="btn approve">Restore</button></form>
+          <form method="post" action="/admin/restore/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Restore</button></form>
           {% elif s.name|lower != 'la voix divine' %}
-          <form method="post" action="{{ url_for('admin_suspend_station') }}">
+          <form method="post" action="{{ url_for('admin_suspend_station') }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
             <input type="hidden" name="url" value="{{ s.url }}">
             <input type="hidden" name="name" value="{{ s.name }}">
             <input type="hidden" name="reason" value="Suspended by administrator">
@@ -79,8 +79,8 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
             <button class="btn" style="background:#b45309">Suspend</button>
           </form>
           {% endif %}
-          <form method="post" action="/admin/delete/{{ s._index }}"><button class="btn reject">Delete</button></form>
-        </div><details><summary>Owner access settings</summary>          <form method="post" action="{{ url_for('assign_station_owner', index=s._index) }}">
+          <form method="post" action="/admin/delete/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn reject">Delete</button></form>
+        </div><details><summary>Owner access settings</summary>          <form method="post" action="{{ url_for('assign_station_owner', index=s._index) }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
           <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><p>Owner email: {{ s.contact_email }}</p><button class="btn link">Generate new access code</button><p class="small">Replaces this owner’s code for all their stations.</p></form></details>
       </div>
       {% endfor %}

@@ -12,7 +12,7 @@
     <a class="btn" href="/admin/pending">Back to Admin</a>
     <a class="btn ok" href="/admin/reports">Reports</a>
     {% if totals or recent %}
-    <form method="post" action="/admin/viewership/clear" onsubmit="return confirm('Clear all viewership data?')">
+    <form method="post" action="/admin/viewership/clear" onsubmit="return confirm('Clear all viewership data?')"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
       <button class="btn danger" type="submit">Clear Viewership</button>
     </form>
     {% endif %}

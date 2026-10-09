@@ -6,7 +6,7 @@
 <div class="top"><h1>Edit Station</h1><div class="sub">Update station details and replace logo/wallpaper.</div></div>
 <div class="card">
 {% if error %}<div class="error">{{ error }}</div>{% endif %}
-<form method="post" enctype="multipart/form-data">
+<form method="post" enctype="multipart/form-data"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
   <div class="field"><label>Station name</label><input name="name" required value="{{ station.name }}"></div>
   <div class="field"><label>Stream URL</label><input name="url" type="url" required value="{{ station.url }}"></div>
   <div class="field"><label>Website / subtitle</label><input name="subtitle" value="{{ station.subtitle }}"></div>

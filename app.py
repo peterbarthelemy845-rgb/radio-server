@@ -23,7 +23,7 @@ from persistent_storage import data_path, data_directory
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "1234")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 JUNIOR_ADMIN_CODE = os.environ.get("JUNIOR_ADMIN_CODE", "845517").strip()
 ADMIN_MFA_PHONE = os.environ.get("ADMIN_MFA_PHONE", "").strip()
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
@@ -48,6 +48,7 @@ NEWS_CACHE_TTL_SECONDS = 900
 SERVER_STATIONS_API = os.environ.get("SERVER_STATIONS_API", "https://www.radiolavoixdivine.com/api/stations")
 UPLOAD_FOLDER = data_directory("static/wallpapers")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["RADIO_UPLOAD_FOLDER"] = UPLOAD_FOLDER
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "webp"}
 RADIO_LA_VOIX_LOGO_URL = "/static/logos/radiolavoixdivine.png"
 
@@ -738,6 +739,9 @@ def build_state():
 
 
 
+from security_controls import register_security
+register_security(app)
+
 @app.before_request
 def require_admin_login():
     if (request.path.startswith('/admin') or request.path.startswith('/api/admin/')) and request.endpoint not in ('admin_login', 'admin_logout'):
@@ -783,9 +787,11 @@ def admin_login():
             session['admin_password_ok'] = True
             session['admin_totp_attempts'] = 0
             return render_template('admin_login.html', error='', step='verify')
-        if password == ADMIN_PASSWORD:
+        if ADMIN_PASSWORD and secrets.compare_digest(password, ADMIN_PASSWORD):
+            if not is_totp_configured():
+                return render_template("admin_login.html", error="Admin authenticator must be configured before signing in.", step="password")
             session.clear()
-            session['admin_next'] = request.args.get('next') or '/admin/pending'
+            session['admin_next'] = '/admin/pending'
             if is_totp_configured():
                 session['admin_pending_role'] = 'full'
                 session['admin_password_ok'] = True
@@ -1464,7 +1470,7 @@ def admin_reports():
     approved = [normalize_station(s) for s in store.get('custom_stations', [])]
     return render_template('reports.html', reports=reports, approved=approved)
 
-@app.route('/admin/report/delete/<int:index>', methods=['POST', 'GET'])
+@app.route('/admin/report/delete/<int:index>', methods=['POST'])
 def admin_delete_report(index):
     reports = load_reports()
     if 0 <= index < len(reports):
@@ -1555,7 +1561,7 @@ def admin_suspend_station():
         save_station_store(store)
     return redirect(url_for(destination))
 
-@app.route('/admin/restore/<int:index>', methods=['POST', 'GET'])
+@app.route('/admin/restore/<int:index>', methods=['POST'])
 def admin_restore_station(index):
     store = load_station_store()
     custom = store.get('custom_stations', [])

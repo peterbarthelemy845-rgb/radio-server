@@ -12,7 +12,7 @@
     <a class="btn" href="/admin/pending">Back to Admin</a>
     <a class="btn ok" href="/admin/viewership">Viewership</a>
     {% if reports %}
-    <form method="post" action="/admin/reports/clear" onsubmit="return confirm('Delete all reports?')">
+    <form method="post" action="/admin/reports/clear" onsubmit="return confirm('Delete all reports?')"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
       <button class="btn danger" type="submit">Clear All Reports</button>
     </form>
     {% endif %}
@@ -38,7 +38,7 @@
           <div class="badge">Station is suspended</div>
         {% elif match.found %}
           <div class="actions">
-            <form method="post" action="/admin/suspend-station" onsubmit="return confirm('Suspend this station? It will disappear from the public Radio and Library pages.')">
+            <form method="post" action="/admin/suspend-station" onsubmit="return confirm('Suspend this station? It will disappear from the public Radio and Library pages.')"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
               <input type="hidden" name="name" value="{{ r.name }}">
               <input type="hidden" name="url" value="{{ r.url }}">
               <input type="hidden" name="reason" value="{{ r.reason }}">
@@ -49,7 +49,7 @@
           <div class="url">No approved custom station matched this report.</div>
         {% endif %}
         <div class="actions">
-          <form method="post" action="/admin/report/delete/{{ r.index }}" onsubmit="return confirm('Delete this report?')">
+          <form method="post" action="/admin/report/delete/{{ r.index }}" onsubmit="return confirm('Delete this report?')"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
             <button class="btn" type="submit">Delete Report</button>
           </form>
         </div>
