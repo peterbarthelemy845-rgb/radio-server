@@ -1234,12 +1234,20 @@ def api_add_station():
     if not is_json:
         logo_path, logo_error = save_uploaded_image('logo_image')
         if logo_error:
+            if wants_json:
+                return jsonify(status="error", message=logo_error), 400
             wifi = get_wifi_status_data()
             return render_template('add_station.html', status='error', message=logo_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
         image_path, image_error = save_uploaded_image('wallpaper')
         if image_error:
             wifi = get_wifi_status_data()
             return render_template('add_station.html', status='error', message=image_error, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=form), 400
+    if not logo_path:
+        message = "A valid station logo is required before submitting."
+        if wants_json:
+            return jsonify(status="error", message=message), 400
+        wifi = get_wifi_status_data()
+        return render_template("add_station.html", status="error", message=message, add_url=get_add_station_url(), ssid=wifi.get("ssid", ""), form=form), 400
     if not name or not url:
         message = "Station name and stream URL are required"
         if wants_json:
