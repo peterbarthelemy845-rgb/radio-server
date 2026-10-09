@@ -152,7 +152,7 @@ body.public-web #stationLogo{position:fixed;left:122px;top:112px;z-index:22;widt
 </style>
 </head>
 <body class="{{ 'public-web' if public_web else '' }}">
-<button id="installRadio" type="button" style="position:fixed;right:16px;top:18px;z-index:35;border:0;border-radius:12px;padding:10px;background:#2563eb;color:white;cursor:pointer">Install radio</button><audio id="webAudio" preload="auto" playsinline></audio>
+<audio id="webAudio" preload="auto" playsinline></audio>
 <script src="/static/logo-cropper.js?v=2"></script>
 <script>window.PUBLIC_WEB = {{ "true" if public_web else "false" }};</script>
 <div class="screen" id="screen">
@@ -396,10 +396,6 @@ applyLanguage();openPageFromHash();loadState();loadNetwork();loadWifi();loadHait
 
 
 <script>
-let installPrompt=null;const installButton=document.getElementById('installRadio');
-window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;});
-installButton.onclick=async()=>{if(installPrompt){await installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;}else{alert(/iPhone|iPad|iPod/.test(navigator.userAgent)?'In Safari, tap Share, then Add to Home Screen.':'Open your browser menu and choose Install app or Add to Home Screen.');}};
-window.addEventListener('appinstalled',()=>{installButton.hidden=true;});
-if(window.matchMedia('(display-mode: standalone)').matches)installButton.hidden=true;
+
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/radio-sw.js').catch(()=>{});
 </script>
