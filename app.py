@@ -1380,7 +1380,7 @@ def admin_email_status():
     from station_owners import database
     with database() as db:
         counts=dict(db.execute('SELECT state,COUNT(*) FROM mail_outbox GROUP BY state').fetchall())
-    modern=all(os.environ.get(key) for key in ('MS_TENANT_ID','MS_CLIENT_ID','MS_CLIENT_SECRET'))
+    modern=os.environ.get('OWNER_MAIL_TRANSPORT','smtp').strip().lower() == 'graph'
     return render_template('email_status.html',counts=counts,modern=modern,smtp=bool(os.environ.get('SMTP_PASSWORD')))
 
 @app.route('/admin/pending' , methods=['GET'])

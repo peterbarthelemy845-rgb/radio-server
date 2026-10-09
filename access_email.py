@@ -12,7 +12,10 @@ def send_access_code(email, code, station_name):
     host = os.environ.get('SMTP_HOST', 'smtp.office365.com').strip()
     username = os.environ.get('SMTP_USERNAME', 'info@radiolavoixdivine.com').strip()
     password = os.environ.get('SMTP_PASSWORD', '')
-    modern = all(os.environ.get(key) for key in ('MS_TENANT_ID','MS_CLIENT_ID','MS_CLIENT_SECRET'))
+    modern = os.environ.get('OWNER_MAIL_TRANSPORT', 'smtp').strip().lower() == 'graph'
+    if modern and not all(os.environ.get(key) for key in ('MS_TENANT_ID','MS_CLIENT_ID','MS_CLIENT_SECRET')):
+        logging.getLogger(__name__).warning('Owner email skipped: Graph configuration incomplete')
+        return False
     if not modern and (not host or not username or not password):
         logging.getLogger(__name__).warning("Owner email skipped: SMTP configuration incomplete")
         return False
