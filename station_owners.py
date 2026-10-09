@@ -244,6 +244,8 @@ def register_owners(app, radio):
 
     @app.route('/owner/login', methods=['GET', 'POST'])
     def owner_login():
+        if account():
+            return redirect(url_for('owner_dashboard'))
         error = ''
         if request.method == 'POST':
             check_token()
