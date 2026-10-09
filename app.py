@@ -827,6 +827,13 @@ def account_options():
     return render_template('account_options.html')
 
 
+@app.route('/radio-sw.js')
+def radio_service_worker():
+    from flask import send_from_directory
+    response=send_from_directory(app.static_folder,'radio-sw.js',mimetype='application/javascript')
+    response.headers['Cache-Control']='no-cache'
+    return response
+
 @app.route("/")
 def index():
     return render_template("index.html", public_web=is_public_website())
@@ -1368,7 +1375,15 @@ def api_listen_heartbeat():
     save_analytics(analytics)
     return jsonify({"status": "ok", "seconds": seconds})
 
-@app.route('/admin/pending', methods=['GET'])
+@app.route('/admin/email-status', methods=['GET'])
+def admin_email_status():
+    from station_owners import database
+    with database() as db:
+        counts=dict(db.execute('SELECT state,COUNT(*) FROM mail_outbox GROUP BY state').fetchall())
+    modern=all(os.environ.get(key) for key in ('MS_TENANT_ID','MS_CLIENT_ID','MS_CLIENT_SECRET'))
+    return render_template('email_status.html',counts=counts,modern=modern,smtp=bool(os.environ.get('SMTP_PASSWORD')))
+
+@app.route('/admin/pending' , methods=['GET'])
 def admin_pending():
     store = load_station_store()
     query = request.args.get('q', '').strip()[:200]
@@ -1672,6 +1687,9 @@ def qr_link():
 import sys
 from station_owners import register_owners
 register_owners(app, sys.modules[__name__])
+
+from mail_delivery import register_delivery
+register_delivery(app)
 
 from automatic_backups import register_backups
 register_backups(app, sys.modules[__name__])

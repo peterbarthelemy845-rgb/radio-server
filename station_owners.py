@@ -23,6 +23,8 @@ def connect():
       CREATE UNIQUE INDEX IF NOT EXISTS one_pending_deletion ON deletion_requests(code) WHERE status='pending';
       CREATE TABLE IF NOT EXISTS login_attempts(key TEXT PRIMARY KEY,count INTEGER,until INTEGER);
     ''')
+    from mail_delivery import schema
+    schema(db)
     return db
 
 @contextmanager
@@ -79,6 +81,9 @@ def provision_owner(station, rotate=False):
         if rotate or not credential:
             access_code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
             db.execute('INSERT OR REPLACE INTO owner_access VALUES (?,?,?)', (owner['id'], generate_password_hash(access_code), secrets.token_hex(16)))
+            from mail_delivery import enqueue
+            enqueue(db, email, access_code, station.get('name', 'Your station'))
+            db.execute('DELETE FROM owner_recovery WHERE owner_id=?',(owner['id'],))
             messages = getattr(g, 'owner_access_emails', [])
             messages.append((email, access_code, station.get('name', 'Your station')))
             g.owner_access_emails = messages
@@ -219,11 +224,6 @@ def register_owners(app, radio):
         db = getattr(g, 'owner_write_db', None)
         if db:
             db.commit() if response.status_code < 400 else db.rollback()
-        if response.status_code < 400:
-            from access_email import send_access_code
-            for email, code, name in getattr(g, 'owner_access_emails', []):
-                if not send_access_code(email, code, name):
-                    app.logger.warning('Owner access email could not be delivered; check mailbox configuration or regenerate the owner code in admin.')
         if request.path.startswith(('/owner', '/admin/')):
             response.headers['Cache-Control'] = 'private, no-store'
         return response
@@ -255,7 +255,13 @@ def register_owners(app, radio):
                     error = 'Too many attempts. Try again in 15 minutes.'
                 else:
                     row = db.execute('SELECT a.id,c.hash,c.version FROM accounts a JOIN owner_access c ON c.owner_id=a.id WHERE a.email=?', (email,)).fetchone()
-                    if row and len(password) <= 128 and check_password_hash(row['hash'], password):
+                    recovery = db.execute('SELECT * FROM owner_recovery WHERE owner_id=? AND expires>?', (row['id'],now)).fetchone() if row else None
+                    recovered = bool(recovery and len(password)<=128 and check_password_hash(recovery['hash'],password))
+                    if row and len(password) <= 128 and (check_password_hash(row['hash'], password) or recovered):
+                        if recovered:
+                            db.execute('UPDATE owner_access SET hash=?,version=? WHERE owner_id=?',(recovery['hash'],recovery['version'],row['id']))
+                            db.execute('DELETE FROM owner_recovery WHERE owner_id=?',(row['id'],))
+                            row = dict(row);row['version']=recovery['version']
                         db.execute('DELETE FROM login_attempts WHERE key=?', (key,))
                         session.clear()
                         session['owner_id'] = row['id']
@@ -265,6 +271,31 @@ def register_owners(app, radio):
                     db.execute('INSERT OR REPLACE INTO login_attempts VALUES (?,?,?)', (key, count, now + 900))
                     error = 'Invalid email or access code.'
         return render_template('owner_auth.html', register=False, error=error)
+
+    @app.route('/owner/resend-code', methods=['POST'])
+    def owner_resend_code():
+        check_token()
+        email = request.form.get('email','').strip().casefold()[:254]
+        with database() as db:
+            row = db.execute('SELECT a.id,c.hash FROM accounts a JOIN owner_access c ON c.owner_id=a.id WHERE a.email=?',(email,)).fetchone()
+            if row:
+                from mail_delivery import enqueue,cipher
+                import json
+                previous = db.execute('SELECT payload FROM mail_outbox WHERE email=?',(email,)).fetchone()
+                code = None
+                if previous:
+                    try:
+                        candidate=json.loads(cipher(app).decrypt(previous['payload']))['code']
+                        recovery=db.execute('SELECT hash FROM owner_recovery WHERE owner_id=? AND expires>?',(row['id'],int(time.time()))).fetchone()
+                        if check_password_hash(row['hash'],candidate) or (recovery and check_password_hash(recovery['hash'],candidate)):
+                            code=candidate
+                    except Exception:
+                        pass
+                if code is None:
+                    code=''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
+                    db.execute('INSERT OR REPLACE INTO owner_recovery VALUES (?,?,?,?)',(row['id'],generate_password_hash(code),secrets.token_hex(16),int(time.time())+86400))
+                enqueue(db,email,code,'Your station')
+        return render_template('owner_auth.html',notice='If this email has an owner account, a code is queued for delivery. Check your inbox and spam folder. Your current code still works.')
 
     @app.route('/owner/logout', methods=['POST'])
     def owner_logout():
@@ -322,7 +353,7 @@ def register_owners(app, radio):
                 if logo:
                     station['logo_url'] = logo
                 station.update(name=name, url=url, subtitle=request.form.get('subtitle', '')[:300], website=request.form.get('subtitle', '')[:300], bio=request.form.get('bio', '')[:250], language=language,
-                               flag={'en':'🇺🇸','es':'🇪🇸','fr':'🇫🇷','ht':'🇭🇹'}[language])
+                               flag={'en':'ðŸ‡ºðŸ‡¸','es':'ðŸ‡ªðŸ‡¸','fr':'ðŸ‡«ðŸ‡·','ht':'ðŸ‡­ðŸ‡¹'}[language])
                 radio.save_station_store(store)
                 return redirect(url_for('owner_dashboard'))
         return render_template('owner_edit.html', station=station, error=error)

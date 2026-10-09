@@ -42,6 +42,9 @@ def register_security(app):
             email = request.form.get('email', '').strip().casefold()[:254]
             limit('owner-login', 10, 900, email)
             limit('owner-login-ip', 50, 900, identity)
+        if request.endpoint == 'owner_resend_code' and request.method == 'POST':
+            limit('resend-email', 3, 3600, request.form.get('email','').strip().casefold()[:254])
+            limit('resend-ip', 10, 3600, identity)
         if request.endpoint == 'api_add_station' and request.method == 'POST':
             limit('station-submit', 10, 3600, identity)
             limit('station-submit-total', 100, 86400, 'all')
