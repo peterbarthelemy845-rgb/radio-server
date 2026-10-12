@@ -1,7 +1,7 @@
 // Validate both station submission forms before any request is sent.
 document.querySelectorAll('form').forEach(form => {
   if (form.id !== 'addStationForm' && form.getAttribute('action') !== '/api/add-station') return;
-  const fields = ['name', 'url', 'subtitle', 'contact_email', 'location'];
+  const fields = ['name', 'url', 'contact_email', 'location'];
   fields.forEach(name => {
     const field = form.querySelector(`[name="${name}"]`);
     if (!field) return;

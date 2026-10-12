@@ -1250,7 +1250,7 @@ def api_add_station():
         form["language"] = language
     flag = flags[language]
     errors = []
-    for field, label in ((name, "Station name"), (url, "Stream URL"), (subtitle, "Website / subtitle"), (form["location"], "Location")):
+    for field, label in ((name, "Station name"), (url, "Stream URL"), (form["location"], "Location")):
         if not field:
             errors.append(label + " is required.")
     if len(name) > 120:
