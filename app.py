@@ -66,7 +66,7 @@ def is_valid_email(value):
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value))
 
 
-def station_submission_form(name="", url="", subtitle="Custom Station", bio="", language="ht", contact_email=""):
+def station_submission_form(name="", url="", subtitle="", bio="", language="ht", contact_email=""):
     return {
         "name": name,
         "url": url,
@@ -1235,7 +1235,7 @@ def api_add_station():
     data = data or {}
     name = (data.get('name') or '').strip()
     url = (data.get('url') or '').strip()
-    subtitle = (data.get('subtitle') or 'Custom Station').strip()
+    subtitle = (data.get('subtitle') or data.get('website') or '').strip()
     website = (data.get('website') or subtitle).strip()
     bio = (data.get('bio') or '').strip()[:250]
     from station_owners import attach_station
@@ -1249,6 +1249,31 @@ def api_add_station():
         language = "ht"
         form["language"] = language
     flag = flags[language]
+    errors = []
+    for field, label in ((name, "Station name"), (url, "Stream URL"), (subtitle, "Website / subtitle"), (form["location"], "Location")):
+        if not field:
+            errors.append(label + " is required.")
+    if len(name) > 120:
+        errors.append("Station name must be 120 characters or fewer.")
+    if url:
+        try:
+            parsed = urlparse(url)
+            valid_stream = parsed.scheme.lower() in {"http", "https"} and bool(parsed.hostname) and not any(c.isspace() for c in url) and len(url) <= 2000
+            parsed.port  # Reject malformed ports too.
+        except ValueError:
+            valid_stream = False
+        if not valid_stream:
+            errors.append("Enter a valid http:// or https:// stream URL.")
+    if not is_valid_email(contact_email):
+        errors.append("A valid contact email is required.")
+    if not terms_agreed:
+        errors.append("You must agree to the station submission terms.")
+    if errors:
+        message = " ".join(errors)
+        if wants_json:
+            return jsonify(status="error", message=message), 400
+        wifi = get_wifi_status_data()
+        return render_template('add_station.html', status='error', message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid', ''), form=form), 400
     image_path = ""
     logo_path = ""
     if not is_json:

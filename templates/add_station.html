@@ -43,8 +43,8 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
         
       </div>
       <div class="row">
-        <label for="subtitle" data-i18n="websiteLabel">Website / subtitle optional</label>
-        <input id="subtitle" name="subtitle" type="text" value="{{ form.subtitle if form else 'Custom Station' }}" placeholder="radiostation.com" autocomplete="off">
+        <label for="subtitle" data-i18n="websiteLabel">Website / subtitle required</label>
+        <input id="subtitle" name="subtitle" type="text" required value="{{ form.subtitle if form else '' }}" placeholder="radiostation.com" autocomplete="off">
       </div>
       <div class="row">
         <label for="contact_email" data-i18n="emailLabel">Contact email</label>
@@ -76,10 +76,10 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
 <script src="/static/logo-cropper.js?v=3"></script>
 <script>
 const translations={
-  en:{addStation:'Add Station',saveStream:'Save a radio stream from your phone.',stationNameLabel:'Station name',streamUrlLabel:'Stream URL',websiteLabel:'Website / subtitle optional',languageFlagLabel:'Language / flag',bioLabel:'Small bio optional',saveStation:'Save Station',streamHelperTitle:"I don't know my Stream URL",buildStreamUrl:'Build Stream URL',streamHelperNote:'Enter the server, port, and mount path. Example: radio.example.com, 8000, /live.'},
-  es:{addStation:'Agregar Estación',saveStream:'Guarde una transmisión de radio desde su teléfono.',stationNameLabel:'Nombre de la estación',streamUrlLabel:'URL de transmisión',websiteLabel:'Sitio web / subtítulo opcional',languageFlagLabel:'Idioma / bandera',bioLabel:'Biografía corta opcional',saveStation:'Guardar estación',streamHelperTitle:'No sé mi URL de transmisión',buildStreamUrl:'Crear URL de transmisión',streamHelperNote:'Escriba servidor, puerto y ruta. Ejemplo: radio.example.com, 8000, /live.'},
-  fr:{addStation:'Ajouter une station',saveStream:'Enregistrez un flux radio depuis votre téléphone.',stationNameLabel:'Nom de la station',streamUrlLabel:'URL du flux',websiteLabel:'Site web / sous-titre optionnel',languageFlagLabel:'Langue / drapeau',bioLabel:'Petite bio optionnelle',saveStation:'Enregistrer la station',streamHelperTitle:'Je ne connais pas mon URL de flux',buildStreamUrl:"Créer l'URL du flux",streamHelperNote:'Entrez le serveur, le port et le chemin. Exemple : radio.example.com, 8000, /live.'},
-  ht:{addStation:'Ajoute Estasyon',saveStream:'Sove yon difizyon radyo ak telefòn ou.',stationNameLabel:'Non estasyon an',streamUrlLabel:'Lyen difizyon an',websiteLabel:'Sit entènèt / sou-tit si ou vle',languageFlagLabel:'Lang / drapo',bioLabel:'Ti bio si ou vle',saveStation:'Sove Estasyon',streamHelperTitle:'Mwen pa konnen lyen difizyon an',buildStreamUrl:'Fè lyen difizyon an',streamHelperNote:'Antre sèvè a, pò a, ak chemen an. Egzanp: radio.example.com, 8000, /live.'}
+  en:{addStation:'Add Station',saveStream:'Save a radio stream from your phone.',stationNameLabel:'Station name',streamUrlLabel:'Stream URL',websiteLabel:'Website / subtitle required',languageFlagLabel:'Language / flag',bioLabel:'Small bio optional',saveStation:'Save Station',streamHelperTitle:"I don't know my Stream URL",buildStreamUrl:'Build Stream URL',streamHelperNote:'Enter the server, port, and mount path. Example: radio.example.com, 8000, /live.'},
+  es:{addStation:'Agregar Estación',saveStream:'Guarde una transmisión de radio desde su teléfono.',stationNameLabel:'Nombre de la estación',streamUrlLabel:'URL de transmisión',websiteLabel:'Sitio web / subtítulo obligatorio',languageFlagLabel:'Idioma / bandera',bioLabel:'Biografía corta opcional',saveStation:'Guardar estación',streamHelperTitle:'No sé mi URL de transmisión',buildStreamUrl:'Crear URL de transmisión',streamHelperNote:'Escriba servidor, puerto y ruta. Ejemplo: radio.example.com, 8000, /live.'},
+  fr:{addStation:'Ajouter une station',saveStream:'Enregistrez un flux radio depuis votre téléphone.',stationNameLabel:'Nom de la station',streamUrlLabel:'URL du flux',websiteLabel:'Site web / sous-titre obligatoire',languageFlagLabel:'Langue / drapeau',bioLabel:'Petite bio optionnelle',saveStation:'Enregistrer la station',streamHelperTitle:'Je ne connais pas mon URL de flux',buildStreamUrl:"Créer l'URL du flux",streamHelperNote:'Entrez le serveur, le port et le chemin. Exemple : radio.example.com, 8000, /live.'},
+  ht:{addStation:'Ajoute Estasyon',saveStream:'Sove yon difizyon radyo ak telefòn ou.',stationNameLabel:'Non estasyon an',streamUrlLabel:'Lyen difizyon an',websiteLabel:'Sit entènèt / sou-tit obligatwa',languageFlagLabel:'Lang / drapo',bioLabel:'Ti bio si ou vle',saveStation:'Sove Estasyon',streamHelperTitle:'Mwen pa konnen lyen difizyon an',buildStreamUrl:'Fè lyen difizyon an',streamHelperNote:'Antre sèvè a, pò a, ak chemen an. Egzanp: radio.example.com, 8000, /live.'}
 };
 function setLanguage(lang){localStorage.setItem('radioLanguage',lang);let t=translations[lang]||translations.en;document.querySelectorAll('[data-i18n]').forEach(el=>{let key=el.getAttribute('data-i18n');if(t[key])el.innerText=t[key];});}
 setLanguage(localStorage.getItem('radioLanguage')||'en');
@@ -109,5 +109,6 @@ if(bioBox&&bioCount){bioCount.innerText=bioBox.value.length + '/250';}
 setupLogoCropper(document.querySelector('form'));
 </script>
 {% include 'submission_success.html' %}
+<script src="/static/station-validation.js?v=1"></script>
 </body>
 </html>
