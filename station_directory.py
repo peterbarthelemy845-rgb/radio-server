@@ -176,6 +176,11 @@ def register_directory(app, radio):
                 response=jsonify(error='Please wait and try again.');response.headers['Retry-After']='60'
                 return response,429
         store=load()
+        main=dict(radio.TEST_STREAMS[0],name='La Voix Divine',url=radio.MAIN_STREAM_URL)
+        with database() as db:ensure_code(db,main)
+        if main['listener_code']==code:
+            response=jsonify(public_station(main,code));response.headers['Cache-Control']='no-store'
+            return response
         for s in store.get('custom_stations',[]):
             if s.get('listener_code')==code and not s.get('suspended') and not s.get('owner_suspended'):
                 response=jsonify(public_station(s,code));response.headers['Cache-Control']='no-store'
