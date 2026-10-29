@@ -1,0 +1,206 @@
+"""Public listener codes are identifiers, never owner login credentials."""
+import hashlib
+import json
+import os
+import re
+import secrets
+import threading
+import time
+from contextlib import closing
+from flask import jsonify, request, render_template, current_app
+
+
+def schema(db):
+    db.executescript('''
+    CREATE TABLE IF NOT EXISTS listener_codes(code TEXT PRIMARY KEY,station_key TEXT UNIQUE NOT NULL);
+    CREATE TABLE IF NOT EXISTS listener_mail(id INTEGER PRIMARY KEY,code TEXT,email TEXT,name TEXT,
+      state TEXT,attempts INTEGER,due INTEGER,created INTEGER,UNIQUE(code,email));
+    CREATE TABLE IF NOT EXISTS directory_limits(peer TEXT PRIMARY KEY,window INTEGER,count INTEGER);
+    ''')
+
+
+def key_for(station):
+    return station.get('station_code') or 'url:' + hashlib.sha256(station['url'].encode()).hexdigest()
+
+
+def ensure_code(db, station):
+    key = key_for(station)
+    row = db.execute('SELECT code FROM listener_codes WHERE station_key=?', (key,)).fetchone()
+    if row:
+        station['listener_code'] = row['code']
+        return row['code']
+    candidate = station.get('listener_code', '')
+    # Old records may gain owner accounts or edited URLs. Preserve their code
+    # when moving from a legacy URL identity to the permanent station identity.
+    if re.fullmatch(r'[0-9]{6}',candidate):
+        legacy=db.execute('SELECT station_key FROM listener_codes WHERE code=?',(candidate,)).fetchone()
+        if legacy and legacy['station_key'].startswith('url:'):
+            db.execute('UPDATE listener_codes SET station_key=? WHERE code=?',(key,candidate))
+            return candidate
+    for _ in range(100):
+        if not re.fullmatch(r'[0-9]{6}', candidate):
+            candidate = str(100000 + secrets.randbelow(900000))
+        inserted = db.execute('INSERT OR IGNORE INTO listener_codes VALUES (?,?)', (candidate,key)).rowcount
+        if inserted:
+            station['listener_code'] = candidate
+            return candidate
+        row = db.execute('SELECT code FROM listener_codes WHERE station_key=?', (key,)).fetchone()
+        if row:
+            station['listener_code'] = row['code']
+            return row['code']
+        candidate = ''
+    raise RuntimeError('Unable to reserve a station code')
+
+
+def prepare_store(store):
+    from station_owners import database
+    with database() as db:
+        for group in ('pending_stations','custom_stations'):
+            for station in store.get(group,[]):
+                if station.get('url'):
+                    ensure_code(db,station)
+
+
+def enqueue_approved(store, previous):
+    from station_owners import database
+    # Backfill codes silently. Send for new approvals/contact changes only.
+    old={(key_for(s),s.get('contact_email','').casefold()) for s in previous.get('custom_stations',[])}
+    with database() as db:
+        for s in store.get('custom_stations',[]):
+            email=s.get('contact_email','').strip().casefold()
+            if not email or (key_for(s),email) in old or s.get('suspended') or s.get('owner_suspended'):
+                continue
+            now=int(time.time())
+            db.execute("INSERT OR IGNORE INTO listener_mail(code,email,name,state,attempts,due,created) VALUES (?,?,?,'pending',0,?,?)",
+                       (s['listener_code'],email,s['name'],now,now))
+
+
+def process_mail(app):
+    from station_owners import connect
+    from access_email import send_listener_code
+    now=int(time.time())
+    with closing(connect()) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        row=db.execute("SELECT * FROM listener_mail WHERE state IN ('pending','sending') AND due<=? ORDER BY id LIMIT 1",(now,)).fetchone()
+        if not row:return False
+        db.execute("UPDATE listener_mail SET state='sending',due=? WHERE id=?",(now+120,row['id']))
+    try:
+        with app.app_context():
+            radio=app.extensions['station_directory_radio']
+            active=any(s.get('listener_code')==row['code'] and s.get('contact_email','').casefold()==row['email']
+                       and not s.get('suspended') and not s.get('owner_suspended')
+                       for s in radio.load_station_store().get('custom_stations',[]))
+            ok=send_listener_code(row['email'],row['code'],row['name']) if active else False
+    except Exception as error:
+        app.logger.warning('Station code email failed: %s',type(error).__name__)
+        active=True;ok=False
+    attempts=row['attempts']+1
+    state='canceled' if not active else 'sent' if ok else 'failed' if attempts>=8 else 'pending'
+    with closing(connect()) as db, db:
+        db.execute('UPDATE listener_mail SET state=?,attempts=?,due=? WHERE id=?',
+                   (state,attempts,now+min(3600,60*2**min(attempts,6)),row['id']))
+    return True
+
+
+def public_station(s, code):
+    name=str(s.get('name') or '').encode('utf-8')[:96].decode('utf-8',errors='ignore')
+    return {k:v for k,v in dict(listener_code=code,name=name,url=s.get('url',''),
+            logo_url=s.get('logo_url',''),subtitle=s.get('subtitle','Internet Radio')).items()}
+
+
+def register_directory(app, radio):
+    app.extensions['station_directory_radio']=radio
+    radio.get_wifi_status_data=lambda:{'ssid':''}
+    radio.get_add_station_url=lambda:'https://www.radiolavoixdivine.com/add-station'
+    radio.get_remote_streams=lambda:[]
+    original_load=radio.load_station_store
+    original_save=radio.save_station_store
+    def load():
+        store=original_load();prepare_store(store);return store
+    def save(store):
+        previous={'custom_stations':[]}
+        if os.path.exists(radio.STATIONS_FILE):
+            with open(radio.STATIONS_FILE,encoding='utf-8') as f:
+                previous=json.load(f)
+            if isinstance(previous,list):previous={'custom_stations':previous}
+        prepare_store(store)
+        original_save(store);enqueue_approved(store,previous)
+    radio.load_station_store=load
+    radio.save_station_store=save
+    def listener_mail_status(s):
+        from station_owners import database
+        with database() as db:
+            row=db.execute('SELECT state FROM listener_mail WHERE code=? AND email=?',
+                           (s.get('listener_code',''),s.get('contact_email','').casefold())).fetchone()
+        return row['state'] if row else 'not queued'
+    app.jinja_env.globals.update(listener_station_code=lambda s:s.get('listener_code',''),listener_mail_status=listener_mail_status)
+    # The public site stores metadata. Neither browser nor server plays audio.
+    app.view_functions['index']=lambda:render_template('directory_home.html')
+    def player_disabled():
+        return jsonify(status='disabled',message='Listen on your radio using a station code.'),410
+    for endpoint in ('play_stream','stop_stream','resolve_browser_stream','set_volume','record_listen_heartbeat'):
+        if endpoint in app.view_functions:app.view_functions[endpoint]=player_disabled
+    # Block old bookmarked player assets too; owner/admin pages remain available.
+    @app.before_request
+    def no_old_player():
+        if request.path in ('/api/play-stream','/api/stop-stream','/api/resolve-stream','/api/listen-heartbeat'):
+            return player_disabled()
+        if request.path.startswith('/static/') and request.path.rsplit('/',1)[-1] in ('radio-sw.js','player.js','app.js'):
+            return '',410
+
+    @app.get('/api/device/stations/<code>')
+    def device_station(code):
+        if not re.fullmatch(r'[0-9]{6}',code):return jsonify(error='Enter a six-digit station code.'),400
+        from station_owners import database
+        with database() as db:
+            now=int(time.time());peer=request.remote_addr or 'unknown'
+            db.execute('DELETE FROM directory_limits WHERE window<?',(now-120,))
+            row=db.execute('SELECT * FROM directory_limits WHERE peer=?',(peer,)).fetchone()
+            count=row['count']+1 if row and now-row['window']<60 else 1
+            window=row['window'] if row and now-row['window']<60 else now
+            db.execute('INSERT OR REPLACE INTO directory_limits VALUES (?,?,?)',(peer,window,count))
+            if count>app.config.get('DIRECTORY_LOOKUPS_PER_MINUTE',6000):
+                response=jsonify(error='Please wait and try again.');response.headers['Retry-After']='60'
+                return response,429
+        store=load()
+        for s in store.get('custom_stations',[]):
+            if s.get('listener_code')==code and not s.get('suspended') and not s.get('owner_suspended'):
+                response=jsonify(public_station(s,code));response.headers['Cache-Control']='no-store'
+                return response
+        return jsonify(error='Station code not found or not available.'),404
+
+    @app.get('/api/device/default-station')
+    def device_default():
+        return jsonify(listener_code='',name='La Voix Divine',url=radio.MAIN_STREAM_URL,
+                       logo_url=radio.RADIO_LA_VOIX_LOGO_URL,subtitle='Internet Radio')
+
+    @app.post('/owner/station/<code>/email-listener-code')
+    def email_listener_code(code):
+        from station_owners import owned_station,check_token,database
+        check_token();store=load();group,s=owned_station(store,code)
+        if group!='custom_stations' or s.get('suspended') or s.get('owner_suspended'):
+            return jsonify(error='Station must be approved and active.'),409
+        with database() as db:
+            now=int(time.time())
+            row=db.execute('SELECT created FROM listener_mail WHERE code=? AND email=?',(s['listener_code'],s['contact_email'])).fetchone()
+            if row and now-row['created']<60:return jsonify(error='Please wait one minute before resending.'),429
+            db.execute("INSERT INTO listener_mail(code,email,name,state,attempts,due,created) VALUES (?,?,?,'pending',0,?,?) ON CONFLICT(code,email) DO UPDATE SET state='pending',attempts=0,due=excluded.due,created=excluded.created,name=excluded.name",
+                       (s['listener_code'],s['contact_email'],s['name'],now,now))
+        from flask import redirect,url_for
+        return redirect(url_for('owner_dashboard'))
+
+    lock=threading.Lock();started=False
+    @app.before_request
+    def start_listener_mail_worker():
+        nonlocal started
+        if app.testing or app.config.get('MAIL_WORKER_DISABLED'):return
+        with lock:
+            if started:return
+            started=True
+        def worker():
+            while True:
+                try:busy=process_mail(app)
+                except Exception as error:
+                    app.logger.warning('Station mail worker: %s',type(error).__name__);busy=False
+                time.sleep(2 if busy else 30)
+        threading.Thread(target=worker,daemon=True,name='station-code-mail').start()

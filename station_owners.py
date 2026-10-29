@@ -26,6 +26,8 @@ def connect():
     ''')
     from mail_delivery import schema
     schema(db)
+    from station_directory import schema as directory_schema
+    directory_schema(db)
     return db
 
 @contextmanager
@@ -320,8 +322,7 @@ def register_owners(app, radio):
             codes = {r['code'] for r in db.execute('SELECT code FROM station_ownership WHERE owner_id=?', (owner['id'],))}
             requests = [dict(r) for r in db.execute('SELECT * FROM deletion_requests WHERE owner_id=? ORDER BY created DESC', (owner['id'],))]
         rows = [dict(s, approval='Pending review' if group == 'pending_stations' else 'Approved') for group, s in all_station_rows(store) if s.get('owner_id') == owner['id'] and s.get('station_code') in codes]
-        stats = owner_viewership(rows, radio.load_analytics(), radio)
-        return render_template('owner_dashboard.html', owner=owner, stations=rows, deletion_history=requests, viewership=stats, total_duration=radio.format_duration(sum(s['total_seconds'] for s in stats)), daily_sessions=sum(s['windows'][0]['sessions'] for s in stats))
+        return render_template('owner_dashboard.html',owner=owner,stations=rows,deletion_history=requests)
 
     @app.route('/owner/ad/<id>/media')
     def owner_ad_media(id):

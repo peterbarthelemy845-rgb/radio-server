@@ -304,6 +304,7 @@ def normalize_station(station):
         "terms_agreed_at": station.get("terms_agreed_at"),
         "submitted_at": station.get("submitted_at"),
         "station_code": station.get("station_code", ""),
+        "listener_code": station.get("listener_code", ""),
         "owner_id": station.get("owner_id", ""),
         "owner_suspended": bool(station.get("owner_suspended")),
         "suspended": bool(station.get("suspended")),
@@ -1258,7 +1259,7 @@ def api_add_station():
     if url:
         try:
             parsed = urlparse(url)
-            valid_stream = parsed.scheme.lower() in {"http", "https"} and bool(parsed.hostname) and not any(c.isspace() for c in url) and len(url) <= 2000
+            valid_stream = parsed.scheme.lower() in {"http", "https"} and bool(parsed.hostname) and not any(c.isspace() for c in url) and len(url.encode('utf-8')) <= 1024
             parsed.port  # Reject malformed ports too.
         except ValueError:
             valid_stream = False
@@ -1331,9 +1332,9 @@ def api_add_station():
         pending.append(station)
         store['pending_stations'] = pending
     save_station_store(store)
-    message = 'Station approved automatically. It is now available in the library.' if auto_approved else 'Station submitted. Waiting for approval.'
+    message = 'Station registered. Your six-digit listener code will be emailed to you. Share it so listeners can add your station on their radio.' if auto_approved else 'Station submitted for approval. Your listener code will be emailed once approved.'
     if wants_json:
-        return jsonify({"status": "ok", "message": message, "auto_approved": auto_approved, "pending_count": len(pending), "station_code": station["station_code"], "version": get_config_version()})
+        return jsonify({"status": "ok", "message": message, "auto_approved": auto_approved, "pending_count": len(pending), "station_code": station["station_code"], "listener_code":station["listener_code"], "version": get_config_version()})
     wifi = get_wifi_status_data()
     return render_template('add_station.html', status='ok', auto_approved=auto_approved, message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
 
@@ -1725,6 +1726,9 @@ register_delivery(app)
 
 from automatic_backups import register_backups
 register_backups(app, sys.modules[__name__])
+
+from station_directory import register_directory
+register_directory(app, sys.modules[__name__])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Private live runtime data: never deploy over or commit these.
+owner_data/
+config.json
+stations.json
+analytics.json
+reports.json
+*.sqlite*
+.env*
+!.env.example
