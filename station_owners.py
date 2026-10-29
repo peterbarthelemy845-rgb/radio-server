@@ -72,32 +72,10 @@ def attach_station(station):
     return station
 
 def provision_owner(station, rotate=False):
-    email = (station.get('contact_email') or '').strip().casefold()
-    if not email or '@' not in email:
-        abort(400, 'A contact email is required before approving owner access.')
-    with database() as db:
-        owner = db.execute('SELECT id,email FROM accounts WHERE email=?', (email,)).fetchone()
-        if not owner:
-            owner = {'id': secrets.token_hex(16), 'email': email}
-            db.execute('INSERT INTO accounts VALUES (?,?,?)', (owner['id'], email, generate_password_hash(secrets.token_hex(32))))
-        credential = db.execute('SELECT * FROM owner_access WHERE owner_id=?', (owner['id'],)).fetchone()
-        if rotate or not credential:
-            access_code = ''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
-            db.execute('INSERT OR REPLACE INTO owner_access VALUES (?,?,?)', (owner['id'], generate_password_hash(access_code), secrets.token_hex(16)))
-            from mail_delivery import enqueue
-            enqueue(db, email, access_code, station.get('name', 'Your station'))
-            db.execute('DELETE FROM owner_recovery WHERE owner_id=?',(owner['id'],))
-            messages = getattr(g, 'owner_access_emails', [])
-            messages.append((email, access_code, station.get('name', 'Your station')))
-            g.owner_access_emails = messages
-            if request.path.startswith('/admin/'):
-                flash('Owner login for ' + email + ': ' + access_code + '. An email delivery will be attempted. Keep this code privately if the mailbox is not configured.', 'owner-access')
-        elif request.path.startswith('/admin/'):
-            flash('Station linked to ' + email + '. Their existing access code still works.', 'owner-access')
-        code = station.get('station_code') or 'ST-' + secrets.token_hex(8).upper()
-        db.execute('INSERT OR REPLACE INTO station_ownership VALUES (?,?)', (code, owner['id']))
-        station.update(station_code=code, owner_id=owner['id'], contact_email=email)
+    # Keep station identity without issuing owner login credentials.
+    station.setdefault('station_code', 'ST-' + secrets.token_hex(8).upper())
     return station
+
 
 def all_station_rows(store):
     for group in ('pending_stations', 'custom_stations'):

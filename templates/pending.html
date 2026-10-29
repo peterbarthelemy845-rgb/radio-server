@@ -11,7 +11,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
 <div class="wrap">{% for message in get_flashed_messages(category_filter=['owner-access']) %}<div class="card" role="status" style="overflow-wrap:anywhere;user-select:text">{{ message }}</div>{% endfor %}
   <div class="top"><h1>Admin Dashboard</h1><div class="sub">Manage stations.</div></div>
   <div class="card actions">
-    <a class="btn link" href="/admin/reports">Reports</a>
+    <a class="btn link" href="/admin/station-codes">Station codes &amp; resend</a><a class="btn link" href="/admin/reports">Reports</a>
     <a class="btn link" href="{{ url_for('index') }}">Home</a>
     <a class="btn link" href="{{ url_for('export_stations') }}">Export stations</a>
     <a class="btn link" href="/admin/backups">Backups</a>
@@ -38,7 +38,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
         <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
-        <p>Station code: {{ s.station_code or 'Not assigned' }}</p>
+        <p>Station code: {{ s.listener_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
           <form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>
@@ -66,7 +66,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
         {% endif %}
         <div class="actions">
           <a class="btn link" href="/admin/edit/{{ s._index }}">Edit</a>
-          <p>Station code: {{ s.station_code or 'Not assigned' }}{% if s.owner_suspended %} · Suspended by owner{% endif %}</p>
+          <p>Station code: {{ s.listener_code or 'Not assigned' }}{% if s.owner_suspended %} · Suspended by owner{% endif %}</p>
 
           {% if s.suspended %}
           <form method="post" action="/admin/restore/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Restore</button></form>
@@ -80,8 +80,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
           </form>
           {% endif %}
           <form method="post" action="/admin/delete/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn reject">Delete</button></form>
-        </div><details><summary>Owner access settings</summary>          <form method="post" action="{{ url_for('assign_station_owner', index=s._index) }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
-          <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><p>Owner email: {{ s.contact_email }}</p><button class="btn link">Generate new access code</button><p class="small">Replaces this owner’s code for all their stations.</p></form></details>
+        </div>
       </div>
       {% endfor %}
     {% else %}<div class="empty">No approved custom stations yet.</div>{% endif %}

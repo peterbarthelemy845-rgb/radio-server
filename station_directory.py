@@ -7,7 +7,7 @@ import secrets
 import threading
 import time
 from contextlib import closing
-from flask import jsonify, request, render_template, current_app
+from flask import jsonify, request, render_template, current_app, abort, redirect, flash
 
 
 def schema(db):
@@ -160,6 +160,68 @@ def register_directory(app, radio):
             return jsonify(status='browser',url=radio.MAIN_STREAM_URL)
         if request.path=='/api/volume':
             return jsonify(status='ok')
+
+    @app.before_request
+    def retire_owner_logins():
+        if request.path=='/owner' or request.path.startswith('/owner/') or request.endpoint=='assign_station_owner':
+            abort(404)
+
+    def queue_resend(station):
+        from station_owners import database
+        email=station.get('contact_email','').strip().casefold()
+        if not email or station.get('suspended') or station.get('owner_suspended'):return False
+        with database() as db:
+            now=int(time.time())
+            row=db.execute('SELECT created,state FROM listener_mail WHERE code=? AND email=?',(station['listener_code'],email)).fetchone()
+            if row and (now-row['created']<60 or row['state'] in ('pending','sending')):return False
+            db.execute("INSERT INTO listener_mail(code,email,name,state,attempts,due,created) VALUES (?,?,?,'pending',0,?,?) ON CONFLICT(code,email) DO UPDATE SET state='pending',attempts=0,due=excluded.due,created=excluded.created,name=excluded.name",(station['listener_code'],email,station['name'],now,now))
+        return True
+
+    @app.post('/station-code/resend')
+    def public_resend_station_code():
+        from station_owners import check_token,database
+        check_token()
+        email=request.form.get('email','').strip().casefold()[:254]
+        now=int(time.time())
+        keys=['code-resend:'+hashlib.sha256(value.encode()).hexdigest() for value in (email,request.remote_addr or 'unknown')]
+        allowed=True
+        with database() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for key in keys:
+                row=db.execute('SELECT until FROM login_attempts WHERE key=?',(key,)).fetchone()
+                if row and row['until']>now:allowed=False
+            if allowed:
+                for key in keys:db.execute('INSERT OR REPLACE INTO login_attempts VALUES (?,1,?)',(key,now+60))
+        if allowed and '@' in email:
+            for station in load().get('custom_stations',[]):
+                if station.get('contact_email','').strip().casefold()==email:queue_resend(station)
+        return render_template('station_code_resent.html')
+
+    def code_management_rows():
+        from station_owners import database
+        main=dict(radio.TEST_STREAMS[0],name='La Voix Divine',url=radio.MAIN_STREAM_URL,approval='Approved')
+        with database() as db:ensure_code(db,main)
+        rows=[main]
+        store=load()
+        for group,label in [('pending_stations','Pending approval'),('custom_stations','Approved')]:
+            for station in store.get(group,[]):
+                rows.append(dict(station,approval='Suspended' if station.get('suspended') or station.get('owner_suspended') else label))
+        return rows
+
+    @app.get('/admin/station-codes')
+    def admin_station_codes():
+        return render_template('admin_station_codes.html',stations=code_management_rows())
+
+    @app.post('/admin/station-codes/<code>/resend')
+    def admin_resend_station_code(code):
+        from station_owners import check_token
+        check_token()
+        for station in code_management_rows():
+            if station['listener_code']==code and station['approval']=='Approved':
+                queued=queue_resend(station)
+                flash('Station code email queued.' if queued else 'Not queued: check contact email or wait for the current email attempt.','station-code')
+                return redirect('/admin/station-codes')
+        abort(404)
 
     @app.get('/api/device/stations/<code>')
     def device_station(code):

@@ -1412,7 +1412,7 @@ def api_listen_heartbeat():
 def admin_email_status():
     from station_owners import database
     with database() as db:
-        counts=dict(db.execute('SELECT state,COUNT(*) FROM mail_outbox GROUP BY state').fetchall())
+        counts=dict(db.execute('SELECT state,COUNT(*) FROM listener_mail GROUP BY state').fetchall())
     modern=os.environ.get('OWNER_MAIL_TRANSPORT','smtp').strip().lower() == 'graph'
     return render_template('email_status.html',counts=counts,modern=modern,smtp=bool(os.environ.get('SMTP_PASSWORD')))
 
@@ -1423,7 +1423,7 @@ def admin_pending():
     status = request.args.get('status', 'all')
     def station_page(group, key):
         rows = [dict(row, _index=i) for i, row in enumerate(store.get(group, []))]
-        rows = [row for row in rows if query.casefold() in ' '.join(str(row.get(k, '')) for k in ('name','url','contact_email','station_code')).casefold()]
+        rows = [row for row in rows if query.casefold() in ' '.join(str(row.get(k, '')) for k in ('name','url','contact_email','station_code','listener_code')).casefold()]
         if status in ('active', 'suspended'):
             rows = [row for row in rows if bool(row.get('suspended') or row.get('owner_suspended')) == (status == 'suspended')]
         pages = max(1, (len(rows)+19)//20)
@@ -1722,7 +1722,7 @@ from station_owners import register_owners
 register_owners(app, sys.modules[__name__])
 
 from mail_delivery import register_delivery
-register_delivery(app)
+# Retired owner login email worker.
 
 from automatic_backups import register_backups
 register_backups(app, sys.modules[__name__])

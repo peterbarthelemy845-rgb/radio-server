@@ -8,14 +8,14 @@
 </style>
 <dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage submissionAccessMessage">
   <h2 id="submissionSuccessTitle">Waiting for approval</h2>
-  <p id="submissionSuccessMessage">Thank you for your submission. Your station is waiting for admin approval.</p>
-  <p id="submissionAccessMessage">Your shareable six-digit listener code is emailed after approval. Your private owner login code is separate. Never share your private login code. Check your inbox and spam folder.</p>
+  <p id="submissionSuccessMessage">Register your station to receive a six-digit code by email. Share it with listeners so they can add your station to their radio device.</p>
+  <p id="submissionAccessMessage">Check your inbox and spam folder. If approval is required, your code is emailed after approval.</p>
   <form method="dialog"><button autofocus>OK</button></form>
 </dialog>
 <script>
 function showSubmissionSuccess(code,autoApproved=false){
   document.getElementById('submissionSuccessTitle').innerText=autoApproved?'Station approved':'Waiting for approval';
-  document.getElementById('submissionSuccessMessage').innerText=autoApproved?'Your station was approved. Your six-digit listener code will be emailed to you. Share it so listeners can add your station on their radio.':'Thank you for your submission. Your station is waiting for admin approval.';
+  document.getElementById('submissionSuccessMessage').innerText='Register your station to receive a six-digit code by email. Share it with listeners so they can add your station to their radio device.';
   const dialog=document.getElementById('submissionSuccess');
   if(!dialog.open)dialog.showModal();
 }

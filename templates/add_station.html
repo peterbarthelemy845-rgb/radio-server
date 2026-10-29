@@ -31,7 +31,8 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
     <p class="sub" data-i18n="saveStream">Register your station and get a listener code by email.</p>
   </section>
   <section class="card">
-    <form method="post" action="/api/add-station" enctype="multipart/form-data">{% include 'owner_submission_fields.html' %}
+    {% include 'resend_station_code.html' %}
+<form method="post" action="/api/add-station" enctype="multipart/form-data">{% include 'owner_submission_fields.html' %}
       <div class="row">
         <label for="name" data-i18n="stationNameLabel">Station name</label>
         <input id="name" name="name" type="text" required value="{{ form.name if form else '' }}" placeholder="Example: Test Radio" autocomplete="off">
@@ -108,7 +109,7 @@ function buildStreamUrl(){
 const bioBox=document.getElementById('bio');
 const bioCount=document.getElementById('bioCount');
 if(bioBox&&bioCount){bioCount.innerText=bioBox.value.length + '/250';}
-setupLogoCropper(document.querySelector('form'));
+setupLogoCropper(document.querySelector('form[action="/api/add-station"]'));
 </script>
 {% include 'submission_success.html' %}
 <script src="/static/station-validation.js?v=2"></script>
