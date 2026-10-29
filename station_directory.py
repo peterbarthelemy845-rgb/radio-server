@@ -137,6 +137,19 @@ def register_directory(app, radio):
     # Keep the original player UI; only the protected main station plays here.
     app.view_functions['index']=lambda:render_template('index.html',public_web=True)
     radio.get_all_streams=lambda:[dict(radio.TEST_STREAMS[0],name='La Voix Divine',url=radio.MAIN_STREAM_URL)]
+    original_state=radio.build_state
+    def library_state():
+        state=original_state()
+        from station_owners import database
+        main=dict(radio.TEST_STREAMS[0],name='La Voix Divine',url=radio.MAIN_STREAM_URL)
+        with database() as db:ensure_code(db,main)
+        rows=[public_station(main,main['listener_code'])]
+        for station in load().get('custom_stations',[]):
+            if not station.get('suspended') and not station.get('owner_suspended') and station.get('url')!=radio.MAIN_STREAM_URL:
+                rows.append(dict(public_station(station,station['listener_code']),location=station.get('location',''),bio=station.get('bio','')))
+        state['library_stations']=rows
+        return state
+    radio.build_state=library_state
     @app.before_request
     def main_station_playback_only():
         if request.path in ('/api/play-stream','/api/resolve-stream','/api/listen-heartbeat'):
