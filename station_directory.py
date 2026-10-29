@@ -13,6 +13,7 @@ from flask import jsonify, request, render_template, current_app, abort, redirec
 def schema(db):
     db.executescript('''
     CREATE TABLE IF NOT EXISTS listener_codes(code TEXT PRIMARY KEY,station_key TEXT UNIQUE NOT NULL);
+    CREATE TABLE IF NOT EXISTS station_code_migrations(name TEXT PRIMARY KEY,applied_at INTEGER);
     CREATE TABLE IF NOT EXISTS listener_code_sequence(id INTEGER PRIMARY KEY CHECK(id=1),next_code INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS listener_mail(id INTEGER PRIMARY KEY,code TEXT,email TEXT,name TEXT,
       state TEXT,attempts INTEGER,due INTEGER,created INTEGER,UNIQUE(code,email));
@@ -59,6 +60,22 @@ def ensure_code(db, station):
             station['listener_code']=row['code']
             return row['code']
 
+
+
+def renumber_testing_stations(db):
+    """Explicit pre-release renumbering; old identifiers become non-resolving tombstones."""
+    migration='testing-codes-10-11-2026-10-29'
+    if db.execute('SELECT 1 FROM station_code_migrations WHERE name=?',(migration,)).fetchone():return
+    for old,new in [('527007','10'),('914390','11')]:
+        row=db.execute('SELECT station_key FROM listener_codes WHERE code=?',(old,)).fetchone()
+        if not row:continue
+        occupied=db.execute('SELECT station_key FROM listener_codes WHERE code=?',(new,)).fetchone()
+        if occupied and occupied['station_key']!=row['station_key']:
+            raise RuntimeError('Requested test station code is already assigned: '+new)
+        db.execute('UPDATE listener_codes SET code=? WHERE code=?',(new,old))
+        db.execute('INSERT OR IGNORE INTO listener_codes VALUES (?,?)',(old,'retired-testing:'+old))
+        db.execute('UPDATE listener_mail SET code=? WHERE code=?',(new,old))
+    db.execute('INSERT INTO station_code_migrations VALUES (?,?)',(migration,int(time.time())))
 
 
 def prepare_store(store):
@@ -119,6 +136,10 @@ def public_station(s, code):
 
 def register_directory(app, radio):
     app.extensions['station_directory_radio']=radio
+    from station_owners import connect
+    with closing(connect()) as db,db:
+        db.execute('BEGIN IMMEDIATE')
+        renumber_testing_stations(db)
     radio.get_wifi_status_data=lambda:{'ssid':''}
     radio.get_add_station_url=lambda:'https://www.radiolavoixdivine.com/add-station'
     radio.get_remote_streams=lambda:[]
