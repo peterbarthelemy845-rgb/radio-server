@@ -72,10 +72,10 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
           <span>I agree to the <a href="/terms" target="_blank">station submission terms</a>.</span>
         </label>
       </div>
-      <button class="btn" type="submit" data-i18n="saveStation">Save Station</button>
+      {% include 'rights_acceptance.html' %}<button class="btn" type="submit" data-i18n="saveStation">Save Station</button>
     </form>
   </section>
-</main>
+{% include 'legal_links.html' %}</main>
 <script src="/static/logo-cropper.js?v=3"></script>
 <script>
 const translations={

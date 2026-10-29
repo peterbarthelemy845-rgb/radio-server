@@ -19,6 +19,8 @@ def schema(db):
     ''')
     from station_editing import schema as edit_schema
     edit_schema(db)
+    from legal_policies import schema as legal_schema
+    legal_schema(db)
 
 
 def key_for(station):
@@ -149,6 +151,7 @@ def register_directory(app, radio):
         for station in load().get('custom_stations',[]):
             if not station.get('suspended') and not station.get('owner_suspended') and station.get('url')!=radio.MAIN_STREAM_URL:
                 rows.append(dict(public_station(station,station['listener_code']),location=station.get('location',''),bio=station.get('bio','')))
+        state['custom_stations']=[]  # Legacy configuration records must not expose contact details.
         state['library_stations']=rows
         return state
     radio.build_state=library_state
@@ -273,6 +276,8 @@ def register_directory(app, radio):
 
     from station_editing import register_editing,process_edit_mail
     register_editing(app,radio)
+    from legal_policies import register_legal
+    register_legal(app,radio)
     lock=threading.Lock();started=False
     @app.before_request
     def start_listener_mail_worker():

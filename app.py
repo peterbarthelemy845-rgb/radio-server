@@ -1317,7 +1317,7 @@ def api_add_station():
     now = int(time.time())
     station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "location": form["location"], "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
     if any((item.get('url') or '').strip() == url for item in store.get('custom_stations', []) + pending):
-        message = 'This stream is already submitted. Manage it from your owner dashboard.'
+        message = 'This stream is already submitted. Use Already registered? Edit your station in Add Station.'
         if wants_json:
             return jsonify(status='error', message=message), 409
         return render_template('add_station.html', status='error', message=message, form=form), 409
