@@ -17,6 +17,8 @@ def schema(db):
       state TEXT,attempts INTEGER,due INTEGER,created INTEGER,UNIQUE(code,email));
     CREATE TABLE IF NOT EXISTS directory_limits(peer TEXT PRIMARY KEY,window INTEGER,count INTEGER);
     ''')
+    from station_editing import schema as edit_schema
+    edit_schema(db)
 
 
 def key_for(station):
@@ -269,6 +271,8 @@ def register_directory(app, radio):
         from flask import redirect,url_for
         return redirect(url_for('owner_dashboard'))
 
+    from station_editing import register_editing,process_edit_mail
+    register_editing(app,radio)
     lock=threading.Lock();started=False
     @app.before_request
     def start_listener_mail_worker():
@@ -279,7 +283,9 @@ def register_directory(app, radio):
             started=True
         def worker():
             while True:
-                try:busy=process_mail(app)
+                try:
+                    busy=process_mail(app)
+                    busy=process_edit_mail(app) or busy
                 except Exception as error:
                     app.logger.warning('Station mail worker: %s',type(error).__name__);busy=False
                 time.sleep(2 if busy else 30)

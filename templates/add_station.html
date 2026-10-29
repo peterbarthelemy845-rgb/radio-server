@@ -28,7 +28,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
   <section class="brand">
     <div class="icon">📻</div>
     <h1 data-i18n="addStation">Add Station</h1>
-    <p class="sub" data-i18n="saveStream">Register your station and get a listener code by email.</p>
+
   </section>
   <section class="card">
     {% include 'resend_station_code.html' %}
@@ -41,10 +41,10 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
         <label for="url" data-i18n="streamUrlLabel">Stream URL</label>
         <input id="url" name="url" type="url" required value="{{ form.url if form else '' }}" placeholder="https://example.com/stream.mp3" inputmode="url" autocomplete="off">
         <div class="hint">Tip: MP3 stream links work best.</div>
-        
+
       </div>
       <div class="row">
-        
+
       </div>
       <div class="row">
         <label for="bio" data-i18n="bioLabel">Bio (optional)</label>
@@ -53,8 +53,8 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
         <label for="contact_email" data-i18n="emailLabel">Contact email</label>
         <input id="contact_email" name="contact_email" type="email" required placeholder="owner@example.com" autocomplete="email" value="{{ form.contact_email|default('') if form is defined else '' }}" >
       </div>
-      
-      
+
+
       <div class="row">
         <label for="logo_image" data-i18n="logoUploadLabel">Radio logo required</label>
         <input id="logo_image" name="logo_image" type="file" required accept="image/png,image/jpeg,image/webp,image/gif">
