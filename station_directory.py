@@ -13,6 +13,7 @@ from flask import jsonify, request, render_template, current_app, abort, redirec
 def schema(db):
     db.executescript('''
     CREATE TABLE IF NOT EXISTS listener_codes(code TEXT PRIMARY KEY,station_key TEXT UNIQUE NOT NULL);
+    CREATE TABLE IF NOT EXISTS listener_code_sequence(id INTEGER PRIMARY KEY CHECK(id=1),next_code INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS listener_mail(id INTEGER PRIMARY KEY,code TEXT,email TEXT,name TEXT,
       state TEXT,attempts INTEGER,due INTEGER,created INTEGER,UNIQUE(code,email));
     CREATE TABLE IF NOT EXISTS directory_limits(peer TEXT PRIMARY KEY,window INTEGER,count INTEGER);
@@ -34,26 +35,30 @@ def ensure_code(db, station):
         station['listener_code'] = row['code']
         return row['code']
     candidate = station.get('listener_code', '')
-    # Old records may gain owner accounts or edited URLs. Preserve their code
-    # when moving from a legacy URL identity to the permanent station identity.
-    if re.fullmatch(r'[0-9]{6}',candidate):
+    if re.fullmatch(r'[0-9]{2,6}',candidate):
         legacy=db.execute('SELECT station_key FROM listener_codes WHERE code=?',(candidate,)).fetchone()
         if legacy and legacy['station_key'].startswith('url:'):
             db.execute('UPDATE listener_codes SET station_key=? WHERE code=?',(key,candidate))
             return candidate
-    for _ in range(100):
-        if not re.fullmatch(r'[0-9]{6}', candidate):
-            candidate = str(100000 + secrets.randbelow(900000))
-        inserted = db.execute('INSERT OR IGNORE INTO listener_codes VALUES (?,?)', (candidate,key)).rowcount
-        if inserted:
-            station['listener_code'] = candidate
+        if db.execute('INSERT OR IGNORE INTO listener_codes VALUES (?,?)',(candidate,key)).rowcount:
+            station['listener_code']=candidate
             return candidate
-        row = db.execute('SELECT code FROM listener_codes WHERE station_key=?', (key,)).fetchone()
+    # The durable counter starts at 10 independently of existing six-digit codes.
+    # SQLite serializes this transaction; deleted codes remain reserved forever.
+    db.execute('INSERT OR IGNORE INTO listener_code_sequence VALUES (1,10)')
+    while True:
+        db.execute('UPDATE listener_code_sequence SET next_code=next_code+1 WHERE id=1')
+        number=db.execute('SELECT next_code-1 FROM listener_code_sequence WHERE id=1').fetchone()[0]
+        if number>999999:raise RuntimeError('Station code capacity reached')
+        candidate=str(number)
+        if db.execute('INSERT OR IGNORE INTO listener_codes VALUES (?,?)',(candidate,key)).rowcount:
+            station['listener_code']=candidate
+            return candidate
+        row=db.execute('SELECT code FROM listener_codes WHERE station_key=?',(key,)).fetchone()
         if row:
-            station['listener_code'] = row['code']
+            station['listener_code']=row['code']
             return row['code']
-        candidate = ''
-    raise RuntimeError('Unable to reserve a station code')
+
 
 
 def prepare_store(store):
@@ -230,7 +235,7 @@ def register_directory(app, radio):
 
     @app.get('/api/device/stations/<code>')
     def device_station(code):
-        if not re.fullmatch(r'[0-9]{6}',code):return jsonify(error='Enter a six-digit station code.'),400
+        if not re.fullmatch(r'[0-9]{2,6}',code):return jsonify(error='Enter a station code (2-6 digits).'),400
         from station_owners import database
         with database() as db:
             now=int(time.time());peer=request.remote_addr or 'unknown'

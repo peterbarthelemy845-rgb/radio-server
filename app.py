@@ -1333,7 +1333,7 @@ def api_add_station():
         pending.append(station)
         store['pending_stations'] = pending
     save_station_store(store)
-    message = 'Station registered. Your six-digit listener code will be emailed to you. Share it so listeners can add your station on their radio.' if auto_approved else 'Station submitted for approval. Your listener code will be emailed once approved.'
+    message = 'Station registered. Your station code will be emailed to you. Share it so listeners can add your station on their radio.' if auto_approved else 'Station submitted for approval. Your listener code will be emailed once approved.'
     if wants_json:
         return jsonify({"status": "ok", "message": message, "auto_approved": auto_approved, "pending_count": len(pending), "station_code": station["station_code"], "listener_code":station["listener_code"], "version": get_config_version()})
     wifi = get_wifi_status_data()

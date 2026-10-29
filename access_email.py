@@ -50,8 +50,8 @@ def send_station_message(email, subject, body):
 
 def send_access_code(email, code, station_name):
     return send_station_message(email, 'Your private station owner login',
-        f'Station: {station_name}\n\nYour private owner login code: {code}\n\nSign in at https://www.radiolavoixdivine.com/owner/login using your email and this code. Keep it private. This is NOT the six-digit code shared with listeners.\n')
+        f'Station: {station_name}\n\nYour private owner login code: {code}\n\nSign in at https://www.radiolavoixdivine.com/owner/login using your email and this code. Keep it private. This is NOT the station code shared with listeners.\n')
 
 def send_listener_code(email, code, station_name):
     return send_station_message(email, 'Your station code: '+code,
-        f'Your station: {station_name}\n\nYour listener station code is: {code}\n\nShare this six-digit code with all your listeners. It identifies your station, not a customer or device. The same code can be used on multiple radios.\n\nOn the radio: tap Add Station, enter {code}, then tap Add. The radio saves your station and streams audio directly from your stream URL.\n\nTo update your cover art, stream URL/IP address, or bio, visit https://www.radiolavoixdivine.com/#add-station and choose Already registered? Edit your station. Enter this email and station code to receive a private sign-in link.\n')
+        f'Your station: {station_name}\n\nYour listener station code is: {code}\n\nShare this station code with all your listeners. It identifies your station, not a customer or device. The same code can be used on multiple radios.\n\nOn the radio: tap Add Station, enter {code}, then tap Add. The radio saves your station and streams audio directly from your stream URL.\n\nTo update your cover art, stream URL/IP address, or bio, visit https://www.radiolavoixdivine.com/#add-station and choose Already registered? Edit your station. Enter this email and station code to receive a private sign-in link.\n')

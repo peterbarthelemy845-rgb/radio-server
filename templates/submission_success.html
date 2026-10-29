@@ -8,14 +8,14 @@
 </style>
 <dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage submissionAccessMessage">
   <h2 id="submissionSuccessTitle">Waiting for approval</h2>
-  <p id="submissionSuccessMessage">Register your station to receive a six-digit code by email. Share it with listeners so they can add your station to their radio device.</p>
+  <p id="submissionSuccessMessage">Register your station to receive a station code by email. Share it with listeners so they can add your station to their radio device.</p>
   <p id="submissionAccessMessage">Check your inbox and spam folder. If approval is required, your code is emailed after approval.</p>
   <form method="dialog"><button autofocus>OK</button></form>
 </dialog>
 <script>
 function showSubmissionSuccess(code,autoApproved=false){
   document.getElementById('submissionSuccessTitle').innerText=autoApproved?'Station approved':'Waiting for approval';
-  document.getElementById('submissionSuccessMessage').innerText='Register your station to receive a six-digit code by email. Share it with listeners so they can add your station to their radio device.';
+  document.getElementById('submissionSuccessMessage').innerText='Register your station to receive a station code by email. Share it with listeners so they can add your station to their radio device.';
   const dialog=document.getElementById('submissionSuccess');
   if(!dialog.open)dialog.showModal();
 }
