@@ -1241,7 +1241,8 @@ def api_add_station():
     bio = (data.get('bio') or '').strip()[:250]
     from station_owners import attach_station
     contact_email = (data.get('contact_email') or data.get('email') or '').strip().casefold()
-    terms_agreed = str(data.get('terms_agreed') or '').lower() in {"1", "true", "yes", "on"}
+    from legal_policies import TERMS_VERSION
+    terms_agreed = data.get('rights_confirmed') == '1' and data.get('terms_version') == TERMS_VERSION
     language = (data.get('language') or 'ht').strip().lower()
     form = station_submission_form(name, url, subtitle, bio, language, contact_email)
     form["location"] = normalize_station_location(data.get("location"))
