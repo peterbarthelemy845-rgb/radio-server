@@ -134,19 +134,19 @@ def register_directory(app, radio):
                            (s.get('listener_code',''),s.get('contact_email','').casefold())).fetchone()
         return row['state'] if row else 'not queued'
     app.jinja_env.globals.update(listener_station_code=lambda s:s.get('listener_code',''),listener_mail_status=listener_mail_status)
-    # The public site stores metadata. Neither browser nor server plays audio.
-    app.view_functions['index']=lambda:render_template('directory_home.html')
-    def player_disabled():
-        return jsonify(status='disabled',message='Listen on your radio using a station code.'),410
-    for endpoint in ('play_stream','stop_stream','resolve_browser_stream','set_volume','record_listen_heartbeat'):
-        if endpoint in app.view_functions:app.view_functions[endpoint]=player_disabled
-    # Block old bookmarked player assets too; owner/admin pages remain available.
+    # Keep the original player UI; only the protected main station plays here.
+    app.view_functions['index']=lambda:render_template('index.html',public_web=True)
+    radio.get_all_streams=lambda:[dict(radio.TEST_STREAMS[0],name='La Voix Divine',url=radio.MAIN_STREAM_URL)]
     @app.before_request
-    def no_old_player():
-        if request.path in ('/api/play-stream','/api/stop-stream','/api/resolve-stream','/api/listen-heartbeat'):
-            return player_disabled()
-        if request.path.startswith('/static/') and request.path.rsplit('/',1)[-1] in ('radio-sw.js','player.js','app.js'):
-            return '',410
+    def main_station_playback_only():
+        if request.path in ('/api/play-stream','/api/resolve-stream','/api/listen-heartbeat'):
+            data=request.get_json(silent=True) or {}
+            if data.get('url') and data['url']!=radio.MAIN_STREAM_URL:
+                return jsonify(error='Only La Voix Divine plays on this website. Add other stations to your radio using their station code.'),403
+        if request.path=='/api/play-stream':
+            return jsonify(status='browser',url=radio.MAIN_STREAM_URL)
+        if request.path=='/api/volume':
+            return jsonify(status='ok')
 
     @app.get('/api/device/stations/<code>')
     def device_station(code):
