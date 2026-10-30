@@ -15,7 +15,7 @@ async function loadLinkedRadios(){
  return radioTargets;
 }
 async function openRadioAdd(){
- radioWantsAdd=false;++radioCheckGeneration;document.querySelector('#radioPairForm button').disabled=false;document.getElementById('radioYes').disabled=false;document.getElementById('radioYes').textContent='Yes, add station';radioMessage.textContent='';document.getElementById('radioPairPanel').hidden=true;
+ radioWantsAdd=false;++radioCheckGeneration;document.getElementById('radioNo').textContent='Not now';document.querySelector('#radioPairForm button').disabled=false;document.getElementById('radioYes').disabled=false;document.getElementById('radioYes').textContent='Yes, add station';radioMessage.textContent='';document.getElementById('radioPairPanel').hidden=true;
  if(!radioDialog.open)radioDialog.showModal();
  try{
   await loadLinkedRadios();
@@ -51,6 +51,7 @@ async function sendToRadio(){
  radioWantsAdd=true;const button=document.getElementById('radioYes');button.disabled=true;
  if(!radioChoice.value){document.getElementById('radioPairPanel').hidden=false;button.disabled=false;return;}
  radioMessage.textContent='Sending to your radio. Keep it on and connected to Wi-Fi…';
+ document.getElementById('radioNo').textContent='Close';
  try{
   const result=await radioApi('/api/radio/add-station',{code:publicCode,radio_id:radioChoice.value});
   let checks=0;const generation=++radioCheckGeneration;if(radioPollTimer)clearTimeout(radioPollTimer);

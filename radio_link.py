@@ -181,9 +181,9 @@ def register_radio_link(app,radio):
             db.execute('DELETE FROM radio_commands WHERE created<?',(now-604800,))
             linked=bool(db.execute('SELECT 1 FROM phone_radios WHERE radio_id=? AND expires>?',(identifier,now)).fetchone())
             pair=db.execute("SELECT id,check_code FROM radio_pair_claims WHERE radio_id=? AND state='waiting' AND expires>? ORDER BY created DESC LIMIT 1",(identifier,now)).fetchone()
-            row=db.execute("SELECT id,code FROM radio_commands WHERE radio_id=? AND state IN ('pending','delivered') AND expires>? AND lease<=? ORDER BY created LIMIT 1",(identifier,now,now)).fetchone()
+            row=db.execute("SELECT id,code,expires FROM radio_commands WHERE radio_id=? AND state IN ('pending','delivered') AND expires>? AND lease<=? ORDER BY created LIMIT 1",(identifier,now,now)).fetchone()
             if row:db.execute("UPDATE radio_commands SET state='delivered',lease=? WHERE id=?",(now+60,row['id']))
-        return jsonify(linked=linked,command_id=row['id'] if row else '',station_code=row['code'] if row else '',pair_claim_id=pair['id'] if pair else '',pair_check=pair['check_code'] if pair else '',claim_decision_ack=decision_ack,claim_result=claim_result)
+        return jsonify(linked=linked,command_id=row['id'] if row else '',station_code=row['code'] if row else '',command_expires_in=max(0,row['expires']-now) if row else 0,pair_claim_id=pair['id'] if pair else '',pair_check=pair['check_code'] if pair else '',claim_decision_ack=decision_ack,claim_result=claim_result)
 
     @app.post('/api/radio/link/reset')
     def radio_reset_links():

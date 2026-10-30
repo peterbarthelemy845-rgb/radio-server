@@ -53,6 +53,7 @@ assert stranger.get('/api/radio/commands/'+command).status_code==403
 assert device.post('/api/radio/poll',json={'radio_id':identifier},headers={'Authorization':'Bearer '+secrets.token_hex(32)}).status_code==401
 poll=device.post('/api/radio/poll',json={'radio_id':identifier},headers=headers).get_json()
 assert poll['linked'] and poll['command_id']==command and poll['station_code']==code
+assert 0<poll['command_expires_in']<=300
 assert phone.get('/api/radio/commands/'+command).get_json()['status']=='delivered'
 assert device.post('/api/radio/poll',json={'radio_id':identifier},headers=headers).get_json()['command_id']==''
 ack=device.post('/api/radio/poll',json={'radio_id':identifier,'ack_id':command,'ack_status':'added'},headers=headers)
