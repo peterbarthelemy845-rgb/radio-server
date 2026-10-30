@@ -24,7 +24,7 @@ from persistent_storage import data_path, data_directory
 app = Flask(__name__)
 app.secret_key = os.environ.get("ADMIN_SECRET_KEY", "change-this-radio-admin-key")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
-JUNIOR_ADMIN_CODE = os.environ.get("JUNIOR_ADMIN_CODE", "845517").strip()
+JUNIOR_ADMIN_CODE = os.environ.get("JUNIOR_ADMIN_CODE", "").strip()
 ADMIN_MFA_PHONE = os.environ.get("ADMIN_MFA_PHONE", "").strip()
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
@@ -458,7 +458,8 @@ def verify_admin_totp(code):
     if not is_totp_configured():
         return False
     try:
-        return pyotp.TOTP(ADMIN_TOTP_SECRET).verify((code or "").strip().replace(" ", ""), valid_window=1)
+        from admin_security import consume_totp
+        return consume_totp(ADMIN_TOTP_SECRET,code)
     except Exception as e:
         print("Authenticator verification failed:", e, flush=True)
         return False
@@ -762,13 +763,13 @@ def require_admin_login():
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    error = ''
+    error = 'Your admin session expired. Please sign in again.' if request.args.get('expired') else ''
     step = request.args.get('step') or 'password'
     if request.method == 'POST':
         action = (request.form.get('action') or 'password').strip()
         if action == 'verify':
             code = (request.form.get('code') or '').strip()
-            if not session.get('admin_password_ok'):
+            if not session.get('admin_password_ok') or int(time.time())-session.get('admin_challenge_at',0)>300:
                 error = 'Please enter your password first.'
                 return render_template('admin_login.html', error=error, step='password')
             attempts = int(session.get('admin_totp_attempts') or 0)
@@ -781,7 +782,8 @@ def admin_login():
                 session.pop('admin_password_ok', None)
                 session.pop('admin_totp_attempts', None)
                 session['admin_role'] = session.pop('admin_pending_role', 'full')
-                session['admin_logged_in'] = True
+                from admin_security import new_session
+                new_session(session,session['admin_role'])
                 return redirect(session.pop('admin_next', None) or '/admin/pending')
             session['admin_totp_attempts'] = attempts + 1
             error = 'Wrong authenticator code'
@@ -795,6 +797,8 @@ def admin_login():
             session['admin_pending_role'] = 'junior'
             session['admin_next'] = '/admin/pending'
             session['admin_password_ok'] = True
+            session['admin_challenge'] = secrets.token_urlsafe(24)
+            session['admin_challenge_at'] = int(time.time())
             session['admin_totp_attempts'] = 0
             return render_template('admin_login.html', error='', step='verify')
         if ADMIN_PASSWORD and secrets.compare_digest(password, ADMIN_PASSWORD):
@@ -805,6 +809,8 @@ def admin_login():
             if is_totp_configured():
                 session['admin_pending_role'] = 'full'
                 session['admin_password_ok'] = True
+                session['admin_challenge'] = secrets.token_urlsafe(24)
+                session['admin_challenge_at'] = int(time.time())
                 session['admin_totp_attempts'] = 0
                 return render_template('admin_login.html', error='', step='verify')
             session['admin_role'] = 'full'
@@ -815,6 +821,8 @@ def admin_login():
 
 @app.route('/admin/logout')
 def admin_logout():
+    from admin_security import revoke
+    revoke(session)
     session.clear()
     return redirect('/admin/login')
 
@@ -872,36 +880,20 @@ def parse_playlist(text, base):
     raise ValueError('Playlist contains no playable stream')
 
 def resolve_playlist(url):
-    if not is_playlist(url):
-        return url
-    seen = set()
+    from safe_http import fetch_public
+    if not is_playlist(url):return url
+    seen=set()
     for _ in range(6):
-        if url in seen:
-            raise ValueError('Playlist redirects in a loop')
+        if url in seen:raise ValueError('The stream playlist redirects in a loop.')
         seen.add(url)
-        validate_public_url(url)
-        with requests.get(url, timeout=(4, 6), stream=True, allow_redirects=False) as response:
-            if response.status_code in (301, 302, 303, 307, 308):
-                location = response.headers.get('Location')
-                if not location:
-                    raise ValueError('Invalid playlist redirect')
-                url = urljoin(url, location)
-                continue
-            response.raise_for_status()
-            content_type = response.headers.get('Content-Type', '').split(';')[0].lower()
-            if content_type in ('audio/mpeg', 'audio/aac', 'audio/aacp', 'audio/ogg'):
-                return url
-            body = bytearray()
-            for chunk in response.iter_content(4096):
-                body.extend(chunk)
-                if len(body) > 65536:
-                    raise ValueError('Playlist is too large')
-            target = parse_playlist(body.decode('utf-8-sig', errors='replace'), url)
+        status,kind,body,final=fetch_public(url,probe=True)
+        if status<200 or status>=300:raise ValueError('The stream server did not respond successfully. Please try again later.')
+        if kind in ('audio/mpeg','audio/aac','audio/aacp','audio/ogg'):return final
+        target=parse_playlist(body.decode('utf-8-sig',errors='replace'),final)
         validate_public_url(target)
-        if target == url or not is_playlist(target):
-            return target
-        url = target
-    raise ValueError('Too many playlist redirects')
+        if target==final or not is_playlist(target):return target
+        url=target
+    raise ValueError('The stream has too many playlist redirects.')
 
 
 
@@ -1556,6 +1548,8 @@ register_backups(app, sys.modules[__name__])
 
 from station_directory import register_directory
 register_directory(app, sys.modules[__name__])
+from station_sharing import register_sharing
+register_sharing(app, sys.modules[__name__])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

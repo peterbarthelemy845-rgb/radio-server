@@ -4,9 +4,9 @@
 <dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage">
 <h2 id="submissionSuccessTitle">Verify it's you</h2><p id="submissionSuccessMessage"></p>
 <form id="verifyRegistrationForm"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><label for="registrationEmailCode">6-digit email verification code</label><input id="registrationEmailCode" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="______"><button type="submit">Verify code &amp; add station</button></form>
-<p id="registrationResendRow">Can't find the email? <button id="resendRegistrationCode" type="button">Resend email</button></p><p id="submissionVerifyMessage" role="status" aria-live="polite"></p><button type="button" id="closeSubmissionSuccess" onclick="document.getElementById('submissionSuccess').close()">Close for now</button>
+<p id="stationShareSuccess" hidden><a id="stationShareSuccessLink" href="/#library">Share your station / Download QR code</a></p><p id="registrationResendRow">Can't find the email? <button id="resendRegistrationCode" type="button">Resend email</button></p><p id="submissionVerifyMessage" role="status" aria-live="polite"></p><button type="button" id="closeSubmissionSuccess" data-action-click="h17">Close for now</button>
 </dialog>
-<script>
+<script nonce="{{ csp_nonce() }}">
 let registrationResendTimer=null;
 let stationVerificationMode='registration';
 function registrationResendCooldown(seconds){
@@ -17,6 +17,7 @@ function registrationResendCooldown(seconds){
 }
 function showSubmissionSuccess(info={}){
  stationVerificationMode=info.mode==='edit'?'edit':'registration';
+ document.getElementById('stationShareSuccess').hidden=true;
  const dialog=document.getElementById('submissionSuccess');document.getElementById('submissionSuccessTitle').textContent="Verify it's you";
  document.getElementById('submissionSuccessMessage').textContent=info.verification_expired?'Your verification code expired. Request a new email below.':'A private verification code is being sent to '+(info.verification_email||'your registered email')+'. Enter it below to add your station automatically. It expires in 15 minutes. This is different from your public radio station code.';
  if(stationVerificationMode==='edit')document.getElementById('submissionSuccessMessage').textContent='Enter the private code emailed to '+(info.verification_email||'your registered address')+' to open the station editor. If the email and station code match, the email will arrive shortly. The code expires in 15 minutes.';
@@ -28,7 +29,8 @@ function showSubmissionSuccess(info={}){
 document.getElementById('verifyRegistrationForm').addEventListener('submit',async event=>{
  event.preventDefault();const button=event.target.querySelector('button[type=submit]'),message=document.getElementById('submissionVerifyMessage');button.disabled=true;message.textContent='Checking code...';
  try{const response=await fetch(stationVerificationMode==='edit'?'/station-access/verify-code':'/api/registration/verify',{method:'POST',body:new FormData(event.target)});const data=await response.json();
- if(!response.ok||data.status!=='ok'){message.textContent=data.message||'Verification failed. Please try again.';return;}
+ if(!response.ok||data.status!=='ok'){message.textContent=data.message||'That code could not be verified. Check the six-digit code in your email, or request a new one.';return;}
+ if(data.published&&data.listener_code){document.getElementById('stationShareSuccessLink').href='/station/'+encodeURIComponent(data.listener_code);document.getElementById('stationShareSuccess').hidden=false;}
  if(data.edit_verified){window.location.assign('/station/edit');return;}
  document.getElementById('submissionSuccessTitle').textContent=data.published?'Station added successfully':'Email verified';
  document.getElementById('submissionSuccessMessage').textContent=data.published?'Your station is now in Library. Radio station code #'+(data.listener_code||'')+'. Share this station code with your listeners.':data.message;

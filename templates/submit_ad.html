@@ -14,7 +14,7 @@
 <button class="button wide" id="adSubmitButton" type="submit">Submit ad for review</button>
 </form></section>
 {% if submitted %}<dialog id="adThanks" aria-labelledby="adThanksTitle"><h2 id="adThanksTitle">Thank you!</h2><p>Thank you for your submission. Your ad is under review.</p><form method="dialog"><button>OK</button></form></dialog>{% endif %}
-<script>
+<script nonce="{{ csp_nonce() }}">
 const adThanks=document.getElementById('adThanks');if(adThanks)adThanks.showModal();
 document.getElementById('adSubmissionForm').addEventListener('submit',()=>{const b=document.getElementById('adSubmitButton');b.disabled=true;b.textContent='Uploading…';});
 window.addEventListener('pageshow',()=>{const b=document.getElementById('adSubmitButton');b.disabled=false;b.textContent='Submit ad for review';});

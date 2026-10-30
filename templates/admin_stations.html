@@ -15,10 +15,10 @@
     <div>{{ s.website or s.subtitle }}</div>
     <div class="actions">
       <a class="btn link" href="/admin/edit/{{ loop.index0 }}">Edit</a>
-      <form method="post" action="/admin/delete/{{ loop.index0 }}" onsubmit="return confirm('Delete this station?')"><button class="btn reject">Delete</button></form>
+      <form method="post" action="/admin/delete/{{ loop.index0 }}" data-action-submit="h2"><button class="btn reject">Delete</button></form>
     </div>
   </div>
   {% endfor %}
 {% else %}<div class="empty">No approved stations yet.</div>{% endif %}
 </div>
-</div></body></html>
+</div><script nonce="{{ csp_nonce() }}" src="/static/page-actions.js?v=1" defer></script></body></html>

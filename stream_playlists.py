@@ -28,33 +28,17 @@ def parse_playlist(text, base):
     raise ValueError('Playlist contains no playable stream')
 
 def resolve_playlist(url):
-    if not is_playlist(url):
-        return url
-    seen = set()
+    from safe_http import fetch_public
+    if not is_playlist(url):return url
+    seen=set()
     for _ in range(6):
-        if url in seen:
-            raise ValueError('Playlist redirects in a loop')
+        if url in seen:raise ValueError('The stream playlist redirects in a loop.')
         seen.add(url)
-        validate_public_url(url)
-        with requests.get(url, timeout=(4, 6), stream=True, allow_redirects=False) as response:
-            if response.status_code in (301, 302, 303, 307, 308):
-                location = response.headers.get('Location')
-                if not location:
-                    raise ValueError('Invalid playlist redirect')
-                url = urljoin(url, location)
-                continue
-            response.raise_for_status()
-            content_type = response.headers.get('Content-Type', '').split(';')[0].lower()
-            if content_type in ('audio/mpeg', 'audio/aac', 'audio/aacp', 'audio/ogg'):
-                return url
-            body = bytearray()
-            for chunk in response.iter_content(4096):
-                body.extend(chunk)
-                if len(body) > 65536:
-                    raise ValueError('Playlist is too large')
-            target = parse_playlist(body.decode('utf-8-sig', errors='replace'), url)
+        status,kind,body,final=fetch_public(url,probe=True)
+        if status<200 or status>=300:raise ValueError('The stream server did not respond successfully. Please try again later.')
+        if kind in ('audio/mpeg','audio/aac','audio/aacp','audio/ogg'):return final
+        target=parse_playlist(body.decode('utf-8-sig',errors='replace'),final)
         validate_public_url(target)
-        if target == url or not is_playlist(target):
-            return target
-        url = target
-    raise ValueError('Too many playlist redirects')
+        if target==final or not is_playlist(target):return target
+        url=target
+    raise ValueError('The stream has too many playlist redirects.')

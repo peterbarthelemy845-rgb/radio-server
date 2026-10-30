@@ -3,8 +3,9 @@ import hashlib
 from contextlib import closing
 import sqlite3
 import time
+import secrets
 from pathlib import Path
-from flask import request, abort, session
+from flask import request, abort, session, g, redirect, jsonify, render_template
 from persistent_storage import data_directory
 
 DEVICE_ENDPOINTS = {'play_stream','stop_stream','set_volume','wifi_status','wifi_saved','bluetooth_status','bluetooth_power','bluetooth_scan','bluetooth_connect','wifi_connect','wifi_scan','network_status'}
@@ -14,6 +15,11 @@ def register_security(app):
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
     database = Path(data_directory('owner_data')) / 'security.sqlite3'
+
+    def nonce():
+        if not hasattr(g,'script_nonce'):g.script_nonce=secrets.token_urlsafe(24)
+        return g.script_nonce
+    app.jinja_env.globals['csp_nonce']=nonce
 
     def limit(scope, maximum, window, identity):
         key = scope + ':' + hashlib.sha256(identity.encode()).hexdigest()
@@ -30,21 +36,24 @@ def register_security(app):
     @app.before_request
     def protect_requests():
         from station_owners import check_token
+        from admin_security import valid_session
+        if session.get('admin_logged_in') and not valid_session(session):
+            for key in ('admin_logged_in','admin_role','admin_session'):session.pop(key,None)
+            if request.path.startswith(('/admin/','/api/admin/')) and request.endpoint not in ('admin_login','admin_logout'):
+                return redirect('/admin/login?expired=1')
         if request.endpoint in DEVICE_ENDPOINTS:
             abort(403, 'Device controls are not available on the public website.')
         if request.method == 'POST' and request.path.startswith('/admin/'):
             check_token()
         identity = request.remote_addr or 'unknown'
+        if request.endpoint in ('station_share_qr','station_availability'):
+            limit('station-public-tools',120,60,identity)
         if request.method == 'POST' and request.endpoint == 'admin_login':
             limit('admin-login', 20, 900, identity)
             limit('admin-login-total', 200, 900, 'all')
-        if request.method == 'POST' and request.endpoint == 'owner_login':
-            email = request.form.get('email', '').strip().casefold()[:254]
-            limit('owner-login', 10, 900, email)
-            limit('owner-login-ip', 50, 900, identity)
-        if request.endpoint == 'owner_resend_code' and request.method == 'POST':
-            limit('resend-email', 3, 3600, request.form.get('email','').strip().casefold()[:254])
-            limit('resend-ip', 10, 3600, identity)
+            if request.form.get('action')=='verify':
+                limit('admin-authenticator',5,900,session.get('admin_challenge','none'))
+                limit('admin-authenticator-total',100,900,'all')
         if request.endpoint == 'api_add_station' and request.method == 'POST':
             limit('station-submit', 10, 3600, identity)
             limit('station-submit-total', 100, 86400, 'all')
@@ -64,5 +73,23 @@ def register_security(app):
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        response.headers['Content-Security-Policy'] = "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
+        response.headers['Content-Security-Policy'] = "script-src 'self' 'nonce-"+nonce()+"'; script-src-attr 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+        response.headers['Permissions-Policy']='camera=(), microphone=(), geolocation=()'
+        response.headers['Strict-Transport-Security']='max-age=31536000'
+        if response.mimetype=='text/html':response.headers.setdefault('Cache-Control','no-store')
+        return response
+
+    @app.errorhandler(429)
+    @app.errorhandler(413)
+    @app.errorhandler(400)
+    def readable_request_error(error):
+        messages={429:'Too many attempts. Please wait a few minutes before trying again.',413:'That upload is too large. Choose a smaller image (under 16 MB).',400:'This form or verification session may have expired. Refresh the page and try again.'}
+        message=messages.get(error.code,'Please try again.')
+        if error.code==400 and error.description and error.description!='The browser (or proxy) sent a request that this server could not understand.':message=error.description
+        if request.path.startswith('/api/') or request.headers.get('X-Requested-With')=='fetch' or request.path in ('/station-access/verify-code','/station-access/resend-code'):
+            response=jsonify(status='error',message=message)
+        else:
+            response=app.make_response(render_template('request_error.html',message=message))
+        response.status_code=error.code
+        if error.code==429:response.headers['Retry-After']='900'
         return response

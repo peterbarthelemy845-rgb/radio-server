@@ -48,7 +48,7 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
       </div>
       <div class="row">
         <label for="bio" data-i18n="bioLabel">Bio (optional)</label>
-        <textarea id="bio" name="bio" maxlength="250" rows="3" placeholder="Tell listeners about your station" oninput="document.getElementById('bioCount').innerText=this.value.length+'/250'">{{ form.bio if form else '' }}</textarea>
+        <textarea id="bio" name="bio" maxlength="250" rows="3" placeholder="Tell listeners about your station" data-action-input="h1">{{ form.bio if form else '' }}</textarea>
         <div id="bioCount" class="hint">0/250</div>
         <label for="contact_email" data-i18n="emailLabel">Contact email</label>
         <input id="contact_email" name="contact_email" type="email" required placeholder="owner@example.com" autocomplete="email" value="{{ form.contact_email|default('') if form is defined else '' }}" >
@@ -71,8 +71,8 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
     </form>
   </section>
 {% include 'legal_links.html' %}</main>
-<script src="/static/logo-cropper.js?v=3"></script>
-<script>
+<script nonce="{{ csp_nonce() }}" src="/static/logo-cropper.js?v=3"></script>
+<script nonce="{{ csp_nonce() }}">
 const translations={
   en:{addStation:'Add Station',saveStream:'Register your station and get a listener code by email.',stationNameLabel:'Station name',streamUrlLabel:'Stream URL',websiteLabel:'Website / subtitle optional',languageFlagLabel:'Language / flag',bioLabel:'Small bio optional',saveStation:'Save Station',streamHelperTitle:"I don't know my Stream URL",buildStreamUrl:'Build Stream URL',streamHelperNote:'Enter the server, port, and mount path. Example: radio.example.com, 8000, /live.'},
   es:{addStation:'Agregar Estación',saveStream:'Guarde una transmisión de radio desde su teléfono.',stationNameLabel:'Nombre de la estación',streamUrlLabel:'URL de transmisión',websiteLabel:'Sitio web / subtítulo opcional',languageFlagLabel:'Idioma / bandera',bioLabel:'Biografía corta opcional',saveStation:'Guardar estación',streamHelperTitle:'No sé mi URL de transmisión',buildStreamUrl:'Crear URL de transmisión',streamHelperNote:'Escriba servidor, puerto y ruta. Ejemplo: radio.example.com, 8000, /live.'},
@@ -107,6 +107,6 @@ if(bioBox&&bioCount){bioCount.innerText=bioBox.value.length + '/250';}
 setupLogoCropper(document.querySelector('form[action="/api/add-station"]'));
 </script>
 {% include 'submission_success.html' %}
-<script src="/static/station-validation.js?v=2"></script>
-</body>
+<script nonce="{{ csp_nonce() }}" src="/static/station-validation.js?v=2"></script>
+<script nonce="{{ csp_nonce() }}" src="/static/page-actions.js?v=1" defer></script></body>
 </html>

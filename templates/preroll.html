@@ -9,7 +9,7 @@
 <div class="ad-head"><div><span>Advertisement</span><h2 id="adTitle">Support local businesses</h2></div><button id="adClose" type="button" aria-label="Close ad and cancel radio playback">Close</button></div>
 <div id="adMedia"></div><div class="ad-actions"><span id="adStatus" role="status"></span><button id="adSound" type="button" hidden>Turn sound on</button><button id="adSkip" type="button" disabled>Skip</button><button id="adResume" type="button" hidden>Start radio</button></div>
 </dialog>
-<script>
+<script nonce="{{ csp_nonce() }}">
 const prerollConfig={{ preroll_ad|default(none)|tojson }};
 window.prerollBusy=false;
 let adSeen=false;
