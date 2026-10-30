@@ -308,6 +308,8 @@ def register_directory(app, radio):
     register_legal(app,radio)
     from registration_verification import register_verification,process_verification_mail
     register_verification(app,radio)
+    from station_edit_otp import register_edit_otp,process_edit_otp_mail
+    register_edit_otp(app,radio)
     lock=threading.Lock();started=False
     @app.before_request
     def start_listener_mail_worker():
@@ -322,6 +324,7 @@ def register_directory(app, radio):
                     busy=process_mail(app)
                     busy=process_edit_mail(app) or busy
                     busy=process_verification_mail(app) or busy
+                    busy=process_edit_otp_mail(app) or busy
                 except Exception as error:
                     app.logger.warning('Station mail worker: %s',type(error).__name__);busy=False
                 time.sleep(2 if busy else 5)

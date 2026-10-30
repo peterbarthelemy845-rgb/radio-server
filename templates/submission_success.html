@@ -8,6 +8,7 @@
 </dialog>
 <script>
 let registrationResendTimer=null;
+let stationVerificationMode='registration';
 function registrationResendCooldown(seconds){
  if(registrationResendTimer)clearInterval(registrationResendTimer);
  const button=document.getElementById('resendRegistrationCode');let remaining=Math.max(0,seconds);
@@ -15,16 +16,20 @@ function registrationResendCooldown(seconds){
  tick();if(seconds>0)registrationResendTimer=setInterval(tick,1000);
 }
 function showSubmissionSuccess(info={}){
+ stationVerificationMode=info.mode==='edit'?'edit':'registration';
  const dialog=document.getElementById('submissionSuccess');document.getElementById('submissionSuccessTitle').textContent="Verify it's you";
  document.getElementById('submissionSuccessMessage').textContent=info.verification_expired?'Your verification code expired. Request a new email below.':'A private verification code is being sent to '+(info.verification_email||'your registered email')+'. Enter it below to add your station automatically. It expires in 15 minutes. This is different from your public radio station code.';
+ if(stationVerificationMode==='edit')document.getElementById('submissionSuccessMessage').textContent='Enter the private code emailed to '+(info.verification_email||'your registered address')+' to open the station editor. If the email and station code match, the email will arrive shortly. The code expires in 15 minutes.';
+ document.querySelector('#verifyRegistrationForm button[type=submit]').textContent=stationVerificationMode==='edit'?'Verify code & edit station':'Verify code & add station';
  registrationResendCooldown(info.resend_after===undefined?60:info.resend_after);
  document.getElementById('verifyRegistrationForm').hidden=false;document.getElementById('registrationResendRow').hidden=false;document.getElementById('submissionVerifyMessage').textContent='';document.getElementById('registrationEmailCode').value='';document.getElementById('closeSubmissionSuccess').textContent='Close for now';
  if(!dialog.open)dialog.showModal();document.getElementById('registrationEmailCode').focus();
 }
 document.getElementById('verifyRegistrationForm').addEventListener('submit',async event=>{
  event.preventDefault();const button=event.target.querySelector('button[type=submit]'),message=document.getElementById('submissionVerifyMessage');button.disabled=true;message.textContent='Checking code...';
- try{const response=await fetch('/api/registration/verify',{method:'POST',body:new FormData(event.target)});const data=await response.json();
+ try{const response=await fetch(stationVerificationMode==='edit'?'/station-access/verify-code':'/api/registration/verify',{method:'POST',body:new FormData(event.target)});const data=await response.json();
  if(!response.ok||data.status!=='ok'){message.textContent=data.message||'Verification failed. Please try again.';return;}
+ if(data.edit_verified){window.location.assign('/station/edit');return;}
  document.getElementById('submissionSuccessTitle').textContent=data.published?'Station added!':'Email verified';
  document.getElementById('submissionSuccessMessage').textContent=data.published?'Your station is now in Library. Radio station code #'+(data.listener_code||'')+'. Share this station code with your listeners.':data.message;
  event.target.hidden=true;document.getElementById('registrationResendRow').hidden=true;document.getElementById('closeSubmissionSuccess').textContent='Done';document.getElementById('closeSubmissionSuccess').focus();message.textContent='';
@@ -33,7 +38,12 @@ document.getElementById('verifyRegistrationForm').addEventListener('submit',asyn
 });
 document.getElementById('resendRegistrationCode').addEventListener('click',async event=>{
  const button=event.target,message=document.getElementById('submissionVerifyMessage');button.disabled=true;
- try{const form=new FormData();form.append('owner_csrf',document.querySelector('#verifyRegistrationForm input[name=owner_csrf]').value);const response=await fetch('/api/registration/resend',{method:'POST',body:form});const data=await response.json();message.textContent=data.message||'Please try again.';if(response.ok&&data.status==='ok')registrationResendCooldown(60);}catch(error){message.textContent='Could not request another email. Try again.';}finally{if(!registrationResendTimer)button.disabled=false;}
+ try{const form=new FormData();form.append('owner_csrf',document.querySelector('#verifyRegistrationForm input[name=owner_csrf]').value);const response=await fetch(stationVerificationMode==='edit'?'/station-access/resend-code':'/api/registration/resend',{method:'POST',body:form});const data=await response.json();message.textContent=data.message||'Please try again.';if(response.ok&&data.status==='ok')registrationResendCooldown(60);}catch(error){message.textContent='Could not request another email. Try again.';}finally{if(!registrationResendTimer)button.disabled=false;}
 });
-{% if status == 'ok' %}showSubmissionSuccess({verification_email:{{ verification_email|default('your registered email')|tojson }}});{% else %}{% set pending_verification=pending_registration_info() %}{% if pending_verification %}showSubmissionSuccess({{ pending_verification|tojson }});{% endif %}{% endif %}
+const stationEditLoginForm=document.getElementById('stationEditLoginForm');
+if(stationEditLoginForm)stationEditLoginForm.addEventListener('submit',async event=>{
+ event.preventDefault();const button=event.target.querySelector('button[type=submit]');button.disabled=true;
+ try{const response=await fetch('/station-access/request',{method:'POST',headers:{'X-Requested-With':'fetch'},body:new FormData(event.target)});const data=await response.json();if(response.ok&&data.status==='ok')showSubmissionSuccess(data);else alert(data.message||'Please refresh the page and try again.');}catch(error){alert('Could not request your verification email. Check your connection and try again.');}finally{button.disabled=false;}
+});
+{% if edit_verification_info is defined %}showSubmissionSuccess({{ edit_verification_info|tojson }});{% elif status == 'ok' %}showSubmissionSuccess({verification_email:{{ verification_email|default('your registered email')|tojson }}});{% else %}{% set pending_verification=pending_station_edit_info() or pending_registration_info() %}{% if pending_verification %}showSubmissionSuccess({{ pending_verification|tojson }});{% endif %}{% endif %}
 </script>

@@ -1418,8 +1418,9 @@ def admin_email_status():
     with database() as db:
         counts=dict(db.execute('SELECT state,COUNT(*) FROM listener_mail GROUP BY state').fetchall())
         verification_counts=dict(db.execute('SELECT state,COUNT(*) FROM registration_verifications GROUP BY state').fetchall())
+        edit_code_counts=dict(db.execute('SELECT state,COUNT(*) FROM station_edit_otps GROUP BY state').fetchall())
     modern=os.environ.get('OWNER_MAIL_TRANSPORT','smtp').strip().lower() == 'graph'
-    return render_template('email_status.html',counts=counts,verification_counts=verification_counts,modern=modern,smtp=bool(os.environ.get('SMTP_PASSWORD')))
+    return render_template('email_status.html',counts=counts,verification_counts=verification_counts,edit_code_counts=edit_code_counts,modern=modern,smtp=bool(os.environ.get('SMTP_PASSWORD')))
 
 @app.route('/admin/pending' , methods=['GET'])
 def admin_pending():

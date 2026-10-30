@@ -8,6 +8,8 @@ from flask import request,session,render_template,redirect,abort,g
 
 def schema(db):
     db.execute("CREATE TABLE IF NOT EXISTS station_edit_links(id INTEGER PRIMARY KEY,station_key TEXT,email TEXT,token_hash TEXT UNIQUE,payload BLOB,expires INTEGER,used INTEGER DEFAULT 0,state TEXT,attempts INTEGER DEFAULT 0,due INTEGER,created INTEGER)")
+    from station_edit_otp import schema as otp_schema
+    otp_schema(db)
 
 
 def digest(value):return hashlib.sha256(value.encode()).hexdigest()
@@ -140,5 +142,7 @@ def register_editing(app,radio):
 
     @app.post('/station-access/logout')
     def logout_station_edit():
-        check_token();session.pop('station_edit_id',None)
+        check_token()
+        with database() as db:db.execute('UPDATE station_edit_links SET expires=0 WHERE id=?',(session.get('station_edit_id',-1),))
+        session.pop('station_edit_id',None);session.pop('pending_edit_code',None)
         return redirect('/#add-station')
