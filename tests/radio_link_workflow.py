@@ -98,6 +98,42 @@ for i in range(13):
 assert all(a!=b for a,b in zip(rotated,rotated[1:]))
 response=stranger.post('/api/radio/link/claim',json={'owner_csrf':other_csrf,'pair_code':rotated[0]},environ_base={'REMOTE_ADDR':'198.51.100.223'})
 assert response.status_code==400,'rotated home codes cannot be reused'
+# Persistent codes are authenticated, reusable and never grant access without device approval.
+fixed='ABCDEFGH'
+r=device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':fixed},headers=headers)
+assert r.status_code==200 and r.get_json()['persistent'] and r.get_json()['expires_in']==0
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':fixed},headers=headers).get_json()['pair_code']==fixed
+with radio_link.database() as db:
+ row=db.execute('SELECT * FROM radio_pairs WHERE radio_id=?',(identifier,)).fetchone()
+ assert row['expires']==0 and row['pin_hash']!=fixed
+fresh=app.test_client()
+with fresh.session_transaction() as sess:sess['owner_csrf']='stable-test'
+from unittest.mock import patch
+future_clock=patch('radio_link.time.time',return_value=time.time()+601);future_clock.start()
+response=fresh.post('/api/radio/link/claim',json={'owner_csrf':'stable-test','pair_code':fixed},environ_base={'REMOTE_ADDR':'198.51.100.230'})
+assert response.status_code==200 and response.get_json()['status']=='waiting'
+assert fresh.get('/api/radio/linked').get_json()['radios']==[]
+with radio_link.database() as db:
+ claim=db.execute("SELECT id FROM radio_pair_claims WHERE radio_id=? AND state='waiting'",(identifier,)).fetchone()['id']
+ assert db.execute('SELECT expires FROM radio_pairs WHERE radio_id=?',(identifier,)).fetchone()[0]==0
+# Re-registering on reboot preserves both the code and an in-flight approval.
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':fixed},headers=headers).status_code==200
+with radio_link.database() as db:assert db.execute('SELECT state FROM radio_pair_claims WHERE id=?',(claim,)).fetchone()[0]=='waiting'
+assert device.post('/api/radio/poll',json={'radio_id':identifier,'pair_claim_id':claim,'pair_decision':'approve'},headers=headers).get_json()['claim_result']=='approved'
+assert fresh.get('/api/radio/link/status').get_json()['status']=='approved'
+future_clock.stop()
+# A second phone can use that same code but must also be approved on the radio.
+second=app.test_client()
+with second.session_transaction() as sess:sess['owner_csrf']='second-test'
+assert second.post('/api/radio/link/claim',json={'owner_csrf':'second-test','pair_code':fixed},environ_base={'REMOTE_ADDR':'198.51.100.231'}).status_code==200
+assert second.get('/api/radio/linked').get_json()['radios']==[]
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':'JKLMNPQR'},headers=headers).status_code==200
+assert second.get('/api/radio/link/status').get_json()['status']=='cancelled'
+assert second.post('/api/radio/link/claim',json={'owner_csrf':'second-test','pair_code':fixed},environ_base={'REMOTE_ADDR':'198.51.100.231'}).status_code==400
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':'1234'},headers=headers).status_code==400
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':fixed}).status_code==401
+# Keep the backup fixture's original single-grant expectation.
+with radio_link.database() as db:db.execute('DELETE FROM phone_radios')
 import io,zipfile,sqlite3
 from backup_restore import validate_backup
 with radio_link.database() as db:

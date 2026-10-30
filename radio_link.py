@@ -76,17 +76,25 @@ def register_radio_link(app,radio):
             now=int(time.time())
             previous=db.execute('SELECT pin_hash FROM radio_pairs WHERE radio_id=?',(identifier,)).fetchone()
             previous_hash=previous['pin_hash'] if previous else ''
-            db.execute('DELETE FROM radio_pairs WHERE expires<?',(now,))
-            db.execute("UPDATE radio_pair_claims SET state='cancelled' WHERE radio_id=? AND state='waiting'",(identifier,))
+            stable=data.get('stable_pair_code')
+            if stable is not None and (not isinstance(stable,str) or not re.fullmatch('[A-HJ-NP-Z2-9]{8}',stable)):abort(400)
+            db.execute('DELETE FROM radio_pairs WHERE expires>0 AND expires<?',(now,))
             db.execute('DELETE FROM radio_pair_claims WHERE created<?',(now-604800,))
-            for _ in range(20):
-                pin=''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
-                candidate=pin_hash(pin)
-                if candidate!=previous_hash and not db.execute('SELECT 1 FROM radio_pairs WHERE pin_hash=?',(candidate,)).fetchone():break
-            else:abort(503)
-            db.execute('INSERT OR REPLACE INTO radio_pairs VALUES (?,?,?)',(identifier,pin_hash(pin),now+300))
+            if stable is not None:
+                pin=stable
+                collision=db.execute('SELECT radio_id FROM radio_pairs WHERE pin_hash=?',(pin_hash(pin),)).fetchone()
+                if collision and collision['radio_id']!=identifier:abort(409)
+            else:
+                for _ in range(20):
+                    pin=''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
+                    candidate=pin_hash(pin)
+                    if candidate!=previous_hash and not db.execute('SELECT 1 FROM radio_pairs WHERE pin_hash=?',(candidate,)).fetchone():break
+                else:abort(503)
+            if pin_hash(pin)!=previous_hash:
+                db.execute("UPDATE radio_pair_claims SET state='cancelled' WHERE radio_id=? AND state='waiting'",(identifier,))
+            db.execute('INSERT OR REPLACE INTO radio_pairs VALUES (?,?,?)',(identifier,pin_hash(pin),0 if stable is not None else now+300))
             db.execute('UPDATE radios SET last_seen=? WHERE id=?',(now,identifier))
-        return jsonify(pair_code=pin,expires_in=300)
+        return jsonify(pair_code=pin,expires_in=0 if stable is not None else 300,persistent=stable is not None)
 
     @app.post('/api/radio/link/claim')
     def radio_pair_claim():
@@ -97,14 +105,15 @@ def register_radio_link(app,radio):
         if not isinstance(pin,str) or not re.fullmatch('[A-HJ-NP-Z2-9]{8}',pin):return jsonify(message='Enter the eight-character Link phone code shown on your radio.'),400
         with database() as db:
             db.execute('BEGIN IMMEDIATE');now=int(time.time())
-            row=db.execute('SELECT * FROM radio_pairs WHERE pin_hash=? AND expires>?',(pin_hash(pin),now)).fetchone()
+            row=db.execute('SELECT * FROM radio_pairs WHERE pin_hash=? AND (expires=0 OR expires>?)',(pin_hash(pin),now)).fetchone()
             if not row:return jsonify(message='That link code is incorrect or expired. Open Link phone on the radio for a new code.'),400
+            if db.execute("SELECT 1 FROM radio_pair_claims WHERE radio_id=? AND state='waiting' AND expires>?",(row['radio_id'],now)).fetchone():return jsonify(message='A phone request is already waiting. Approve or deny it on the radio.'),409
             token=secrets.token_urlsafe(32)
             db.execute('DELETE FROM phone_radios WHERE expires<=?',(now,))
             if db.execute('SELECT COUNT(*) FROM phone_radios WHERE radio_id=?',(row['radio_id'],)).fetchone()[0]>=10:return jsonify(message='This radio already has ten linked phones. Use Unlink phones on the radio to reset them.'),409
             claim=secrets.token_hex(16);check=str(1000+secrets.randbelow(9000))
-            db.execute("INSERT INTO radio_pair_claims VALUES (?,?,?,?,?,'waiting',?)",(claim,row['radio_id'],digest(token),check,min(now+120,row['expires']),now))
-            db.execute('DELETE FROM radio_pairs WHERE radio_id=?',(row['radio_id'],))
+            db.execute("INSERT INTO radio_pair_claims VALUES (?,?,?,?,?,'waiting',?)",(claim,row['radio_id'],digest(token),check,now+120 if row['expires']==0 else min(now+120,row['expires']),now))
+            if row['expires']!=0:db.execute('DELETE FROM radio_pairs WHERE radio_id=?',(row['radio_id'],))
             session['pending_radio_claim']=dict(id=claim,token=token)
         return jsonify(status='waiting',confirmation_code=check)
 
