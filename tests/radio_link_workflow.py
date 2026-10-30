@@ -89,6 +89,15 @@ with radio_link.database() as db:assert db.execute('SELECT COUNT(*) FROM phone_r
 for i in range(6):
  response=stranger.post('/api/radio/link/claim',json={'owner_csrf':other_csrf,'pair_code':'ZZZZZZZZ'},environ_base={'REMOTE_ADDR':'198.51.100.222'})
  assert response.status_code==(429 if i==5 else 400)
+rotated=[]
+for i in range(13):
+ response=device.post('/api/radio/link/start',json={'radio_id':identifier},headers=headers)
+ assert response.status_code==200
+ rotated.append(response.get_json()['pair_code'])
+ assert response.get_json()['expires_in']==300
+assert all(a!=b for a,b in zip(rotated,rotated[1:]))
+response=stranger.post('/api/radio/link/claim',json={'owner_csrf':other_csrf,'pair_code':rotated[0]},environ_base={'REMOTE_ADDR':'198.51.100.223'})
+assert response.status_code==400,'rotated home codes cannot be reused'
 import io,zipfile,sqlite3
 from backup_restore import validate_backup
 with radio_link.database() as db:

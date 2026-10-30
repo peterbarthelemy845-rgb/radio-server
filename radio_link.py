@@ -70,15 +70,19 @@ def register_radio_link(app,radio):
 
     @app.post('/api/radio/link/start')
     def radio_pair_start():
-        data=body();throttle('radio-pair-start-ip',30,3600)
+        data=body();throttle('radio-pair-start-ip',360,3600)
         with database() as db:
-            identifier=authenticate(db,data,create=True);throttle('radio-pair-start-device',10,3600,identifier)
-            now=int(time.time());db.execute('DELETE FROM radio_pairs WHERE expires<?',(now,))
+            identifier=authenticate(db,data,create=True);throttle('radio-pair-start-device',30,3600,identifier)
+            now=int(time.time())
+            previous=db.execute('SELECT pin_hash FROM radio_pairs WHERE radio_id=?',(identifier,)).fetchone()
+            previous_hash=previous['pin_hash'] if previous else ''
+            db.execute('DELETE FROM radio_pairs WHERE expires<?',(now,))
             db.execute("UPDATE radio_pair_claims SET state='cancelled' WHERE radio_id=? AND state='waiting'",(identifier,))
             db.execute('DELETE FROM radio_pair_claims WHERE created<?',(now-604800,))
             for _ in range(20):
                 pin=''.join(secrets.choice('ABCDEFGHJKLMNPQRSTUVWXYZ23456789') for _ in range(8))
-                if not db.execute('SELECT 1 FROM radio_pairs WHERE pin_hash=?',(pin_hash(pin),)).fetchone():break
+                candidate=pin_hash(pin)
+                if candidate!=previous_hash and not db.execute('SELECT 1 FROM radio_pairs WHERE pin_hash=?',(candidate,)).fetchone():break
             else:abort(503)
             db.execute('INSERT OR REPLACE INTO radio_pairs VALUES (?,?,?)',(identifier,pin_hash(pin),now+300))
             db.execute('UPDATE radios SET last_seen=? WHERE id=?',(now,identifier))
