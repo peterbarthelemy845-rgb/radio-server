@@ -32,6 +32,7 @@ def register_security(app):
             if row and row[0] >= maximum:
                 abort(429, 'Too many requests. Please try again later.')
             db.execute('INSERT OR REPLACE INTO limits VALUES (?,?,?)', (key, row[0]+1 if row else 1, row[1] if row else now+window))
+    app.extensions['security_limit']=limit
 
     @app.before_request
     def protect_requests():

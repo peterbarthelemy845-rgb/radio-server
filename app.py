@@ -1550,6 +1550,8 @@ from station_directory import register_directory
 register_directory(app, sys.modules[__name__])
 from station_sharing import register_sharing
 register_sharing(app, sys.modules[__name__])
+from radio_link import register_radio_link
+register_radio_link(app, sys.modules[__name__])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

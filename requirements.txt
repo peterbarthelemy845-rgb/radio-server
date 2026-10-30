@@ -15,7 +15,6 @@ MarkupSafe==3.0.4
 pillow==13.0.0
 pycparser==3.12
 PyOTP==2.10.0
-qrcode==8.2
 requests==2.34.2
 tzdata==2026.6
 urllib3==2.8.0

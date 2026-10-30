@@ -10,17 +10,17 @@ class SecuritySharingTests(unittest.TestCase):
    import app as radio
    import station_owners as owners, safe_http,station_sharing as sharing,admin_security,pyotp
    app=radio.app;app.testing=True;app.config['MAIL_WORKER_DISABLED']=True;client=app.test_client()
-   # Public landing pages expose only active station metadata; QR encodes a stable HTTPS link.
+   # Public landing pages expose active metadata and offer secure phone linking.
    state=client.get('/api/state').get_json();code=state['library_stations'][0]['listener_code']
    page=client.get('/station/'+code);assert page.status_code==200
-   assert b'og:image' in page.data and b'wa.me/' in page.data and ('/station/'+code).encode() in page.data
+   assert b'og:image' in page.data and b'station-sharing.js' in page.data and ('/station/'+code).encode() in page.data
    assert b'owner@example.com' not in page.data and b'<audio' not in page.data
    assert client.get('/station/999999').status_code==404
    with patch.object(radio,'build_state',return_value={'library_stations':[]}):
     assert client.get('/station/'+code).status_code==404
     assert client.get('/station/'+code+'/qr.png').status_code==404
-   png=client.get('/station/'+code+'/qr.png?download=1');assert png.status_code==200 and png.data.startswith(b'\x89PNG')
-   assert 'attachment' in png.headers['Content-Disposition']
+   assert client.get('/station/'+code+'/qr.png?download=1').status_code==404
+   assert b'radioAddDialog' in page.data and b'Download QR' not in page.data
    assert client.get('/api/station-availability/'+code).get_json()['state']=='unchecked'
    with app.app_context(),patch.object(sharing,'probe',return_value='reachable') as probe:
     assert sharing.check_one(radio);probe.assert_called_once()
@@ -100,4 +100,4 @@ class SecuritySharingTests(unittest.TestCase):
     r=attacker.post('/admin/login',data={'owner_csrf':saved['owner_csrf'],'action':'verify','code':'000000'},environ_base={'REMOTE_ADDR':'192.0.2.222'})
     assert r.status_code==(429 if i==5 else 200)
    assert b'Too many attempts' in r.data
-   print('PASS: share pages, QR PNG, unknown/stale/healthy checks and leases; private-address/redirect blocking and pinned TLS; CSP nonces and handler blocking; server-side admin role, expiry, logout, TOTP reuse and persistent cookie-replay limits. No real email or stream requests sent.')
+   print('PASS: share pages, secure link prompt, no QR, unknown/stale/healthy checks and leases; private-address/redirect blocking and pinned TLS; CSP nonces and handler blocking; server-side admin role, expiry, logout, TOTP reuse and persistent cookie-replay limits. No real email or stream requests sent.')

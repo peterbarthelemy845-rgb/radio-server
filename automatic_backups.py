@@ -42,6 +42,7 @@ def register_backups(app, radio):
                         if source.is_file():
                             archive.write(source, destination)
                     for source, destination in [(station_owners.DATABASE, 'owner_data/owners.sqlite3'),
+                                                (Path(data_directory('owner_data'))/'radio-links.sqlite3','owner_data/radio-links.sqlite3'),
                                                 (ad_submissions.DATABASE, 'ad_submissions/submissions.sqlite3')]:
                         if source.is_file():
                             snapshot = Path(temp) / (source.parent.name + '.sqlite3')
@@ -163,7 +164,8 @@ def register_backups(app, radio):
                 mapping = {'stations.json':Path(radio.STATIONS_FILE), 'config.json':Path(radio.CONFIG_FILE),
                            'reports.json':Path(radio.REPORTS_FILE), 'analytics.json':Path(radio.ANALYTICS_FILE),
                            'ads.json':ads.SETTINGS, 'owner_data/owners.sqlite3':station_owners.DATABASE,
-                           'ad_submissions/submissions.sqlite3':ad_submissions.DATABASE}
+                           'ad_submissions/submissions.sqlite3':ad_submissions.DATABASE,
+                           'owner_data/radio-links.sqlite3':Path(data_directory('owner_data'))/'radio-links.sqlite3'}
                 destinations = {}
                 for name in names:
                     dest = mapping.get(name, Path(radio.UPLOAD_FOLDER)/name.removeprefix('static/wallpapers/') if name.startswith('static/wallpapers/') else root/name)

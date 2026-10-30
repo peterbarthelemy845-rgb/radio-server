@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 from zipfile import ZipFile, BadZipFile
 
 JSON_FILES = {'stations.json', 'config.json', 'reports.json', 'analytics.json', 'ads.json'}
-DB_FILES = {'owner_data/owners.sqlite3', 'ad_submissions/submissions.sqlite3'}
+DB_FILES = {'owner_data/owners.sqlite3', 'ad_submissions/submissions.sqlite3', 'owner_data/radio-links.sqlite3'}
 MEDIA = {'.jpg','.jpeg','.png','.gif','.webp','.mp4','.webm','.svg','.ico'}
 
 def validate_backup(upload, stage):
@@ -54,10 +54,14 @@ def validate_backup(upload, stage):
                         with closing(sqlite3.connect(destination)) as db:
                             if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                                 raise ValueError('Database integrity check failed.')
-                            required = {'accounts','owner_access','station_ownership'} if name.startswith('owner_data') else {'submissions'}
+                            required = {'radios','phone_radios','radio_pairs','radio_pair_claims','radio_commands'} if name=='owner_data/radio-links.sqlite3' else {'accounts','owner_access','station_ownership'} if name.startswith('owner_data') else {'submissions'}
                             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
                             if not required <= tables:
                                 raise ValueError('Backup database is missing required account or ad tables.')
+                            if name=='owner_data/radio-links.sqlite3':
+                                # A restore must not resurrect a revoked phone or replay old commands.
+                                for table in ('phone_radios','radio_pairs','radio_pair_claims','radio_commands'):db.execute('DELETE FROM '+table)
+                                db.commit()
                     except sqlite3.DatabaseError:
                         raise ValueError('Backup contains an invalid database.')
                 accepted.append(name)

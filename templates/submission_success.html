@@ -4,7 +4,7 @@
 <dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage">
 <h2 id="submissionSuccessTitle">Verify it's you</h2><p id="submissionSuccessMessage"></p>
 <form id="verifyRegistrationForm"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><label for="registrationEmailCode">6-digit email verification code</label><input id="registrationEmailCode" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="______"><button type="submit">Verify code &amp; add station</button></form>
-<p id="stationShareSuccess" hidden><a id="stationShareSuccessLink" href="/#library">Share your station / Download QR code</a></p><p id="registrationResendRow">Can't find the email? <button id="resendRegistrationCode" type="button">Resend email</button></p><p id="submissionVerifyMessage" role="status" aria-live="polite"></p><button type="button" id="closeSubmissionSuccess" data-action-click="h17">Close for now</button>
+<p id="stationShareSuccess" hidden><a id="stationShareSuccessLink" href="/#library">Share your station</a></p><p id="registrationResendRow">Can't find the email? <button id="resendRegistrationCode" type="button">Resend email</button></p><p id="submissionVerifyMessage" role="status" aria-live="polite"></p><button type="button" id="closeSubmissionSuccess" data-action-click="h17">Close for now</button>
 </dialog>
 <script nonce="{{ csp_nonce() }}">
 let registrationResendTimer=null;

@@ -1,10 +1,9 @@
-"""Public station landing pages, local QR images and leased background checks."""
-import hashlib,io,os,sqlite3,threading,time
+"""Public station landing pages and leased background checks."""
+import hashlib,os,sqlite3,threading,time
 from contextlib import contextmanager,closing
-from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote,urljoin,urlsplit
-from flask import abort,render_template,send_file,jsonify,request
+from flask import abort,render_template,jsonify
 from persistent_storage import data_directory
 from safe_http import fetch_public
 
@@ -14,11 +13,6 @@ PUBLIC_ORIGIN='https://www.radiolavoixdivine.com'
 def identity(url):return hashlib.sha256(url.encode()).hexdigest()
 
 
-@lru_cache(maxsize=256)
-def qr_bytes(code):
-    import qrcode
-    out=io.BytesIO();qrcode.make(PUBLIC_ORIGIN+'/station/'+code,box_size=9,border=4).save(out,format='PNG')
-    return out.getvalue()
 
 
 @contextmanager
@@ -94,11 +88,6 @@ def register_sharing(app,radio):
         if urlsplit(image).scheme not in ('http','https'):image=PUBLIC_ORIGIN+'/static/pwa/icon-512.png'
         return render_template('station_share.html',station=station,share_url=link,share_image=image,whatsapp='https://wa.me/?text='+quote(station['name']+' — Radio station code #'+code+'\n'+link),availability=status_for(station['url']))
 
-    @app.get('/station/<code>/qr.png')
-    def station_share_qr(code):
-        find(code)
-        response=send_file(io.BytesIO(qr_bytes(code)),mimetype='image/png',download_name='radio-station-'+code+'-qr.png',as_attachment=request.args.get('download')=='1')
-        response.headers['Cache-Control']='no-store';return response
 
     @app.get('/api/station-availability/<code>')
     def station_availability(code):return jsonify(status_for(find(code)['url']))
