@@ -23,7 +23,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
         <p>Station code: {{ s.station_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
-          <form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>
+          {% if not s.email_verification_required or s.email_verified %}<form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>{% else %}<p>Waiting for owner email verification</p>{% endif %}
           <form method="post" action="/admin/reject/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn reject">Reject</button></form>
         </div>
       </div>

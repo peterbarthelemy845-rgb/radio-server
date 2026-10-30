@@ -302,6 +302,9 @@ def normalize_station(station):
         "contact_email": (station.get("contact_email") or station.get("email") or "").strip(),
         "terms_agreed": bool(station.get("terms_agreed")),
         "terms_agreed_at": station.get("terms_agreed_at"),
+        "email_verification_required": bool(station.get("email_verification_required")),
+        "email_verified": bool(station.get("email_verified")),
+        "email_verified_at": station.get("email_verified_at"),
         "submitted_at": station.get("submitted_at"),
         "station_code": station.get("station_code", ""),
         "listener_code": station.get("listener_code", ""),
@@ -1316,28 +1319,28 @@ def api_add_station():
     store = load_station_store()
     pending = store.get('pending_stations', [])
     now = int(time.time())
-    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "location": form["location"], "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now})
+    station = normalize_station({"name": name, "url": url, "subtitle": subtitle, "website": website, "bio": bio, "language": language, "location": form["location"], "flag": flag, "wallpaper": image_path, "logo_url": logo_path or image_path, "contact_email": contact_email, "terms_agreed": True, "terms_agreed_at": now, "submitted_at": now, "email_verification_required":True, "email_verified":False})
     if any((item.get('url') or '').strip() == url for item in store.get('custom_stations', []) + pending):
-        message = 'This stream is already submitted. Use Already registered? Edit your station in Add Station.'
-        if wants_json:
-            return jsonify(status='error', message=message), 409
-        return render_template('add_station.html', status='error', message=message, form=form), 409
+        existing=next(item for item in store.get('custom_stations',[])+pending if (item.get('url') or '').strip()==url)
+        if existing.get('email_verification_required') and not existing.get('email_verified') and existing.get('contact_email','').casefold()==contact_email:
+            from registration_verification import begin_verification
+            info=begin_verification(existing)
+            if wants_json:return jsonify(status='ok',verification_required=True,**info)
+            return render_template('add_station.html',status='ok',verification_email=info['verification_email'],form=station_submission_form())
+        message='This stream is already submitted. Use Already registered? Edit your station in Add Station.'
+        if wants_json:return jsonify(status='error',message=message),409
+        return render_template('add_station.html',status='error',message=message,form=form),409
     station = attach_station(station)
     from station_owners import provision_owner
     provision_owner(station)
-    auto_approved = store.get('auto_approve_stations', True) is True
-    if auto_approved:
-        station.pop('submitted_at', None)
-        store.setdefault('custom_stations', []).append(station)
-    else:
-        pending.append(station)
-        store['pending_stations'] = pending
+    pending.append(station)
+    store['pending_stations']=pending
     save_station_store(store)
-    message = 'Station registered. Your station code will be emailed to you. Share it so listeners can add your station on their radio.' if auto_approved else 'Station submitted for approval. Your listener code will be emailed once approved.'
-    if wants_json:
-        return jsonify({"status": "ok", "message": message, "auto_approved": auto_approved, "pending_count": len(pending), "station_code": station["station_code"], "listener_code":station["listener_code"], "version": get_config_version()})
-    wifi = get_wifi_status_data()
-    return render_template('add_station.html', status='ok', auto_approved=auto_approved, message=message, add_url=get_add_station_url(), ssid=wifi.get('ssid',''), form=station_submission_form())
+    from registration_verification import begin_verification
+    info=begin_verification(station)
+    if wants_json:return jsonify(status='ok',verification_required=True,**info)
+    return render_template('add_station.html',status='ok',verification_email=info['verification_email'],form=station_submission_form())
+
 
 @app.route('/api/report-station', methods=['POST'])
 def api_report_station():
@@ -1414,8 +1417,9 @@ def admin_email_status():
     from station_owners import database
     with database() as db:
         counts=dict(db.execute('SELECT state,COUNT(*) FROM listener_mail GROUP BY state').fetchall())
+        verification_counts=dict(db.execute('SELECT state,COUNT(*) FROM registration_verifications GROUP BY state').fetchall())
     modern=os.environ.get('OWNER_MAIL_TRANSPORT','smtp').strip().lower() == 'graph'
-    return render_template('email_status.html',counts=counts,modern=modern,smtp=bool(os.environ.get('SMTP_PASSWORD')))
+    return render_template('email_status.html',counts=counts,verification_counts=verification_counts,modern=modern,smtp=bool(os.environ.get('SMTP_PASSWORD')))
 
 @app.route('/admin/pending' , methods=['GET'])
 def admin_pending():

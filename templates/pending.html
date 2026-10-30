@@ -18,15 +18,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
     <a class="btn approve" href="/admin/viewership">Viewership</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
   </div>
-  <section class="card" aria-labelledby="auto-approval-title">
-    <h2 id="auto-approval-title">Automatic station approval: {{ 'ON' if auto_approve_stations else 'OFF' }}</h2>
-    <p>When on, new valid station submissions appear in the library automatically. When off, new submissions wait for admin review. Stations already awaiting review stay pending.</p>
-    <form method="post" action="{{ url_for('admin_auto_approval') }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
-      <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
-      <input type="hidden" name="enabled" value="{{ 'false' if auto_approve_stations else 'true' }}">
-      <button class="btn {{ 'reject' if auto_approve_stations else 'approve' }}">Turn automatic approval {{ 'OFF' if auto_approve_stations else 'ON' }}</button>
-    </form>
-  </section>
+  <section class="card"><h2>New stations require email verification</h2><p>After the owner confirms the private code sent to their contact email, their station publishes automatically. Suspended stations remain blocked. Pre-existing listings are unchanged.</p></section>
   <div class="overview"><a href="#pending-stations">Stations awaiting review<strong>{{ pending_count }}</strong></a><a href="#approved-stations">Approved stations<strong>{{ approved_count }}</strong></a></div>
   <form class="card filter" method="get"><label>Find a station<input name="q" value="{{ query }}" placeholder="Name, email, station code or stream URL"></label><label>Status<select name="status"><option value="all">All stations</option><option value="active" {% if station_status == 'active' %}selected{% endif %}>Not suspended</option><option value="suspended" {% if station_status == 'suspended' %}selected{% endif %}>Suspended</option></select></label><button class="btn link">Search</button><a href="/admin/pending">Clear</a></form>
   <details class="card" id="pending-stations" {% if pending_count %}open{% endif %}><summary>Stations waiting for approval ({{ pending_count }})</summary>
@@ -35,13 +27,13 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
       {% for s in pending %}
       <div class="station {% if s.suspended %}suspended{% endif %}">
         {% if s.logo_url or s.wallpaper %}<img class="thumb" src="{{ s.logo_url or s.wallpaper }}">{% endif %}
-        <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div><p>Agreement: {{ legal_agreement_status(s) }}</p>
+        <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div>{% if s.email_verification_required and not s.email_verified %}<p class="badge">Waiting for email verification</p>{% endif %}<p>Agreement: {{ legal_agreement_status(s) }}</p>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
         <p>Station code: {{ s.listener_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
-          <form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>
+          {% if not s.email_verification_required or s.email_verified %}<form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>{% endif %}
           <form method="post" action="/admin/reject/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn reject">Reject</button></form>
         </div>
       </div>
@@ -56,7 +48,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
     {% if approved %}
       {% for s in approved %}
       <div class="station">
-        <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div><p>Agreement: {{ legal_agreement_status(s) }}</p>
+        <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div>{% if s.email_verification_required and not s.email_verified %}<p class="badge">Waiting for email verification</p>{% endif %}<p>Agreement: {{ legal_agreement_status(s) }}</p>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}

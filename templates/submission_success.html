@@ -1,23 +1,39 @@
 <style>
-#submissionSuccess{width:min(420px,calc(100vw - 32px));padding:28px;border:1px solid rgba(255,255,255,.2);border-radius:24px;background:#fff;color:#0f172a;text-align:center;font-family:Arial,sans-serif;box-shadow:0 24px 70px rgba(0,0,0,.4)}
-#submissionSuccess::backdrop{background:rgba(0,0,0,.65)}
-#submissionSuccess h2{margin:0 0 12px;font-size:26px}
-#submissionSuccess p{margin:0 0 22px;font-size:18px;line-height:1.5}
-#submissionSuccess button{min-height:46px;padding:12px 28px;border:0;border-radius:14px;background:#2563eb;color:white;font-size:17px;font-weight:700;cursor:pointer}
-#submissionSuccess button:focus-visible{outline:3px solid #9fd1ff;outline-offset:3px}
+#submissionSuccess{width:min(460px,calc(100vw - 28px));padding:28px;border:0;border-radius:22px;background:#fff;color:#111827;font:16px Arial,sans-serif;text-align:left;box-shadow:0 24px 70px #0008}#submissionSuccess::backdrop{background:#000a}#submissionSuccess h2{font-size:28px;margin:0 0 18px}#submissionSuccess p{line-height:1.5}#submissionSuccess label{display:block;font-weight:bold;margin:16px 0 8px}#submissionSuccess input[type=text]{width:100%;padding:14px;font-size:26px;letter-spacing:8px;border:1px solid #64748b;border-radius:8px;box-sizing:border-box}#submissionSuccess button{padding:13px 18px;border:0;border-radius:10px;font-weight:bold;font-size:16px;cursor:pointer}#verifyRegistrationForm button[type=submit]{width:100%;background:#2563eb;color:white;margin-top:18px;min-height:48px}#resendRegistrationCode{background:transparent;color:#1d4ed8;padding:0!important;text-decoration:underline}#submissionVerifyMessage{color:#9f1239;min-height:24px}#closeSubmissionSuccess{margin-top:12px;background:#e2e8f0;color:#0f172a}
 </style>
-<dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage submissionAccessMessage">
-  <h2 id="submissionSuccessTitle">Waiting for approval</h2>
-  <p id="submissionSuccessMessage">Register your station to receive a station code by email. Share it with listeners so they can add your station to their radio device.</p>
-  <p id="submissionAccessMessage">Check your inbox and spam folder. If approval is required, your code is emailed after approval.</p>
-  <form method="dialog"><button autofocus>OK</button></form>
+<dialog id="submissionSuccess" aria-labelledby="submissionSuccessTitle" aria-describedby="submissionSuccessMessage">
+<h2 id="submissionSuccessTitle">Verify it's you</h2><p id="submissionSuccessMessage"></p>
+<form id="verifyRegistrationForm"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><label for="registrationEmailCode">6-digit email verification code</label><input id="registrationEmailCode" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="______"><button type="submit">Verify code &amp; add station</button></form>
+<p id="registrationResendRow">Can't find the email? <button id="resendRegistrationCode" type="button">Resend email</button></p><p id="submissionVerifyMessage" role="status" aria-live="polite"></p><button type="button" id="closeSubmissionSuccess" onclick="document.getElementById('submissionSuccess').close()">Close for now</button>
 </dialog>
 <script>
-function showSubmissionSuccess(code,autoApproved=false){
-  document.getElementById('submissionSuccessTitle').innerText=autoApproved?'Station approved':'Waiting for approval';
-  document.getElementById('submissionSuccessMessage').innerText='Register your station to receive a station code by email. Share it with listeners so they can add your station to their radio device.';
-  const dialog=document.getElementById('submissionSuccess');
-  if(!dialog.open)dialog.showModal();
+let registrationResendTimer=null;
+function registrationResendCooldown(seconds){
+ if(registrationResendTimer)clearInterval(registrationResendTimer);
+ const button=document.getElementById('resendRegistrationCode');let remaining=Math.max(0,seconds);
+ const tick=()=>{button.disabled=remaining>0;button.textContent=remaining>0?'Resend email ('+remaining+'s)':'Resend email';if(remaining<=0&&registrationResendTimer){clearInterval(registrationResendTimer);registrationResendTimer=null;}remaining--;};
+ tick();if(seconds>0)registrationResendTimer=setInterval(tick,1000);
 }
-{% if status == 'ok' %}showSubmissionSuccess(null,{{ auto_approved|default(false)|tojson }});{% endif %}
+function showSubmissionSuccess(info={}){
+ const dialog=document.getElementById('submissionSuccess');document.getElementById('submissionSuccessTitle').textContent="Verify it's you";
+ document.getElementById('submissionSuccessMessage').textContent=info.verification_expired?'Your verification code expired. Request a new email below.':'A private verification code is being sent to '+(info.verification_email||'your registered email')+'. Enter it below to add your station automatically. It expires in 15 minutes. This is different from your public radio station code.';
+ registrationResendCooldown(info.resend_after===undefined?60:info.resend_after);
+ document.getElementById('verifyRegistrationForm').hidden=false;document.getElementById('registrationResendRow').hidden=false;document.getElementById('submissionVerifyMessage').textContent='';document.getElementById('registrationEmailCode').value='';document.getElementById('closeSubmissionSuccess').textContent='Close for now';
+ if(!dialog.open)dialog.showModal();document.getElementById('registrationEmailCode').focus();
+}
+document.getElementById('verifyRegistrationForm').addEventListener('submit',async event=>{
+ event.preventDefault();const button=event.target.querySelector('button[type=submit]'),message=document.getElementById('submissionVerifyMessage');button.disabled=true;message.textContent='Checking code...';
+ try{const response=await fetch('/api/registration/verify',{method:'POST',body:new FormData(event.target)});const data=await response.json();
+ if(!response.ok||data.status!=='ok'){message.textContent=data.message||'Verification failed. Please try again.';return;}
+ document.getElementById('submissionSuccessTitle').textContent=data.published?'Station added!':'Email verified';
+ document.getElementById('submissionSuccessMessage').textContent=data.published?'Your station is now in Library. Radio station code #'+(data.listener_code||'')+'. Share this station code with your listeners.':data.message;
+ event.target.hidden=true;document.getElementById('registrationResendRow').hidden=true;document.getElementById('closeSubmissionSuccess').textContent='Done';document.getElementById('closeSubmissionSuccess').focus();message.textContent='';
+ if(typeof loadState==='function')await loadState();if(typeof renderLibrary==='function')renderLibrary();
+ }catch(error){message.textContent='Could not verify right now. Check your connection and try again.';}finally{button.disabled=false;}
+});
+document.getElementById('resendRegistrationCode').addEventListener('click',async event=>{
+ const button=event.target,message=document.getElementById('submissionVerifyMessage');button.disabled=true;
+ try{const form=new FormData();form.append('owner_csrf',document.querySelector('#verifyRegistrationForm input[name=owner_csrf]').value);const response=await fetch('/api/registration/resend',{method:'POST',body:form});const data=await response.json();message.textContent=data.message||'Please try again.';if(response.ok&&data.status==='ok')registrationResendCooldown(60);}catch(error){message.textContent='Could not request another email. Try again.';}finally{if(!registrationResendTimer)button.disabled=false;}
+});
+{% if status == 'ok' %}showSubmissionSuccess({verification_email:{{ verification_email|default('your registered email')|tojson }}});{% else %}{% set pending_verification=pending_registration_info() %}{% if pending_verification %}showSubmissionSuccess({{ pending_verification|tojson }});{% endif %}{% endif %}
 </script>

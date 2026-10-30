@@ -23,6 +23,8 @@ def schema(db):
     edit_schema(db)
     from legal_policies import schema as legal_schema
     legal_schema(db)
+    from registration_verification import schema as verification_schema
+    verification_schema(db)
 
 
 def key_for(station):
@@ -94,7 +96,7 @@ def enqueue_approved(store, previous):
     with database() as db:
         for s in store.get('custom_stations',[]):
             email=s.get('contact_email','').strip().casefold()
-            if not email or (key_for(s),email) in old or s.get('suspended') or s.get('owner_suspended'):
+            if (s.get('email_verification_required') and not s.get('email_verified')) or not email or (key_for(s),email) in old or s.get('suspended') or s.get('owner_suspended'):
                 continue
             now=int(time.time())
             db.execute("INSERT OR IGNORE INTO listener_mail(code,email,name,state,attempts,due,created) VALUES (?,?,?,'pending',0,?,?)",
@@ -114,7 +116,7 @@ def process_mail(app):
         with app.app_context():
             radio=app.extensions['station_directory_radio']
             active=any(s.get('listener_code')==row['code'] and s.get('contact_email','').casefold()==row['email']
-                       and not s.get('suspended') and not s.get('owner_suspended')
+                       and not s.get('suspended') and not s.get('owner_suspended') and (not s.get('email_verification_required') or s.get('email_verified'))
                        for s in radio.load_station_store().get('custom_stations',[]))
             ok=send_listener_code(row['email'],row['code'],row['name']) if active else False
     except Exception as error:
@@ -175,7 +177,7 @@ def register_directory(app, radio):
         with database() as db:ensure_code(db,main)
         rows=[public_station(main,main['listener_code'])]
         for station in load().get('custom_stations',[]):
-            if not station.get('suspended') and not station.get('owner_suspended') and station.get('url')!=radio.MAIN_STREAM_URL:
+            if not station.get('suspended') and not station.get('owner_suspended') and (not station.get('email_verification_required') or station.get('email_verified')) and station.get('url')!=radio.MAIN_STREAM_URL:
                 rows.append(dict(public_station(station,station['listener_code']),location=station.get('location',''),bio=station.get('bio','')))
         state['custom_stations']=[]  # Legacy configuration records must not expose contact details.
         state['library_stations']=rows
@@ -275,7 +277,7 @@ def register_directory(app, radio):
             response=jsonify(public_station(main,code));response.headers['Cache-Control']='no-store'
             return response
         for s in store.get('custom_stations',[]):
-            if s.get('listener_code')==code and not s.get('suspended') and not s.get('owner_suspended'):
+            if s.get('listener_code')==code and not s.get('suspended') and not s.get('owner_suspended') and (not s.get('email_verification_required') or s.get('email_verified')):
                 response=jsonify(public_station(s,code));response.headers['Cache-Control']='no-store'
                 return response
         return jsonify(error='Station code not found or not available.'),404
@@ -304,6 +306,8 @@ def register_directory(app, radio):
     register_editing(app,radio)
     from legal_policies import register_legal
     register_legal(app,radio)
+    from registration_verification import register_verification,process_verification_mail
+    register_verification(app,radio)
     lock=threading.Lock();started=False
     @app.before_request
     def start_listener_mail_worker():
@@ -317,7 +321,8 @@ def register_directory(app, radio):
                 try:
                     busy=process_mail(app)
                     busy=process_edit_mail(app) or busy
+                    busy=process_verification_mail(app) or busy
                 except Exception as error:
                     app.logger.warning('Station mail worker: %s',type(error).__name__);busy=False
-                time.sleep(2 if busy else 30)
+                time.sleep(2 if busy else 5)
         threading.Thread(target=worker,daemon=True,name='station-code-mail').start()
