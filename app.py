@@ -834,7 +834,7 @@ def qr_image():
 
 @app.route('/account')
 def account_options():
-    return render_template('account_options.html')
+    return redirect('/add-station')
 
 
 @app.route('/radio-sw.js')
@@ -1021,190 +1021,13 @@ def set_volume():
 
     return jsonify({"status": "ok", "volume": volume})
 
-@app.route('/api/wifi-status', methods=['GET'])
-def wifi_status():
-    try:
-        data = get_wifi_status_data()
-        data["saved_networks"] = get_saved_wifi_networks()
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({"connected": False, "ssid": "Error", "ip": str(e)}), 500
 
-@app.route('/api/wifi-saved', methods=['GET'])
-def wifi_saved():
-    return jsonify({"networks": get_saved_wifi_networks()})
 
-@app.route('/api/bluetooth-status', methods=['GET'])
-def bluetooth_status():
-    try:
-        return jsonify(get_bluetooth_status_data())
-    except Exception as e:
-        return jsonify({"powered": False, "discoverable": False, "error": str(e)}), 500
 
-@app.route('/api/bluetooth-power', methods=['POST'])
-def bluetooth_power():
-    data = request.get_json(silent=True) or {}
-    enable = bool(data.get('enable', True))
-    command = 'on' if enable else 'off'
-    result = run_command(f"sudo bluetoothctl power {command}")
-    if result.returncode == 0:
-        if enable:
-            run_command("sudo bluetoothctl discoverable on")
-            run_command("sudo rfkill unblock bluetooth")
-        return jsonify({"status": "ok", "enabled": enable})
-    return jsonify({"status": "error", "message": (result.stderr or result.stdout).strip()}), 500
 
-@app.route('/api/bluetooth-scan', methods=['GET'])
-def bluetooth_scan():
-    try:
-        run_command("sudo rfkill unblock bluetooth")
-        run_command("sudo bluetoothctl power on")
-        run_command("sudo bluetoothctl discoverable on")
-        run_command("timeout 8s bluetoothctl scan on >/dev/null 2>&1")
-        devices = run_command("bluetoothctl devices")
-        paired = run_command("bluetoothctl paired-devices")
-        paired_macs = set()
-        for line in paired.stdout.splitlines():
-            parts = line.split(maxsplit=2)
-            if len(parts) >= 2:
-                paired_macs.add(parts[1])
 
-        connected_macs = {d["mac"] for d in get_connected_bluetooth_devices()}
-        results = []
-        for line in devices.stdout.splitlines():
-            parts = line.split(maxsplit=2)
-            if len(parts) >= 3 and parts[0] == 'Device':
-                name = parts[2].strip() or parts[1]
-                if name.lower() in {"unknown", "n/a"}:
-                    name = parts[1]
-                results.append({
-                    "mac": parts[1],
-                    "name": name,
-                    "paired": parts[1] in paired_macs,
-                    "connected": parts[1] in connected_macs,
-                })
 
-        results.sort(key=lambda d: (not d["connected"], not d["paired"], d["name"].lower()))
-        return jsonify({"devices": results})
-    except Exception as e:
-        return jsonify({"devices": [], "error": str(e)}), 500
 
-@app.route('/api/bluetooth-connect', methods=['POST'])
-def bluetooth_connect():
-    try:
-        data = request.get_json(silent=True) or {}
-        mac = (data.get('mac') or '').strip()
-        if not mac:
-            return jsonify({"status": "error", "message": "Device MAC is required"}), 400
-
-        run_command("sudo rfkill unblock bluetooth")
-        run_command("sudo bluetoothctl power on")
-        run_command("sudo bluetoothctl discoverable on")
-        pair_result = run_command(f"bluetoothctl pair {shlex.quote(mac)}")
-        trust_result = run_command(f"bluetoothctl trust {shlex.quote(mac)}")
-        connect_result = run_command(f"bluetoothctl connect {shlex.quote(mac)}")
-
-        switch_result = switch_bluetooth_audio()
-
-        success = connect_result.returncode == 0 or 'Connection successful' in connect_result.stdout
-        if success:
-            try:
-                with open("/home/pi/.last_bluetooth_device", "w", encoding="utf-8") as f:
-                    f.write(mac)
-            except Exception:
-                pass
-
-            if current_playing.get("is_playing") and current_playing.get("stream_url"):
-                stop_player()
-                time.sleep(1)
-                config = load_config()
-                config["stream_url"] = current_playing.get("stream_url")
-                config["station_name"] = current_playing.get("station_name", config.get("station_name", "La Voix Divine"))
-                save_config(config)
-                play_stream()
-            return jsonify({
-                "status": "connected",
-                "message": connect_result.stdout.strip() or "Connected",
-                "audio": switch_result,
-                "pair": pair_result.stdout.strip(),
-                "trust": trust_result.stdout.strip(),
-                "device_name": mac,
-            })
-
-        return jsonify({
-            "status": "error",
-            "message": (connect_result.stderr or connect_result.stdout or pair_result.stderr or pair_result.stdout or 'Connection failed').strip(),
-            "audio": switch_result,
-        }), 500
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/wifi-connect', methods=['POST'])
-def wifi_connect():
-    try:
-        data = request.get_json(silent=True) or {}
-        ssid = (data.get('ssid') or '').strip()
-        password = (data.get('password') or '').strip()
-
-        if not ssid:
-            return jsonify({"status": "error", "message": "SSID is required"}), 400
-
-        # First try the standard nmcli connect path.
-        simple_cmd = ["sudo", "nmcli", "dev", "wifi", "connect", ssid, "ifname", "wlan0"]
-        if password:
-            simple_cmd.extend(["password", password])
-        result = subprocess.run(simple_cmd, capture_output=True, text=True)
-
-        if result.returncode != 0 and password:
-            # Fallback path for routers that complain about missing key-mgmt.
-            con_name = ssid
-            subprocess.run(["sudo", "nmcli", "connection", "delete", con_name], capture_output=True, text=True)
-            subprocess.run(["sudo", "nmcli", "connection", "add", "type", "wifi", "ifname", "wlan0", "con-name", con_name, "ssid", ssid], capture_output=True, text=True)
-            subprocess.run(["sudo", "nmcli", "connection", "modify", con_name, "802-11-wireless-security.key-mgmt", "wpa-psk"], capture_output=True, text=True)
-            subprocess.run(["sudo", "nmcli", "connection", "modify", con_name, "802-11-wireless-security.psk", password], capture_output=True, text=True)
-            result = subprocess.run(["sudo", "nmcli", "connection", "up", con_name], capture_output=True, text=True)
-
-        if result.returncode == 0:
-            return jsonify({"status": "connected", "ssid": ssid, "message": result.stdout.strip() or "Connected"})
-
-        return jsonify({
-            "status": "error",
-            "ssid": ssid,
-            "message": (result.stderr or result.stdout or 'Connection failed').strip()
-        }), 500
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/wifi-scan', methods=['GET']) 
-def wifi_scan():
-    try:
-        # Prefer nmcli because it returns cleaner names and works with NetworkManager.
-        run_command("sudo nmcli dev wifi rescan ifname wlan0 >/dev/null 2>&1")
-        result = run_command("nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list ifname wlan0")
-        networks = []
-        seen = set()
-        if result.returncode == 0:
-            for line in result.stdout.splitlines():
-                parts = line.split(":")
-                if not parts:
-                    continue
-                ssid = parts[0].strip()
-                signal = parts[1].strip() if len(parts) > 1 else ""
-                security = ":".join(parts[2:]).strip() if len(parts) > 2 else ""
-                if ssid and ssid not in seen:
-                    seen.add(ssid)
-                    networks.append({"ssid": ssid, "signal": signal, "security": security})
-        if not networks:
-            output = os.popen("sudo iwlist wlan0 scanning 2>/dev/null | grep 'ESSID'").read()
-            for line in output.splitlines():
-                if 'ESSID' in line:
-                    name = line.split(':', 1)[1].replace('"', '').strip()
-                    if name and name not in seen:
-                        seen.add(name)
-                        networks.append({"ssid": name, "signal": "", "security": ""})
-        return jsonify({"networks": networks})
-    except Exception as e:
-        return jsonify({"networks": [], "error": str(e)}), 500
 
 
 
@@ -1727,8 +1550,6 @@ import sys
 from station_owners import register_owners
 register_owners(app, sys.modules[__name__])
 
-from mail_delivery import register_delivery
-# Retired owner login email worker.
 
 from automatic_backups import register_backups
 register_backups(app, sys.modules[__name__])

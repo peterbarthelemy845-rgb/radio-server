@@ -287,20 +287,6 @@ def register_directory(app, radio):
         return jsonify(listener_code='',name='La Voix Divine',url=radio.MAIN_STREAM_URL,
                        logo_url=radio.RADIO_LA_VOIX_LOGO_URL,subtitle='Internet Radio')
 
-    @app.post('/owner/station/<code>/email-listener-code')
-    def email_listener_code(code):
-        from station_owners import owned_station,check_token,database
-        check_token();store=load();group,s=owned_station(store,code)
-        if group!='custom_stations' or s.get('suspended') or s.get('owner_suspended'):
-            return jsonify(error='Station must be approved and active.'),409
-        with database() as db:
-            now=int(time.time())
-            row=db.execute('SELECT created FROM listener_mail WHERE code=? AND email=?',(s['listener_code'],s['contact_email'])).fetchone()
-            if row and now-row['created']<60:return jsonify(error='Please wait one minute before resending.'),429
-            db.execute("INSERT INTO listener_mail(code,email,name,state,attempts,due,created) VALUES (?,?,?,'pending',0,?,?) ON CONFLICT(code,email) DO UPDATE SET state='pending',attempts=0,due=excluded.due,created=excluded.created,name=excluded.name",
-                       (s['listener_code'],s['contact_email'],s['name'],now,now))
-        from flask import redirect,url_for
-        return redirect(url_for('owner_dashboard'))
 
     from station_editing import register_editing,process_edit_mail
     register_editing(app,radio)

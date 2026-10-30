@@ -30,7 +30,7 @@ document.getElementById('verifyRegistrationForm').addEventListener('submit',asyn
  try{const response=await fetch(stationVerificationMode==='edit'?'/station-access/verify-code':'/api/registration/verify',{method:'POST',body:new FormData(event.target)});const data=await response.json();
  if(!response.ok||data.status!=='ok'){message.textContent=data.message||'Verification failed. Please try again.';return;}
  if(data.edit_verified){window.location.assign('/station/edit');return;}
- document.getElementById('submissionSuccessTitle').textContent=data.published?'Station added!':'Email verified';
+ document.getElementById('submissionSuccessTitle').textContent=data.published?'Station added successfully':'Email verified';
  document.getElementById('submissionSuccessMessage').textContent=data.published?'Your station is now in Library. Radio station code #'+(data.listener_code||'')+'. Share this station code with your listeners.':data.message;
  event.target.hidden=true;document.getElementById('registrationResendRow').hidden=true;document.getElementById('closeSubmissionSuccess').textContent='Done';document.getElementById('closeSubmissionSuccess').focus();message.textContent='';
  if(typeof loadState==='function')await loadState();if(typeof renderLibrary==='function')renderLibrary();

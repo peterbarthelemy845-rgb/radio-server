@@ -55,7 +55,7 @@ def register_submissions(app):
 
     @app.route('/account')
     def account_options():
-        return redirect(url_for('owner_login'))
+        return redirect('/add-station')
 
     @app.route('/ads/submit', methods=['GET', 'POST'])
     def submit_ad():
