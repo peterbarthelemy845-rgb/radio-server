@@ -13,7 +13,7 @@ class SecuritySharingTests(unittest.TestCase):
    # Public landing pages expose active metadata and offer secure phone linking.
    state=client.get('/api/state').get_json();code=state['library_stations'][0]['listener_code']
    page=client.get('/station/'+code);assert page.status_code==200
-   assert b'og:image' in page.data and b'station-sharing.js' in page.data and ('/station/'+code).encode() in page.data
+   assert b'og:image' in page.data and b'radio-add.js' in page.data and ('/station/'+code).encode() in page.data
    assert b'owner@example.com' not in page.data and b'<audio' not in page.data
    assert client.get('/station/999999').status_code==404
    with patch.object(radio,'build_state',return_value={'library_stations':[]}):
@@ -21,6 +21,8 @@ class SecuritySharingTests(unittest.TestCase):
     assert client.get('/station/'+code+'/qr.png').status_code==404
    assert client.get('/station/'+code+'/qr.png?download=1').status_code==404
    assert b'radioAddDialog' in page.data and b'Download QR' not in page.data
+   assert b'<dialog' not in page.data and b'Choose Yes' not in page.data and b'Connect your phone once' not in page.data
+   assert b'Find it at the top of your radio screen.' in page.data
    assert client.get('/api/station-availability/'+code).get_json()['state']=='unchecked'
    with app.app_context(),patch.object(sharing,'probe',return_value='reachable') as probe:
     assert sharing.check_one(radio);probe.assert_called_once()

@@ -106,7 +106,7 @@ def register_radio_link(app,radio):
         with database() as db:
             db.execute('BEGIN IMMEDIATE');now=int(time.time())
             row=db.execute('SELECT * FROM radio_pairs WHERE pin_hash=? AND (expires=0 OR expires>?)',(pin_hash(pin),now)).fetchone()
-            if not row:return jsonify(message='That link code is incorrect or expired. Open Link phone on the radio for a new code.'),400
+            if not row:return jsonify(message='Code not found. Check the code on your radio.'),400
             if db.execute("SELECT 1 FROM radio_pair_claims WHERE radio_id=? AND state='waiting' AND expires>?",(row['radio_id'],now)).fetchone():return jsonify(message='A phone request is already waiting. Approve or deny it on the radio.'),409
             token=secrets.token_urlsafe(32)
             db.execute('DELETE FROM phone_radios WHERE expires<=?',(now,))
