@@ -38,3 +38,20 @@ Unlink phones on the radio requires two taps and revokes all browser grants and 
 Both phone and radio must have internet access. The flow works on the same Wi-Fi but does not treat a common IP address as authentication or require a router port to be opened. Browser app cookie isolation may require pairing separately in WhatsApp's browser and the phone's normal browser. No messages are sent to social networks until the user chooses to share them.
 
 The home screen displays the saved radio code once registered online. The radio re-registers the same code after reboot without cancelling a pending approval. Reset code generates and saves a replacement, invalidates the previous registration and cancels pending approvals; existing approved phones remain connected until Unlink phones is used. Only one unexpired phone approval may wait per radio. Pair requests still expire after two minutes and station commands after five minutes. Failed registrations back off for one minute. Start limits remain 30 per radio/hour and claim limits five per IP/15 minutes. The persistent code is a discovery identifier, not a grant or administrator password.
+
+## Station content moderation
+
+Obvious profanity and adult terms are rejected server-side in submitted names,
+titles and bios, including common punctuation, case, accent, zero-width and
+numeric substitutions. This is a conservative filter, not a comprehensive
+classifier. All new station text and re-encoded artwork require administrator
+review after email verification; verification alone never publishes a listing.
+
+Owner changes are held in a private pending proposal while the approved version
+remains public. Administrators review the proposed artwork, bio and stream URL.
+Review hashes bind approval to the exact content shown, preventing stale-page
+approval of a later replacement. Pending/rejected/orphan uploads return 404 to
+anonymous users, including normalized static-path aliases; authenticated admin
+sessions can preview them with private/no-store responses. No uploaded images
+are sent to an external AI service. Existing approved stations are preserved.
+Artwork moderation is human review; no automatic porn-image detector is claimed.

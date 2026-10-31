@@ -306,6 +306,8 @@ def normalize_station(station):
         "email_verified": bool(station.get("email_verified")),
         "email_verified_at": station.get("email_verified_at"),
         "submitted_at": station.get("submitted_at"),
+        "content_reviewed_at": station.get("content_reviewed_at"),
+        "pending_edit": station.get("pending_edit") if isinstance(station.get("pending_edit"),dict) else None,
         "station_code": station.get("station_code", ""),
         "listener_code": station.get("listener_code", ""),
         "owner_id": station.get("owner_id", ""),
@@ -329,7 +331,7 @@ def save_uploaded_image(field_name="wallpaper"):
             raw = base64.b64decode(encoded, validate=True)
             if len(raw) > 6 * 1024 * 1024:
                 return "", "Image is too large"
-            if field_name == "logo_image":
+            if field_name in ("logo_image", "wallpaper"):
                 raw = device_logo(raw)
                 subtype = "png"
             filename = f"{int(time.time())}_{secrets.token_hex(6)}.{subtype}"
@@ -345,7 +347,7 @@ def save_uploaded_image(field_name="wallpaper"):
         return "", ""
     if not allowed_image(image.filename):
         return "", "Image must be PNG, JPG, JPEG, GIF, or WEBP"
-    if field_name == "logo_image":
+    if field_name in ("logo_image", "wallpaper"):
         try:
             raw = image.read(6 * 1024 * 1024 + 1)
             if len(raw) > 6 * 1024 * 1024:
@@ -1454,6 +1456,7 @@ def admin_approve(index):
     if 0 <= index < len(pending):
         station = normalize_station(pending.pop(index))
         provision_owner(station)
+        station["content_reviewed_at"]=int(time.time())
         station.pop('submitted_at', None)
         for item in custom:
             if (item.get('url') or '').strip() == station.get('url'):
@@ -1552,6 +1555,8 @@ from station_sharing import register_sharing
 register_sharing(app, sys.modules[__name__])
 from radio_link import register_radio_link
 register_radio_link(app, sys.modules[__name__])
+from content_moderation import register_moderation
+register_moderation(app, sys.modules[__name__])
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

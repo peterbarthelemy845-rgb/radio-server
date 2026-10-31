@@ -70,7 +70,7 @@ def process_verification_mail(app):
     try:
         with app.app_context():
             code=cipher(app).decrypt(row['payload']).decode()
-            ok=send_station_message(row['email'],'Verify your radio station email', 'Your private email verification code is: '+code+'\n\nEnter this code in the verification window on Radio La Voix Divine to publish your station. It expires in 15 minutes. This is not your public radio station code. Do not share it. If you did not submit a station, ignore this email.')
+            ok=send_station_message(row['email'],'Verify your radio station email', 'Your private email verification code is: '+code+'\n\nEnter this code in the verification window on Radio La Voix Divine to verify your email. Your station will then await content review. It expires in 15 minutes. This is not your public radio station code. Do not share it. If you did not submit a station, ignore this email.')
     except Exception as error:app.logger.warning('Registration email failed: %s',type(error).__name__)
     attempts=row['mail_attempts']+1
     with closing(connect()) as db,db:
@@ -123,10 +123,7 @@ def register_verification(app,radio):
             store=radio.load_station_store();target=next((s for s in store.get('pending_stations',[]) if key_for(s)==row['station_key'] and s.get('contact_email','').casefold()==row['email']),None)
             if target is None:return jsonify(status='error',message='This submission is no longer pending. Contact the administrator.'),409
             now=int(time.time());target.update(email_verified=True,email_verified_at=now)
-            published=not target.get('suspended') and not target.get('owner_suspended')
-            if published:
-                store['pending_stations']=[s for s in store.get('pending_stations',[]) if key_for(s)!=row['station_key']]
-                if not any(key_for(s)==row['station_key'] for s in store.get('custom_stations',[])):store.setdefault('custom_stations',[]).append(target)
+            published=False  # Verified email proves ownership; content still needs admin review.
             radio.save_station_store(store)
             db.execute("UPDATE registration_verifications SET verified_at=?,state='verified',payload=NULL,otp_hash='' WHERE id=?",(now,row['id']))
             session.pop('pending_registration',None)

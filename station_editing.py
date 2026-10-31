@@ -134,8 +134,11 @@ def register_editing(app,radio):
             else:
                 logo,error=radio.save_uploaded_image('logo_image')
                 if not error:
-                    station.update(url=url,bio=request.form.get('bio','').strip()[:250])
-                    if logo:station['logo_url']=logo
+                    draft=dict(station.get('pending_edit') or {})
+                    draft.update(url=url,bio=request.form.get('bio','').strip()[:250])
+                    if logo:draft['logo_url']=logo
+                    if station in store.get('custom_stations',[]):station['pending_edit']=draft
+                    else:station.update(draft)
                     radio.save_station_store(store)
                     return redirect('/station/edit?saved=1')
         return render_template('station_edit.html',station=station,error=error,saved=request.args.get('saved')=='1'),400 if error else 200
