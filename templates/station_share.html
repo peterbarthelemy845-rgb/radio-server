@@ -1,7 +1,7 @@
 {% extends 'ad_public_base.html' %}
 {% block title %}{{ station.name }} · Station code #{{ station.listener_code }}{% endblock %}
 {% block extra_head %}<link rel="canonical" href="{{ share_url }}"><meta name="description" content="Add {{ station.name }} to your radio using station code #{{ station.listener_code }}."><meta property="og:type" content="website"><meta property="og:title" content="{{ station.name }} · Station code #{{ station.listener_code }}"><meta property="og:description" content="Enter this station code on your radio to start listening."><meta property="og:url" content="{{ share_url }}"><meta property="og:image" content="{{ share_image }}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{{ station.name }}"><meta name="twitter:image" content="{{ share_image }}">
-<link rel="stylesheet" href="/static/radio-add.css?v=1">{% endblock %}
+<link rel="stylesheet" href="/static/radio-add.css?v=2">{% endblock %}
 {% block home_link %}{% endblock %}
 {% block content %}
 <section class="card station-add-card" id="radioAddDialog" aria-labelledby="radioAddTitle">
@@ -15,8 +15,9 @@
  <div class="radio-progress" role="status" aria-live="polite"><output id="radioApprovalCheck" hidden></output><p id="radioAddMessage"></p></div>
  <button id="radioYes" type="button" class="wide" hidden>Add station</button>
  <button id="linkAnotherRadio" type="button" hidden>Use another radio</button>
+ {% include "sponsor_demo.html" %}
  <a id="radioNo" class="back-stations" href="/#library">Back to stations</a>
 </section>
 <script nonce="{{ csp_nonce() }}">const publicCode={{ station.listener_code|tojson }};</script>
-<script nonce="{{ csp_nonce() }}" src="/static/radio-add.js?v=6" defer></script>
+<script nonce="{{ csp_nonce() }}" src="/static/radio-add.js?v=7" defer></script>
 {% endblock %}

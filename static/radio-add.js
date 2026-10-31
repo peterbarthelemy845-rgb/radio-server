@@ -17,7 +17,7 @@ async function loadLinkedRadios(showControls=true){
 }
 async function openRadioAdd(){
  stopRadioChecks();radioAddActive=true;radioSending=false;radioClaimBusy=false;const generation=radioCheckGeneration;
- document.getElementById('radioYes').disabled=false;document.getElementById('radioYes').textContent='Add station';radioChoice.disabled=false;document.getElementById('radioApprovalCheck').hidden=true;document.getElementById('radioNo').textContent='Back to stations';radioNotice('');
+ document.getElementById('radioYes').disabled=false;document.getElementById('radioYes').textContent='Add station';radioChoice.disabled=false;document.getElementById('radioApprovalCheck').hidden=true;document.getElementById('radioNo').textContent='Back to stations';document.getElementById('stationSponsor').hidden=true;radioNotice('');
  try{
   await loadLinkedRadios();if(!radioAddActive||generation!==radioCheckGeneration)return;
   if(!radioTargets.length){const pending=await radioApi('/api/radio/link/status');if(!radioAddActive||generation!==radioCheckGeneration)return;
@@ -56,7 +56,7 @@ async function sendToRadio(){
   let checks=0;if(radioPollTimer)clearTimeout(radioPollTimer);
   const check=async()=>{if(!radioAddActive||generation!==radioCheckGeneration)return;try{
    const state=await radioApi('/api/radio/commands/'+encodeURIComponent(result.command_id));if(!radioAddActive||generation!==radioCheckGeneration)return;
-   if(state.status==='added'){radioNotice('Station added successfully!','success');button.hidden=true;document.getElementById('radioChoiceRow').hidden=true;document.getElementById('radioNo').textContent='Done';return;}
+   if(state.status==='added'){radioNotice('Station added successfully!','success');button.hidden=true;document.getElementById('radioChoiceRow').hidden=true;document.getElementById('radioNo').textContent='Done';document.getElementById('stationSponsor').hidden=false;return;}
    if(['failed','expired'].includes(state.status)){radioNotice(state.message||'Could not add the station. Try again.','error');radioSending=false;button.disabled=false;button.hidden=false;radioChoice.disabled=false;document.getElementById('radioChoiceRow').hidden=!radioTargets.length;document.getElementById('linkAnotherRadio').hidden=false;return;}
    if(++checks>=100){radioNotice('Turn on your radio, check Wi-Fi and try again.','error');radioSending=false;button.disabled=false;button.hidden=false;radioChoice.disabled=false;document.getElementById('radioChoiceRow').hidden=!radioTargets.length;return;}
    radioPollTimer=setTimeout(check,3000);

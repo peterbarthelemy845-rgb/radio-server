@@ -1571,5 +1571,11 @@ register_turnstile(app)
 from public_analytics import register_public_analytics
 register_public_analytics(app)
 
+@app.get("/sponsor-preview")
+def sponsor_preview():
+    response = app.make_response(render_template("sponsor_preview.html", sponsor_preview=True))
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
