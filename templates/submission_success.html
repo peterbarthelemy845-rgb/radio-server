@@ -1,4 +1,5 @@
 {% include 'turnstile.html' %}
+<link rel="stylesheet" href="/static/radio-add.css?v=2">
 <style>
 #submissionSuccess{width:min(460px,calc(100vw - 28px));padding:28px;border:0;border-radius:22px;background:#fff;color:#111827;font:16px Arial,sans-serif;text-align:left;box-shadow:0 24px 70px #0008}#submissionSuccess::backdrop{background:#000a}#submissionSuccess h2{font-size:28px;margin:0 0 18px}#submissionSuccess p{line-height:1.5}#submissionSuccess label{display:block;font-weight:bold;margin:16px 0 8px}#submissionSuccess input[type=text]{width:100%;padding:14px;font-size:26px;letter-spacing:8px;border:1px solid #64748b;border-radius:8px;box-sizing:border-box}#submissionSuccess button{padding:13px 18px;border:0;border-radius:10px;font-weight:bold;font-size:16px;cursor:pointer}#verifyRegistrationForm button[type=submit]{width:100%;background:#2563eb;color:white;margin-top:18px;min-height:48px}#resendRegistrationCode{background:transparent;color:#1d4ed8;padding:0!important;text-decoration:underline}#submissionVerifyMessage{color:#9f1239;min-height:24px}#closeSubmissionSuccess{margin-top:12px;background:#e2e8f0;color:#0f172a}
 </style>
@@ -6,6 +7,7 @@
 <h2 id="submissionSuccessTitle">Verify it's you</h2><p id="submissionSuccessMessage"></p>
 <form id="verifyRegistrationForm"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><label for="registrationEmailCode">6-digit email verification code</label><input id="registrationEmailCode" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="______"><button type="submit">Verify code &amp; add station</button></form>
 <p id="stationShareSuccess" hidden><a id="stationShareSuccessLink" href="/#library">Share your station</a></p><p id="registrationResendRow">Can't find the email? <button id="resendRegistrationCode" type="button">Resend email</button></p><p id="submissionVerifyMessage" role="status" aria-live="polite"></p><button type="button" id="closeSubmissionSuccess" data-action-click="h17">Close for now</button>
+{% with sponsor_id='registrationSponsor', sponsor_preview=false %}{% include 'sponsor_demo.html' %}{% endwith %}
 </dialog>
 <script nonce="{{ csp_nonce() }}">
 let registrationResendTimer=null;
@@ -19,6 +21,7 @@ function registrationResendCooldown(seconds){
 function showSubmissionSuccess(info={}){
  stationVerificationMode=info.mode==='edit'?'edit':'registration';
  document.getElementById('stationShareSuccess').hidden=true;
+ document.getElementById('registrationSponsor').hidden=true;
  const dialog=document.getElementById('submissionSuccess');document.getElementById('submissionSuccessTitle').textContent="Verify it's you";
  document.getElementById('submissionSuccessMessage').textContent=info.verification_expired?'Your verification code expired. Request a new email below.':'A private verification code is being sent to '+(info.verification_email||'your registered email')+'. Enter it below to verify your email. Clear submissions publish after verification; flagged content needs administrator review. It expires in 15 minutes. This is different from your public radio station code.';
  if(stationVerificationMode==='edit')document.getElementById('submissionSuccessMessage').textContent='Enter the private code emailed to '+(info.verification_email||'your registered address')+' to open the station editor. If the email and station code match, the email will arrive shortly. The code expires in 15 minutes.';
@@ -33,6 +36,7 @@ document.getElementById('verifyRegistrationForm').addEventListener('submit',asyn
  if(!response.ok||data.status!=='ok'){message.textContent=data.message||'That code could not be verified. Check the six-digit code in your email, or request a new one.';return;}
  if(data.published&&data.listener_code){document.getElementById('stationShareSuccessLink').href='/station/'+encodeURIComponent(data.listener_code);document.getElementById('stationShareSuccess').hidden=false;}
  if(data.edit_verified){window.location.assign('/station/edit');return;}
+ document.getElementById('registrationSponsor').hidden=!(stationVerificationMode==='registration'&&data.published===true);
  document.getElementById('submissionSuccessTitle').textContent=data.published?'Station added successfully':'Email verified';
  document.getElementById('submissionSuccessMessage').textContent=data.published?'Your station is now in Library. Radio station code #'+(data.listener_code||'')+'. Share this station code with your listeners.':data.message;
  event.target.hidden=true;document.getElementById('registrationResendRow').hidden=true;document.getElementById('closeSubmissionSuccess').textContent='Done';document.getElementById('closeSubmissionSuccess').focus();message.textContent='';
