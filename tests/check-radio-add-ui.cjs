@@ -19,7 +19,7 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
  assert.equal(node('radioApprovalCheck').textContent,'1234');assert(node('radioAddMessage').textContent.includes('Allow phone'));assert(!calls.some(x=>x.path==='/api/radio/add-station'));
  await timers.shift()();await settle();assert(!calls.some(x=>x.path==='/api/radio/add-station'),'no station command before physical approval');
  approved=true;await timers.shift()();await settle();assert.equal(calls.filter(x=>x.path==='/api/radio/add-station').length,1);
- assert.equal(calls.find(x=>x.path==='/api/radio/add-station').data.owner_csrf,'test-csrf');assert(!node('radioAddMessage').textContent.includes('successfully'));
+ assert.equal(calls.find(x=>x.path==='/api/radio/add-station').data.owner_csrf,'test-csrf');assert(!node('radioAddMessage').textContent.includes('successfully'));assert(node('radioYes').hidden&&node('radioChoiceRow').hidden&&node('radioPairPanel').hidden,'approval goes straight to save confirmation without another form');
  added=true;await timers.shift()();await settle();assert(node('radioAddMessage').textContent.includes('added successfully'));
  assert(node('radioYes').hidden,'no redundant Add again after success');assert.equal(node('radioNo').textContent,'Done');
  await context.openRadioAdd();await settle();const before=calls.filter(x=>x.path==='/api/radio/add-station').length;assert(!node('radioYes').hidden);assert.equal(calls.filter(x=>x.path==='/api/radio/add-station').length,before,'an already linked page never adds on load');
