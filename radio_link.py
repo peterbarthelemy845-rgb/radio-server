@@ -77,7 +77,7 @@ def register_radio_link(app,radio):
             previous=db.execute('SELECT pin_hash FROM radio_pairs WHERE radio_id=?',(identifier,)).fetchone()
             previous_hash=previous['pin_hash'] if previous else ''
             stable=data.get('stable_pair_code')
-            if stable is not None and (not isinstance(stable,str) or not re.fullmatch('[A-HJ-NP-Z2-9]{8}',stable)):abort(400)
+            if stable is not None and (not isinstance(stable,str) or not re.fullmatch(r'(?:[0-9]{6,10}|[A-HJ-NP-Z2-9]{8})',stable)):abort(400)
             db.execute('DELETE FROM radio_pairs WHERE expires>0 AND expires<?',(now,))
             db.execute('DELETE FROM radio_pair_claims WHERE created<?',(now-604800,))
             if stable is not None:
@@ -102,11 +102,12 @@ def register_radio_link(app,radio):
         data=body();check_token();throttle('radio-pair-claim',5,900);throttle('radio-pair-claim-total',2000,86400,'all')
         pin=data.get('pair_code','')
         if isinstance(pin,str):pin=pin.upper().replace('-','').replace(' ','')
-        if not isinstance(pin,str) or not re.fullmatch('[A-HJ-NP-Z2-9]{8}',pin):return jsonify(message='Enter the eight-character Link phone code shown on your radio.'),400
+        if not isinstance(pin,str) or not re.fullmatch(r'(?:[0-9]{6,10}|[A-HJ-NP-Z2-9]{8})',pin):return jsonify(message='Enter the Device Code shown on your radio.'),400
         with database() as db:
             db.execute('BEGIN IMMEDIATE');now=int(time.time())
             row=db.execute('SELECT * FROM radio_pairs WHERE pin_hash=? AND (expires=0 OR expires>?)',(pin_hash(pin),now)).fetchone()
-            if not row:return jsonify(message='Code not found. Check the code on your radio.'),400
+            if not row:return jsonify(message='Code not found. Check the Device Code on your radio.'),400
+            throttle('radio-claim-device',5,900,row['radio_id'])
             if db.execute("SELECT 1 FROM radio_pair_claims WHERE radio_id=? AND state='waiting' AND expires>?",(row['radio_id'],now)).fetchone():return jsonify(message='A phone request is already waiting. Approve or deny it on the radio.'),409
             token=secrets.token_urlsafe(32)
             db.execute('DELETE FROM phone_radios WHERE expires<=?',(now,))

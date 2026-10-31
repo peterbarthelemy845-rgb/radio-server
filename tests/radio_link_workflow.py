@@ -132,6 +132,13 @@ assert second.get('/api/radio/link/status').get_json()['status']=='cancelled'
 assert second.post('/api/radio/link/claim',json={'owner_csrf':'second-test','pair_code':fixed},environ_base={'REMOTE_ADDR':'198.51.100.231'}).status_code==400
 assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':'1234'},headers=headers).status_code==400
 assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':fixed}).status_code==401
+numeric='123456'
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':numeric},headers=headers).status_code==200
+numeric_phone=app.test_client()
+with numeric_phone.session_transaction() as sess:sess['owner_csrf']='numeric-test'
+assert numeric_phone.post('/api/radio/link/claim',json={'owner_csrf':'numeric-test','pair_code':numeric},environ_base={'REMOTE_ADDR':'198.51.100.235'}).status_code==200
+assert numeric_phone.get('/api/radio/linked').get_json()['radios']==[]
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':'1234567'},headers=headers).status_code==200
 # Keep the backup fixture's original single-grant expectation.
 with radio_link.database() as db:db.execute('DELETE FROM phone_radios')
 import io,zipfile,sqlite3

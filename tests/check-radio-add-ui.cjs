@@ -15,7 +15,7 @@ vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../static/
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
  await settle();assert(!node('radioAddDialog').open,'the adding form is a page, not a popup');assert(!node('radioPairPanel').hidden);assert(!calls.some(x=>x.path==='/api/radio/add-station'));
- assert.equal(context.formatRadioCode('2j4q tjeg'),'2J4Q-TJEG');assert.equal(context.formatRadioCode('ABCD-EFGH'),'ABCD-EFGH');
+ assert.equal(context.formatRadioCode('123456'),'123456');assert.equal(context.formatRadioCode('1234567890'),'1234567890');assert.equal(context.formatRadioCode('2j4q tjeg'),'2J4Q-TJEG');assert.equal(context.formatRadioCode('ABCD-EFGH'),'ABCD-EFGH');
  const codeInput=node('radioPairCode');codeInput.value='abcd';codeInput.selectionStart=4;codeInput.listeners.input({target:codeInput,inputType:'insertText'});assert.equal(codeInput.value,'ABCD-');
  codeInput.value='ABCD';codeInput.selectionStart=4;codeInput.listeners.input({target:codeInput,inputType:'deleteContentBackward'});assert.equal(codeInput.value,'ABC','backspace crosses the inserted dash without trapping the caret');
  node('radioPairCode').value='ABCD-2345';await node('radioPairForm').listeners.submit({preventDefault(){},target:node('radioPairForm')});
