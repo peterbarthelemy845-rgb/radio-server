@@ -66,6 +66,15 @@ async function sendToRadio(){
 }
 document.getElementById('radioYes').addEventListener('click',sendToRadio);
 document.getElementById('linkAnotherRadio').addEventListener('click',()=>{if(radioSending)return;stopRadioChecks();radioClaimBusy=false;showRadioPairing();radioNotice('');document.getElementById('radioPairCode').focus();});
+function formatRadioCode(value){const code=String(value).toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8);return code.length>=4?code.slice(0,4)+'-'+code.slice(4):code;}
+let previousRadioCode='';
+document.getElementById('radioPairCode').addEventListener('input',event=>{
+ const field=event.target;let value=field.value,caret=field.selectionStart??value.length;
+ if(event.inputType==='deleteContentBackward'&&previousRadioCode[4]==='-'&&caret===4&&value[4]!=='-'){value=value.slice(0,3)+value.slice(4);caret=3;}
+ const count=value.slice(0,caret).replace(/[^a-z0-9]/gi,'').length;
+ field.value=formatRadioCode(value);previousRadioCode=field.value;
+ const next=Math.min(field.value.length,count+(count>=4?1:0));field.setSelectionRange(next,next);
+});
 document.getElementById('radioPairForm').addEventListener('submit',async event=>{
  event.preventDefault();if(radioClaimBusy||radioSending)return;radioClaimBusy=true;const generation=++radioCheckGeneration,button=event.target.querySelector('button');button.disabled=true;radioNotice('Connecting to your radio…');
  try{const result=await radioApi('/api/radio/link/claim',{pair_code:document.getElementById('radioPairCode').value.trim()});if(!radioAddActive||generation!==radioCheckGeneration)return;if(result.status==='waiting')watchRadioApproval(result.confirmation_code,true);else throw new Error('Please enter your radio code again.');}catch(error){if(!radioAddActive||generation!==radioCheckGeneration)return;radioNotice(error.message,'error');radioClaimBusy=false;button.disabled=false;}

@@ -1,5 +1,5 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
-const nodes={};function node(id){return nodes[id]||(nodes[id]={id,value:'',textContent:'',hidden:false,disabled:false,open:false,listeners:{},children:[],dataset:{},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},focus(){},addEventListener(event,fn){this.listeners[event]=fn},replaceChildren(){this.children=[];this.value=''},appendChild(option){this.children.push(option);if(!this.value)this.value=option.value},querySelector(){return node('pairButton')}})}
+const nodes={};function node(id){return nodes[id]||(nodes[id]={id,value:'',textContent:'',hidden:false,disabled:false,open:false,listeners:{},children:[],dataset:{},selectionStart:null,setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},showModal(){this.open=true},close(){this.open=false;this.listeners.close?.()},focus(){},addEventListener(event,fn){this.listeners[event]=fn},replaceChildren(){this.children=[];this.value=''},appendChild(option){this.children.push(option);if(!this.value)this.value=option.value},querySelector(){return node('pairButton')}})}
 node('radioCsrf').value='test-csrf';const calls=[],timers=[];let approved=false,added=false,linked=false,hasClaim=false;
 const windowEvents={};const context={window:{addEventListener:(event,fn)=>windowEvents[event]=fn},publicCode:'11',document:{getElementById:node,querySelector:()=>node('pairButton'),createElement:()=>({value:'',textContent:''})},setTimeout:fn=>(timers.push(fn),timers.length),clearTimeout(){},fetch:async(path,options)=>{
  const data=options?.body?JSON.parse(options.body):undefined;calls.push({path,data});
@@ -15,6 +15,9 @@ vm.createContext(context);vm.runInContext(fs.readFileSync(__dirname+'/../static/
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
  await settle();assert(!node('radioAddDialog').open,'the adding form is a page, not a popup');assert(!node('radioPairPanel').hidden);assert(!calls.some(x=>x.path==='/api/radio/add-station'));
+ assert.equal(context.formatRadioCode('2j4q tjeg'),'2J4Q-TJEG');assert.equal(context.formatRadioCode('ABCD-EFGH'),'ABCD-EFGH');
+ const codeInput=node('radioPairCode');codeInput.value='abcd';codeInput.selectionStart=4;codeInput.listeners.input({target:codeInput,inputType:'insertText'});assert.equal(codeInput.value,'ABCD-');
+ codeInput.value='ABCD';codeInput.selectionStart=4;codeInput.listeners.input({target:codeInput,inputType:'deleteContentBackward'});assert.equal(codeInput.value,'ABC','backspace crosses the inserted dash without trapping the caret');
  node('radioPairCode').value='ABCD-2345';await node('radioPairForm').listeners.submit({preventDefault(){},target:node('radioPairForm')});
  assert.equal(node('radioApprovalCheck').textContent,'1234');assert(node('radioAddMessage').textContent.includes('Allow phone'));assert(!calls.some(x=>x.path==='/api/radio/add-station'));
  await timers.shift()();await settle();assert(!calls.some(x=>x.path==='/api/radio/add-station'),'no station command before physical approval');

@@ -22,7 +22,7 @@ class SecuritySharingTests(unittest.TestCase):
    assert client.get('/station/'+code+'/qr.png?download=1').status_code==404
    assert b'radioAddDialog' in page.data and b'Download QR' not in page.data
    assert b'<dialog' not in page.data and b'Choose Yes' not in page.data and b'Connect your phone once' not in page.data
-   assert b'Find it at the top of your radio screen.' in page.data
+   assert b'The dash is added for you.' in page.data
    assert client.get('/api/station-availability/'+code).get_json()['state']=='unchecked'
    with app.app_context(),patch.object(sharing,'probe',return_value='reachable') as probe:
     assert sharing.check_one(radio);probe.assert_called_once()

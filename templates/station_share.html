@@ -10,7 +10,7 @@
  <input id="radioCsrf" type="hidden" value="{{ owner_csrf() }}">
  <div id="radioChoiceRow" hidden><label for="radioChoice">Your radio</label><select id="radioChoice"></select></div>
  <section id="radioPairPanel" hidden>
-  <form id="radioPairForm"><label for="radioPairCode">Radio code</label><p class="hint" id="radioCodeHint">Find it at the top of your radio screen.</p><input id="radioPairCode" aria-describedby="radioCodeHint" inputmode="text" pattern="[A-HJ-NP-Za-hj-np-z2-9]{4}-?[A-HJ-NP-Za-hj-np-z2-9]{4}" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" required placeholder="ABCD-EFGH"><button type="submit" class="wide">Add station</button></form>
+  <form id="radioPairForm"><label for="radioPairCode">Radio code</label><p class="hint" id="radioCodeHint">Find it at the top of your radio screen. The dash is added for you.</p><input id="radioPairCode" aria-describedby="radioCodeHint" inputmode="text" pattern="[A-HJ-NP-Za-hj-np-z2-9]{4}-?[A-HJ-NP-Za-hj-np-z2-9]{4}" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" required placeholder="ABCD-EFGH"><button type="submit" class="wide">Add station</button></form>
  </section>
  <div class="radio-progress" role="status" aria-live="polite"><output id="radioApprovalCheck" hidden></output><p id="radioAddMessage"></p></div>
  <button id="radioYes" type="button" class="wide" hidden>Add station</button>
@@ -18,5 +18,5 @@
  <a id="radioNo" class="back-stations" href="/#library">Back to stations</a>
 </section>
 <script nonce="{{ csp_nonce() }}">const publicCode={{ station.listener_code|tojson }};</script>
-<script nonce="{{ csp_nonce() }}" src="/static/radio-add.js?v=5" defer></script>
+<script nonce="{{ csp_nonce() }}" src="/static/radio-add.js?v=6" defer></script>
 {% endblock %}
