@@ -15,3 +15,22 @@
 .owner-back-login{background:transparent;border:0;padding:8px 0;color:#1d4ed8;cursor:pointer;font:700 14px Arial;min-height:40px}
 .owner-entry-nav{position:fixed;bottom:0;left:0;right:0;display:flex;z-index:30;background:#080f26f5;padding-bottom:env(safe-area-inset-bottom);border-radius:18px 18px 0 0}.owner-entry-nav a{flex:1;min-height:72px;padding:24px 8px;text-align:center;font:bold 16px Arial;text-decoration:none;color:white}.owner-entry-nav a[aria-current]{background:#ffffff0d;color:#9fd1ff;border-radius:18px}
 @media(max-width:430px){.owner-access-card{padding:24px 20px 20px;border-radius:22px}#ownerAccessTitle{font-size:26px}#ownerAccessTitle span{font-size:22px}.owner-entry-page .wrap{padding-top:8px}body.public-web #addPage .add-panel{padding-top:8px}}
+
+/* Keep registration fields distinct from the light card on both entry points. */
+#ownerRegistrationPanel{border:1px solid #cbd5e1;padding:28px;font:16px/1.5 Arial,sans-serif;box-shadow:0 14px 40px #0002}
+#ownerRegistrationPanel label,body.public-web #addPage #ownerRegistrationPanel label{display:block;margin:18px 0 8px;font-size:16px;font-weight:700;line-height:1.4;color:#14213b!important}
+#ownerRegistrationPanel input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=range]),#ownerRegistrationPanel select,#ownerRegistrationPanel textarea,body.public-web #addPage #ownerRegistrationPanel input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=range]),body.public-web #addPage #ownerRegistrationPanel select,body.public-web #addPage #ownerRegistrationPanel textarea{display:block;width:100%;box-sizing:border-box;min-height:52px;height:auto;padding:13px 14px!important;margin:0 0 18px!important;border:2px solid #8799b2!important;border-radius:10px!important;background:#f6f8fc!important;color:#14213b!important;font:400 17px/1.4 Arial,sans-serif!important;outline-offset:3px;box-shadow:none}
+#ownerRegistrationPanel textarea,body.public-web #addPage #ownerRegistrationPanel textarea{min-height:120px!important;resize:vertical}
+#ownerRegistrationPanel input::placeholder,#ownerRegistrationPanel textarea::placeholder{color:#53647b!important;opacity:1;font-weight:400}
+#ownerRegistrationPanel input:focus,#ownerRegistrationPanel select:focus,#ownerRegistrationPanel textarea:focus{outline:3px solid #2563eb!important;border-color:#2563eb!important;background:#fff!important}
+#ownerRegistrationPanel .hint,#ownerRegistrationPanel .small{color:#475569;font-size:14px;font-weight:400;opacity:1;line-height:1.5}
+#ownerRegistrationPanel .terms-check,body.public-web #addPage #ownerRegistrationPanel .terms-check{display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.5}
+#ownerRegistrationPanel input[type=checkbox]{width:24px;height:24px;min-height:24px;flex:0 0 24px;accent-color:#2563eb}
+#ownerRegistrationPanel input[type=file]::file-selector-button{padding:10px 14px;margin-right:12px;border:0;border-radius:7px;background:#dceaff;color:#123d82;font:700 14px Arial;cursor:pointer}
+#ownerRegistrationPanel .owner-back-login{font-size:16px;color:#1d4ed8}
+#ownerRegistrationPanel a{color:#1d4ed8;text-underline-offset:3px}
+#ownerRegistrationPanel button[type=submit],body.public-web #addPage #ownerRegistrationPanel button[type=submit]{min-height:52px;margin-top:20px;padding:14px;font-size:18px}
+body.public-web #addPage .subpage{overflow-y:auto!important;padding:24px 16px 120px!important;scroll-padding-bottom:120px}
+body.public-web #addPage .card-list{max-height:none!important;overflow:visible!important;padding-right:0}
+body.public-web #addPage .add-panel:has(#ownerRegistrationPanel:not([hidden])),.owner-entry-page .wrap:has(#ownerRegistrationPanel:not([hidden])){max-width:680px}
+@media(max-width:430px){#ownerRegistrationPanel{padding:20px}body.public-web #addPage .subpage{padding:12px 12px 116px!important}}
