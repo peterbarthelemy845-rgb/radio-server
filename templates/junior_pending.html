@@ -20,7 +20,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
         <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
-        <p>Station code: {{ s.station_code or 'Not assigned' }}</p>
+        {% for reason in (s.content_moderation or {}).get('reasons', []) %}<p class="badge">{{ reason }}</p>{% endfor %}<p>Station code: {{ s.station_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
           {% if not s.email_verification_required or s.email_verified %}<form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="review_version" value="{{ station_review_version(s) }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>{% else %}<p>Waiting for owner email verification</p>{% endif %}

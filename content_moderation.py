@@ -35,6 +35,8 @@ def public_upload_paths(radio):
 def register_moderation(app,radio):
  from admin_security import valid_session
  from station_owners import check_token
+ from automatic_screening import scanner_ready
+ app.jinja_env.globals['station_scanner_ready']=scanner_ready
  app.jinja_env.globals['station_review_version']=review_version
  app.jinja_env.globals['station_edit_review_version']=lambda s:review_version(dict(s,**s.get('pending_edit',{})))
  app.jinja_env.globals['station_content_edits']=lambda:[s for s in radio.load_station_store().get('custom_stations',[]) if s.get('pending_edit')]
@@ -51,7 +53,8 @@ def register_moderation(app,radio):
    data=(request.get_json(silent=True) if request.is_json else request.form) or {}
    fields={'Station name':data.get('name',''),'Station title':data.get('subtitle') or data.get('website') or data.get('title') or '', 'Bio':data.get('bio') or data.get('description') or ''}
    if any(isinstance(value,str) and len(value)>4000 for value in fields.values()):message='Station text is too long.'
-   else:message=text_error(fields)
+   elif any(not isinstance(value,str) for value in fields.values()):message='Please enter plain station text.'
+   else:message=''
    if message:
     if request.endpoint=='api_add_station' and (request.is_json or request.headers.get('X-Requested-With')=='fetch'):return jsonify(status='error',message=message),400
     return render_template('content_rejected.html',message=message),400
@@ -59,8 +62,6 @@ def register_moderation(app,radio):
    store=radio.load_station_store();index=(request.view_args or {}).get('index',-1);rows=store.get('pending_stations',[])
    if 0<=index<len(rows):
     if not hmac.compare_digest(request.form.get("review_version", ""),review_version(rows[index])):abort(409,"The submission changed. Reload and review it again.")
-    error=station_error(rows[index])
-    if error:return render_template('content_rejected.html',message=error),400
  @app.after_request
  def private_art_response(response):
   name=str((request.view_args or {}).get('filename','')).replace('\\','/')
@@ -77,10 +78,8 @@ def register_moderation(app,radio):
   draft=station['pending_edit']
   if not hmac.compare_digest(request.form.get('review_version',''),review_version(dict(station,**draft))):abort(409,'The proposed content changed. Reload and review it again.')
   if decision=='approve':
-   error=station_error(dict(station,**draft))
-   if error:return render_template('content_rejected.html',message=error),400
    if any(s.get('url')==draft.get('url') and s.get('listener_code')!=code for group in ('custom_stations','pending_stations') for s in store.get(group,[])):abort(409,'This stream URL is already registered.')
-   station.update({key:draft[key] for key in ('url','bio','logo_url') if key in draft})
+   station.update({key:draft[key] for key in ('url','bio','logo_url','content_moderation') if key in draft})
    station['content_reviewed_at']=int(time.time())
   station.pop('pending_edit',None);radio.save_station_store(store)
   return redirect('/admin/pending')

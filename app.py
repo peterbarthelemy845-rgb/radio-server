@@ -307,6 +307,7 @@ def normalize_station(station):
         "email_verified_at": station.get("email_verified_at"),
         "submitted_at": station.get("submitted_at"),
         "content_reviewed_at": station.get("content_reviewed_at"),
+        "content_moderation": station.get("content_moderation") if isinstance(station.get("content_moderation"), dict) else None,
         "pending_edit": station.get("pending_edit") if isinstance(station.get("pending_edit"),dict) else None,
         "station_code": station.get("station_code", ""),
         "listener_code": station.get("listener_code", ""),
@@ -1147,6 +1148,14 @@ def api_add_station():
         message='This stream is already submitted. Use Already registered? Edit your station in Add Station.'
         if wants_json:return jsonify(status='error',message=message),409
         return render_template('add_station.html',status='error',message=message,form=form),409
+    from automatic_screening import assess
+    station['content_moderation'] = assess(station, UPLOAD_FOLDER)
+    # The network scan may have yielded while another request changed the store.
+    store = load_station_store()
+    pending = store.get('pending_stations', [])
+    if any(item.get('url') == url for group in ('pending_stations','custom_stations') for item in store.get(group, [])):
+        if wants_json:return jsonify(status='error',message='This stream is already submitted.'),409
+        return render_template('add_station.html',status='error',message='This stream is already submitted.',form=form),409
     station = attach_station(station)
     from station_owners import provision_owner
     provision_owner(station)

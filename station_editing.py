@@ -137,8 +137,29 @@ def register_editing(app,radio):
                     draft=dict(station.get('pending_edit') or {})
                     draft.update(url=url,bio=request.form.get('bio','').strip()[:250])
                     if logo:draft['logo_url']=logo
-                    if station in store.get('custom_stations',[]):station['pending_edit']=draft
-                    else:station.update(draft)
+                    from automatic_screening import assess
+                    approved = station if station in store.get('custom_stations',[]) else None
+                    candidate = dict(station, **draft)
+                    check = assess(candidate, radio.UPLOAD_FOLDER, approved=approved)
+                    from content_moderation import review_version
+                    latest_store, latest = find_station(radio,row['station_key'],row['email'])
+                    if (not latest or review_version(latest) != review_version(station)
+                            or latest.get('pending_edit') != station.get('pending_edit')
+                            or latest.get('suspended') != station.get('suspended')
+                            or latest.get('owner_suspended') != station.get('owner_suspended')
+                            or (latest in latest_store.get('custom_stations', [])) != bool(approved)):
+                        abort(409, 'This station changed during screening. Reload and try again.')
+                    store, station = latest_store, latest
+                    draft['content_moderation'] = check
+                    if approved and check['status'] != 'passed':
+                        station['pending_edit'] = draft
+                    else:
+                        station.update(draft)
+                        station.pop('pending_edit', None)
+                        from automatic_screening import can_publish
+                        if not approved and station.get('email_verified') and can_publish(station):
+                            store['pending_stations'].remove(station)
+                            store.setdefault('custom_stations', []).append(station)
                     radio.save_station_store(store)
                     return redirect('/station/edit?saved=1')
         return render_template('station_edit.html',station=station,error=error,saved=request.args.get('saved')=='1'),400 if error else 200

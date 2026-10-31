@@ -19,7 +19,7 @@ function showSubmissionSuccess(info={}){
  stationVerificationMode=info.mode==='edit'?'edit':'registration';
  document.getElementById('stationShareSuccess').hidden=true;
  const dialog=document.getElementById('submissionSuccess');document.getElementById('submissionSuccessTitle').textContent="Verify it's you";
- document.getElementById('submissionSuccessMessage').textContent=info.verification_expired?'Your verification code expired. Request a new email below.':'A private verification code is being sent to '+(info.verification_email||'your registered email')+'. Enter it below to verify your email. Your station will then await content review. It expires in 15 minutes. This is different from your public radio station code.';
+ document.getElementById('submissionSuccessMessage').textContent=info.verification_expired?'Your verification code expired. Request a new email below.':'A private verification code is being sent to '+(info.verification_email||'your registered email')+'. Enter it below to verify your email. Clear submissions publish after verification; flagged content needs administrator review. It expires in 15 minutes. This is different from your public radio station code.';
  if(stationVerificationMode==='edit')document.getElementById('submissionSuccessMessage').textContent='Enter the private code emailed to '+(info.verification_email||'your registered address')+' to open the station editor. If the email and station code match, the email will arrive shortly. The code expires in 15 minutes.';
  document.querySelector('#verifyRegistrationForm button[type=submit]').textContent=stationVerificationMode==='edit'?'Verify code & edit station':'Verify code & add station';
  registrationResendCooldown(info.resend_after===undefined?60:info.resend_after);

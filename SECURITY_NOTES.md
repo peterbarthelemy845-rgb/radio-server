@@ -39,19 +39,34 @@ Both phone and radio must have internet access. The flow works on the same Wi-Fi
 
 The home screen displays the saved radio code once registered online. The radio re-registers the same code after reboot without cancelling a pending approval. Reset code generates and saves a replacement, invalidates the previous registration and cancels pending approvals; existing approved phones remain connected until Unlink phones is used. Only one unexpired phone approval may wait per radio. Pair requests still expire after two minutes and station commands after five minutes. Failed registrations back off for one minute. Start limits remain 30 per radio/hour and claim limits five per IP/15 minutes. The persistent code is a discovery identifier, not a grant or administrator password.
 
-## Station content moderation
+## Conditional automatic station screening (October 31, 2026)
 
-Obvious profanity and adult terms are rejected server-side in submitted names,
-titles and bios, including common punctuation, case, accent, zero-width and
-numeric substitutions. This is a conservative filter, not a comprehensive
-classifier. All new station text and re-encoded artwork require administrator
-review after email verification; verification alone never publishes a listing.
+Clear new submissions publish after email verification. Local profanity flags,
+provider flags, uncertain sexual-content scores (>= 0.05), invalid responses,
+missing credentials and scanner failures go to the private administrator queue.
+The threshold is deliberately conservative, not an exact confidence percentage.
+Admins can override a false positive after reviewing the exact version of the
+content. A changed submission invalidates a previous automatic pass.
 
-Owner changes are held in a private pending proposal while the approved version
-remains public. Administrators review the proposed artwork, bio and stream URL.
-Review hashes bind approval to the exact content shown, preventing stale-page
-approval of a later replacement. Pending/rejected/orphan uploads return 404 to
-anonymous users, including normalized static-path aliases; authenticated admin
-sessions can preview them with private/no-store responses. No uploaded images
-are sent to an external AI service. Existing approved stations are preserved.
-Artwork moderation is human review; no automatic porn-image detector is claimed.
+Owner changes to approved text/stream URLs can reuse already approved artwork.
+New artwork must pass screening or remain a private draft; the old listing stays
+public. Existing approved stations are not rescanned or removed by this release.
+
+To enable artwork screening in Render radio-server > Environment, add:
+- STATION_IMAGE_MODERATION=openai
+- OPENAI_API_KEY=<a dedicated project API key, entered only in Render>
+
+Do not commit the key or paste it into chat. Without BOTH settings, artwork stays
+in manual review. Changing credentials requires a service redeploy. Only submitted
+name/title/bio and normalized local image bytes go to the fixed OpenAI moderation
+endpoint over verified TLS; no contact email, stream address or radio credential
+is sent. No redirects are followed, and responses/images/timeouts are bounded.
+No new dependency is required. The API is not a dedicated CSAM detector: locally
+flagged content is held without forwarding; known or suspected CSAM must not be
+submitted to the provider. Follow its dedicated child-safety handling guidance.
+
+Tests use benign generated images and a mocked provider; no real outbound API or
+owner emails. Confirm the first real benign submission end-to-end after securely
+connecting the key. The admin scanner indicator confirms configuration only,
+not provider availability; any provider error is shown as an individual review
+reason. Screening is imperfect; retain reporting and administrator removal.

@@ -18,7 +18,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
     <a class="btn approve" href="/admin/viewership">Viewership</a>
     <a class="btn reject" href="/admin/logout">Logout</a>
   </div>
-  <section class="card"><h2>Content review required</h2><p>Email verification does not publish a station. Review its name, title, bio and every uploaded image before approving. Pornographic artwork and explicit language are not allowed. Existing approved listings remain unchanged while owner edits await review.</p></section>
+  <section class="card"><h2>Flagged content review</h2><p>Clear submissions publish automatically after email verification. Flagged or unscanned submissions need your approval. Existing approved listings stay visible while flagged owner edits await review.</p><p>Artwork scanner: <strong>{{ "Connected" if station_scanner_ready() else "Not configured — unscanned artwork stays private for review" }}</strong></p></section>
   {% include 'content_edits.html' %}
   <div class="overview"><a href="#pending-stations">Stations awaiting review<strong>{{ pending_count }}</strong></a><a href="#approved-stations">Approved stations<strong>{{ approved_count }}</strong></a></div>
   <form class="card filter" method="get"><label>Find a station<input name="q" value="{{ query }}" placeholder="Name, email, station code or stream URL"></label><label>Status<select name="status"><option value="all">All stations</option><option value="active" {% if station_status == 'active' %}selected{% endif %}>Not suspended</option><option value="suspended" {% if station_status == 'suspended' %}selected{% endif %}>Suspended</option></select></label><button class="btn link">Search</button><a href="/admin/pending">Clear</a></form>
@@ -31,7 +31,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
         <div class="name">{{ s.flag or 'HT' }} {{ s.name }}</div>{% if s.email_verification_required and not s.email_verified %}<p class="badge">Waiting for email verification</p>{% endif %}<p>Agreement: {{ legal_agreement_status(s) }}</p>
         <div class="url">{{ s.url }}</div>
         <div>{{ s.website or s.subtitle }}</div>
-        <p>Station code: {{ s.listener_code or 'Not assigned' }}</p>
+        {% for reason in (s.content_moderation or {}).get('reasons', []) %}<p class="badge">{{ reason }}</p>{% endfor %}<p>Station code: {{ s.listener_code or 'Not assigned' }}</p>
         {% if s.contact_email %}<div class="url">Contact: {{ s.contact_email }}</div>{% endif %}
         <div class="actions">
           {% if not s.email_verification_required or s.email_verified %}<form method="post" action="/admin/approve/{{ s._index }}"><input type="hidden" name="review_version" value="{{ station_review_version(s) }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Approve</button></form>{% endif %}
@@ -59,7 +59,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
         {% endif %}
         <div class="actions">
           <a class="btn link" href="/admin/edit/{{ s._index }}">Edit</a>
-          <p>Station code: {{ s.listener_code or 'Not assigned' }}{% if s.owner_suspended %} · Suspended by owner{% endif %}</p>
+          {% for reason in (s.content_moderation or {}).get('reasons', []) %}<p class="badge">{{ reason }}</p>{% endfor %}<p>Station code: {{ s.listener_code or 'Not assigned' }}{% if s.owner_suspended %} · Suspended by owner{% endif %}</p>
 
           {% if s.suspended %}
           <form method="post" action="/admin/restore/{{ s._index }}"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="btn approve">Restore</button></form>
