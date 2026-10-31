@@ -1,1 +1,13 @@
-<details style="margin:16px 0"><summary style="cursor:pointer;font-weight:bold">Already registered? Edit your station</summary><form id="stationEditLoginForm" action="/station-access/request" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><label for="stationAccessEmail">Registered email</label><input id="stationAccessEmail" type="email" name="email" required maxlength="254" autocomplete="email" placeholder="owner@example.com"><label for="stationAccessCode">Station code</label><input id="stationAccessCode" name="code" required inputmode="numeric" pattern="[0-9]{2,6}" maxlength="6" placeholder="2-6 digit code"><button type="submit" class="save-btn" style="margin-top:10px">Log in to edit station</button><p>Enter the private verification code sent to your email to open the editor.</p></form></details>
+{% set registration_open = request.args.get('create') == '1' or (status is defined and status == 'error') %}
+<section id="ownerLoginPanel" class="owner-access-card" aria-labelledby="ownerAccessTitle" {% if registration_open %}hidden{% endif %}>
+ <div class="owner-access-emblem" aria-hidden="true"><svg viewBox="0 0 64 64" width="50" height="50" fill="none" stroke="currentColor" stroke-width="3"><circle cx="32" cy="24" r="5"/><path d="M26 33l-9 23m21-23l9 23M22 44h20M23 15a13 13 0 0 0 0 18m18-18a13 13 0 0 1 0 18M16 8a23 23 0 0 0 0 32m32-32a23 23 0 0 1 0 32"/></svg></div>
+ <h1 id="ownerAccessTitle">Already registered?<span>Edit your station</span></h1>
+ <form id="stationEditLoginForm" action="/station-access/request" method="post">
+  <input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
+  <label for="stationAccessEmail">Registered email</label><input id="stationAccessEmail" type="email" name="email" required maxlength="254" autocomplete="email" placeholder="owner@example.com">
+  <label for="stationAccessCode">Station code</label><input id="stationAccessCode" name="code" required inputmode="numeric" pattern="[0-9]{2,6}" maxlength="6" placeholder="2-6 digit code">
+  <button type="submit" class="save-btn owner-access-login">Log in to edit station</button>
+ </form>
+ <div class="owner-access-divider"><span>OR</span></div>
+ <a id="ownerCreateStation" class="owner-access-create" href="/add-station?create=1" aria-controls="ownerRegistrationPanel">Don't have a station? <strong>Create station</strong></a>
+</section>

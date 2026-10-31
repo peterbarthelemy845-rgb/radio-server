@@ -1,3 +1,4 @@
+{% set registration_open = request.args.get('create') == '1' or (status is defined and status == 'error') %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,17 +22,14 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
 .logo-cropper.active{display:block}.logo-cropper canvas{width:160px;height:160px;border-radius:20px;background:#071642;display:block;margin:0 auto 10px}.logo-cropper label{font-size:13px;margin:8px 0 4px}.logo-cropper input[type=range]{width:100%;min-height:auto;padding:0}
 .logo-cropper canvas{width:240px!important;height:240px!important;max-width:100%;border-radius:50%!important;outline:3px solid #39bfff;touch-action:none;cursor:grab;margin:20px auto!important}.logo-cropper input[type=range]{min-height:44px;accent-color:#168fff}.logo-cropper p{text-align:center;font-size:14px}.logo-cropper button{display:block;margin:12px auto;padding:10px 20px;width:auto}.logo-cropper{max-width:520px;margin:12px auto!important}
 </style>
+<link rel="stylesheet" href="/static/owner-entry.css?v=1">
 </head>
-<body>
+<body class="owner-entry-page">
 <main class="wrap">
   {% if message and status != 'ok' %}<div class="msg {% if status == 'error' %}err{% else %}ok{% endif %}" style="margin-bottom:14px;text-align:center">{{ message }}</div>{% endif %}
-  <section class="brand">
-    <div class="icon">📻</div>
-    <h1 data-i18n="addStation">Add Station</h1>
-
-  </section>
-  <section class="card">
+  <section class="card station-access-shell">
     {% include 'resend_station_code.html' %}
+<section id="ownerRegistrationPanel" {% if not registration_open %}hidden{% endif %}><button id="ownerBackToLogin" type="button" class="owner-back-login">← Back to login</button><h1>Create your station</h1>
 <form method="post" action="/api/add-station" enctype="multipart/form-data">{% include 'owner_submission_fields.html' %}
       <div class="row">
         <label for="name" data-i18n="stationNameLabel">Station name</label>
@@ -69,8 +67,9 @@ h1{font-size:clamp(32px,8vw,48px);line-height:1.05;margin:0;font-weight:900;lett
 
       <p class="hint">Use family-friendly names, titles, bios and artwork. No profanity or pornography. Submissions and changes are checked automatically. Flagged or unscanned content requires administrator review.</p>{% include 'rights_acceptance.html' %}<button class="btn" type="submit" data-i18n="saveStation">Save Station</button>
     </form>
+</section>
   </section>
-{% include 'legal_links.html' %}</main>
+{% include 'legal_links.html' %}</main><nav class="owner-entry-nav" aria-label="Main navigation"><a href="/#radio">Radio</a><a href="/#library">Library</a><a href="/add-station" aria-current="page">Add Station</a></nav>
 <script nonce="{{ csp_nonce() }}" src="/static/logo-cropper.js?v=3"></script>
 <script nonce="{{ csp_nonce() }}">
 const translations={
@@ -108,5 +107,5 @@ setupLogoCropper(document.querySelector('form[action="/api/add-station"]'));
 </script>
 {% include 'submission_success.html' %}
 <script nonce="{{ csp_nonce() }}" src="/static/station-validation.js?v=2"></script>
-<script nonce="{{ csp_nonce() }}" src="/static/page-actions.js?v=1" defer></script></body>
+<script nonce="{{ csp_nonce() }}" src="/static/page-actions.js?v=1" defer></script><script nonce="{{ csp_nonce() }}" src="/static/owner-entry.js?v=1" defer></script></body>
 </html>
