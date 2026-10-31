@@ -15,9 +15,9 @@
  <div class="radio-progress" role="status" aria-live="polite"><output id="radioApprovalCheck" hidden></output><p id="radioAddMessage"></p></div>
  <button id="radioYes" type="button" class="wide" hidden>Add station</button>
  <button id="linkAnotherRadio" type="button" hidden>Use another radio</button>
- {% include "sponsor_demo.html" %}
+ {% with sponsor_always_visible=true %}{% include "sponsor_demo.html" %}{% endwith %}
  <a id="radioNo" class="back-stations" href="/#library">Back to stations</a>
 </section>
 <script nonce="{{ csp_nonce() }}">const publicCode={{ station.listener_code|tojson }};</script>
-<script nonce="{{ csp_nonce() }}" src="/static/radio-add.js?v=8" defer></script>
+<script nonce="{{ csp_nonce() }}" src="/static/radio-add.js?v=9" defer></script>
 {% endblock %}
