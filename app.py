@@ -1568,6 +1568,8 @@ from content_moderation import register_moderation
 register_moderation(app, sys.modules[__name__])
 from turnstile_protection import register_turnstile
 register_turnstile(app)
+from public_analytics import register_public_analytics
+register_public_analytics(app)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

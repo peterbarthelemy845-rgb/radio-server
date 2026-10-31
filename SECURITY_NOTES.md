@@ -96,3 +96,17 @@ Tests mock Cloudflare and check both server enforcement and the browser form
 flow, including one submission per pass, fresh tokens, action binding, expired or
 failed checks and retry behavior. A real interactive challenge must be completed
 by a person if Cloudflare presents one; tests must not solve or bypass CAPTCHAs.
+
+
+## Public website analytics and uptime alerts
+
+Cloudflare Web Analytics uses its public beacon identifier (not an API secret)
+on the home, Add Station and public station pages only. The external module has
+the existing per-response CSP nonce. Admin, owner editing, email-access, device
+and phone-linking endpoints are excluded, as are responses containing private
+link parameters. No additional general script origin is allowed by CSP.
+
+The free UptimeRobot monitor request was submitted for the public HTTPS home URL
+and the email expressly confirmed by the owner. Monitoring remains pending until
+the owner opens the activation email and confirms. Do not claim it is active
+solely from the API's generic 200/ok response. No payment or paid plan was selected.
