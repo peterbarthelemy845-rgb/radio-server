@@ -130,9 +130,9 @@ assert second.get('/api/radio/linked').get_json()['radios']==[]
 assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':'JKLMNPQR'},headers=headers).status_code==200
 assert second.get('/api/radio/link/status').get_json()['status']=='cancelled'
 assert second.post('/api/radio/link/claim',json={'owner_csrf':'second-test','pair_code':fixed},environ_base={'REMOTE_ADDR':'198.51.100.231'}).status_code==400
-assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':'1234'},headers=headers).status_code==400
+assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':'123'},headers=headers).status_code==400
 assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':fixed}).status_code==401
-numeric='123456'
+numeric='1234'
 assert device.post('/api/radio/link/start',json={'radio_id':identifier,'stable_pair_code':numeric},headers=headers).status_code==200
 numeric_phone=app.test_client()
 with numeric_phone.session_transaction() as sess:sess['owner_csrf']='numeric-test'

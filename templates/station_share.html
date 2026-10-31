@@ -10,7 +10,7 @@
  <input id="radioCsrf" type="hidden" value="{{ owner_csrf() }}">
  <div id="radioChoiceRow" hidden><label for="radioChoice">Your radio</label><select id="radioChoice"></select></div>
  <section id="radioPairPanel" hidden>
-  <form id="radioPairForm"><label for="radioPairCode">Device Code</label><p class="hint" id="radioCodeHint">Find it on your radio screen.</p><input id="radioPairCode" aria-describedby="radioCodeHint" inputmode="text" pattern="([0-9]{6,10}|[A-HJ-NP-Za-hj-np-z2-9]{4}-?[A-HJ-NP-Za-hj-np-z2-9]{4})" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" required placeholder="123456"><button type="submit" class="wide">Add station</button></form>
+  <form id="radioPairForm"><label for="radioPairCode">Device Code</label><p class="hint" id="radioCodeHint">Find it on your radio screen.</p><input id="radioPairCode" aria-describedby="radioCodeHint" inputmode="text" pattern="([0-9]{4,10}|[A-HJ-NP-Za-hj-np-z2-9]{4}-?[A-HJ-NP-Za-hj-np-z2-9]{4})" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" required placeholder="1234"><button type="submit" class="wide">Add station</button></form>
  </section>
  <div class="radio-progress" role="status" aria-live="polite"><output id="radioApprovalCheck" hidden></output><p id="radioAddMessage"></p></div>
  <button id="radioYes" type="button" class="wide" hidden>Add station</button>
