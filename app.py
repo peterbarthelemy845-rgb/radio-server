@@ -1566,6 +1566,8 @@ from radio_link import register_radio_link
 register_radio_link(app, sys.modules[__name__])
 from content_moderation import register_moderation
 register_moderation(app, sys.modules[__name__])
+from turnstile_protection import register_turnstile
+register_turnstile(app)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

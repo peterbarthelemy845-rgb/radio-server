@@ -70,3 +70,29 @@ owner emails. Confirm the first real benign submission end-to-end after securely
 connecting the key. The admin scanner indicator confirms configuration only,
 not provider availability; any provider error is shown as an individual review
 reason. Screening is imperfect; retain reporting and administrator removal.
+
+
+## Optional Cloudflare Turnstile
+
+Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY together in Render after deploying
+this release. With neither setting, existing forms remain available; partial
+configuration fails closed. Hostnames allowed by server verification are the
+public apex/www names and radio-server-z0hb.onrender.com. The Cloudflare widget
+must use those same hostnames, Managed mode, and no pre-clearance bypass.
+
+Public station registration, station-editor email requests, and code resends
+require a fresh server-verified token. Hostname and action must match, token length
+is bounded, and redirects, invalid responses and outages never allow a protected
+request through. CSRF and persistent rate limits remain enabled. Device APIs,
+email-code verification and existing admin authentication are unchanged.
+
+Turnstile is loaded only when one of these forms is submitted, so normal listening
+and station browsing do not contact Cloudflare. No submitted station content or
+email is sent in Siteverify requests; only the secret and verification token.
+Keys belong only in ignored local env files and Render configuration. Production
+keys must never be included in tests, screenshots or commit contents.
+
+Tests mock Cloudflare and check both server enforcement and the browser form
+flow, including one submission per pass, fresh tokens, action binding, expired or
+failed checks and retry behavior. A real interactive challenge must be completed
+by a person if Cloudflare presents one; tests must not solve or bypass CAPTCHAs.

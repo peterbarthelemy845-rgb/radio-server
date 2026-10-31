@@ -1,5 +1,6 @@
 """Central request protection and persistent, session-independent throttling."""
 import hashlib
+import os
 from contextlib import closing
 import sqlite3
 import time
@@ -74,7 +75,7 @@ def register_security(app):
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        response.headers['Content-Security-Policy'] = "script-src 'self' 'nonce-"+nonce()+"'; script-src-attr 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+        response.headers['Content-Security-Policy'] = "script-src 'self' 'nonce-"+nonce()+"'"+(" https://challenges.cloudflare.com" if os.environ.get("TURNSTILE_SITE_KEY") else "")+"; script-src-attr 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
         response.headers['Permissions-Policy']='camera=(), microphone=(), geolocation=()'
         response.headers['Strict-Transport-Security']='max-age=31536000'
         if response.mimetype=='text/html':response.headers.setdefault('Cache-Control','no-store')
