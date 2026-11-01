@@ -61,7 +61,14 @@ def validate_backup(upload, stage):
                             if name=='owner_data/radio-links.sqlite3':
                                 # A restore must not resurrect a revoked phone or replay old commands.
                                 for table in ('phone_radios','radio_pairs','radio_pair_claims','radio_commands'):db.execute('DELETE FROM '+table)
-                                db.commit()
+                            if name=='owner_data/owners.sqlite3':
+                                for table in ('local_ad_receipts','local_ad_devices'):
+                                    if table in tables:db.execute('DELETE FROM '+table)
+                                if 'local_ad_settings' in tables:db.execute('UPDATE local_ad_settings SET enabled=0 WHERE id=1')
+                                if 'local_ads' in tables:db.execute('UPDATE local_ads SET enabled=0,revision=revision+1')
+                                if 'station_edit_links' in tables:db.execute('UPDATE station_edit_links SET expires=0')
+                                if 'station_edit_otps' in tables:db.execute("UPDATE station_edit_otps SET expires=0,state='expired'")
+                            db.commit()
                     except sqlite3.DatabaseError:
                         raise ValueError('Backup contains an invalid database.')
                 accepted.append(name)

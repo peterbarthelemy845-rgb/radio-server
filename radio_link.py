@@ -47,6 +47,8 @@ def register_radio_link(app,radio):
         if row is None or not hmac.compare_digest(row['secret_hash'],secret):abort(401)
         return identifier
 
+    app.extensions['radio_authenticate'] = authenticate
+
     def grants(db):
         now=int(time.time());tokens=session.get('phone_radio_tokens',[])
         if not isinstance(tokens,list):return []

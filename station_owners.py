@@ -28,6 +28,8 @@ def connect():
     schema(db)
     from station_directory import schema as directory_schema
     directory_schema(db)
+    from station_ads import schema as local_ads_schema
+    local_ads_schema(db)
     return db
 
 @contextmanager

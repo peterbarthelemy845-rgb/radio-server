@@ -1,0 +1,35 @@
+{% extends 'ad_public_base.html' %}
+{% block title %}Local sponsor ads · {{ station.name }}{% endblock %}
+{% block extra_head %}{% if demo %}<meta name="robots" content="noindex,nofollow">{% endif %}<link rel="stylesheet" href="/static/station-ads.css?v=1">{% endblock %}
+{% block content %}
+<header class="ads-heading"><p class="eyebrow-light">{{ station.name }} · Station #{{ station.listener_code }}</p><h1>Local sponsor ads</h1><p>Run sponsor messages on radios playing your station.</p></header>
+{% if demo %}<p class="demo-notice">Dashboard preview only. These are examples. No ad is being sent and no payment is taken. <a href="/#add-station">Sign in to manage your station.</a></p>{% else %}<a class="home" href="/station/edit">← Back to your station</a>{% endif %}
+<section class="card plan-card"><div><span class="plan-badge">Free pilot</span><h2>$0 <small>for now</small></h2><p>No subscription or payment method required.</p></div><p class="hint">Payments are not connected. There are no automatic charges.</p></section>
+{% if not published %}<p class="demo-notice">Your station must be published and not suspended before its ads can start.</p>{% endif %}
+{% if not enabled %}<p class="demo-notice">Radio ads are paused by the administrator. You can still upload and preview.</p>{% endif %}
+{% if saved %}<p class="success-message" role="status">Ad uploaded and saved. Check its review status below. Approved ads stay paused until you choose Start.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<section class="card"><h2>Upload a sponsor ad</h2><p class="hint">Use a clear, wide image with large text. JPG, PNG or WebP; under 3 MB and 4 megapixels.</p>
+<form id="localAdForm" action="/station/ads" method="post" enctype="multipart/form-data"><fieldset {% if demo %}disabled{% endif %}><input type="hidden" name="owner_csrf" value="{{ owner_csrf() if not demo else '' }}">
+<label for="adBrand">Business name</label><input id="adBrand" name="brand" required maxlength="32" placeholder="Community Bakery" value="{{ request.form.get('brand','') if not demo else '' }}">
+<label for="adMessage">Short offer or message (42 characters)</label><input id="adMessage" name="message" required maxlength="42" placeholder="Fresh bread every morning" value="{{ request.form.get('message','') if not demo else '' }}">
+<label for="adPhone">Business phone (optional)</label><input id="adPhone" name="phone" maxlength="32" type="tel" placeholder="Business phone" value="{{ request.form.get('phone','') if not demo else '' }}">
+<label for="adImage">Sponsor image</label><input id="adImage" name="image" type="file" accept="image/png,image/jpeg,image/webp" required>
+<div class="ad-date-row"><div><label for="adStart">Start date</label><input id="adStart" name="start_date" type="date" value="{{ request.form.get('start_date','') if not demo else '' }}"></div><div><label for="adEnd">Last day</label><input id="adEnd" name="end_date" type="date" value="{{ request.form.get('end_date','') if not demo else '' }}"></div></div>
+<p class="hint">Dates use New York time. Leave blank for today through the next 30 days.</p>
+<label class="check ad-rights"><input name="rights" type="checkbox" required><span>I have permission to advertise this business and use its images and claims. I agree to the <a href="/terms">station agreement</a> and <a href="/privacy">privacy notice</a>.</span></label>
+<p class="hint">Automatic screening checks text and artwork. Flagged or unscanned ads need administrator approval. New ads are saved paused.</p>
+<button class="wide" type="submit">Upload ad</button></fieldset></form>
+<h3>Radio pop-up preview</h3><p id="adPreviewError" class="error" hidden></p>
+<div class="lcd-preview" aria-label="Example radio sponsor popup"><div class="lcd-underlay">Your station keeps playing</div><div class="lcd-popup"><div class="lcd-label">Sponsored <span aria-hidden="true">×</span></div><strong id="previewBrand">Community Bakery</strong><img id="previewImage" src="/static/local-ad-demo.svg" alt="Sponsor artwork preview"><div id="previewMessage">Fresh bread every morning</div><small id="previewPhone">Business phone</small></div><div class="lcd-volume" aria-hidden="true">− ━━━━━━━━━ +</div></div>
+<p class="hint">On updated radios: first ad after 10 minutes of uninterrupted listening; at most once every 30 minutes. Large close button; auto-closes after 8 seconds. No ads over setup, phone approval or warnings. Audio continues.</p>
+</section>
+<section class="card"><h2>Your ads</h2><p class="hint">Displayed counts are reports from devices, not confirmed views or unique listeners. No audience or sales are guaranteed.</p>
+{% for ad in ads %}<article class="campaign"><div class="campaign-header"><h3>{{ ad.brand }}</h3><span class="ad-status">{{ 'Needs review' if ad.review=='review' else 'Rejected' if ad.review=='rejected' else 'Paused' if not ad.enabled else 'Scheduled' if ad.start_at > now else 'Ended' if ad.end_at <= now else 'Running' }}</span></div>
+<img class="campaign-image" src="{{ '/static/local-ad-demo.svg' if demo else '/station/ads/'~ad.id~'/image' }}" alt="{{ ad.brand }} sponsor image" loading="lazy"><p>{{ ad.message }}</p>{% if ad.phone %}<p>{{ ad.phone }}</p>{% endif %}<p class="hint">{{ ad.start_date }} – {{ ad.end_date }} · New York time</p><p><strong>{{ ad.displays }}</strong> displayed</p>
+{% if ad.review=='review' %}<p class="hint">Awaiting administrator review. This ad cannot run yet.</p>{% endif %}
+<div class="ad-actions">{% if demo %}<button disabled>Start</button><button disabled>Delete</button>{% else %}<form action="/station/ads/{{ ad.id }}/{{ 'pause' if ad.enabled else 'start' }}" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="revision" value="{{ local_ad_revision(ad) }}"><button {% if ad.review!='approved' or not published %}disabled{% endif %}>{{ 'Pause' if ad.enabled else 'Start' }}</button></form><form class="delete-ad-form" action="/station/ads/{{ ad.id }}/delete" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="revision" value="{{ local_ad_revision(ad) }}"><button class="danger">Delete</button></form>{% endif %}</div>{% if not demo %}<details><summary>Change dates</summary><form action="/station/ads/{{ ad.id }}/schedule" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><input type="hidden" name="revision" value="{{ local_ad_revision(ad) }}"><div class="ad-date-row"><label>Start date<input name="start_date" type="date" required value="{{ ad.start_date }}"></label><label>Last day<input name="end_date" type="date" required value="{{ ad.end_date }}"></label></div><button>Save dates</button></form></details>{% endif %}</article>{% else %}<p>You haven’t uploaded any ads yet.</p>{% endfor %}
+</section>
+{% if not demo %}<a class="button wide" href="/station/edit">Back to your station</a>{% endif %}
+<script nonce="{{ csp_nonce() }}" src="/static/station-ads.js?v=1" defer></script>
+{% endblock %}

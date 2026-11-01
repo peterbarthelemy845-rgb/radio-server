@@ -146,6 +146,7 @@ def register_directory(app, radio):
     radio.get_add_station_url=lambda:'https://www.radiolavoixdivine.com/add-station'
     radio.get_remote_streams=lambda:[]
     original_load=radio.load_station_store
+    app.extensions['station_store_read_only']=original_load
     original_save=radio.save_station_store
     def load():
         store=original_load();prepare_store(store);return store

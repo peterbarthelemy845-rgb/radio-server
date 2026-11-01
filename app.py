@@ -1564,6 +1564,9 @@ from station_sharing import register_sharing
 register_sharing(app, sys.modules[__name__])
 from radio_link import register_radio_link
 register_radio_link(app, sys.modules[__name__])
+from station_ads import register_station_ads
+register_station_ads(app, sys.modules[__name__])
+
 from content_moderation import register_moderation
 register_moderation(app, sys.modules[__name__])
 from turnstile_protection import register_turnstile
