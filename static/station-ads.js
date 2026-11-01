@@ -1,6 +1,6 @@
 "use strict";
 (()=>{
- const form=document.getElementById('localAdForm');if(!form)return;
+ const form=document.getElementById('localAdForm');
  for(const [field,preview,fallback] of [['adBrand','previewBrand','Business name'],['adMessage','previewMessage','Your sponsor message'],['adPhone','previewPhone','']]){
   const input=document.getElementById(field);input?.addEventListener('input',()=>{document.getElementById(preview).textContent=input.value.normalize('NFKD').replace(/[^\x20-\x7e]/g,'')||fallback;});
  }

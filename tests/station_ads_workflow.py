@@ -21,26 +21,39 @@ def owner(station):
     return client
 
 client=owner(station);stranger=owner(other);public=app.test_client()
+with public.session_transaction() as s:s['owner_csrf']='test-csrf'
+assert public.get('/advertise/55').status_code==200
+assert public.get('/advertise/99').status_code==404
+from turnstile_protection import HOSTS
+with patch.dict(os.environ, {'TURNSTILE_SITE_KEY':'test-site','TURNSTILE_SECRET_KEY':'test-secret'}), patch('turnstile_protection.siteverify',return_value={'success':True,'action':'wrong','hostname':'www.radiolavoixdivine.com'}):
+ assert public.post('/advertise/55',data={'owner_csrf':'test-csrf','cf-turnstile-response':'fake'}).status_code==400
+assert b'/advertise/' in public.get('/').data
+assert b'id="localAdForm"' not in client.get('/station/ads').data
+assert client.post('/station/ads',data={}).status_code==405
 assert public.get('/station/ads').status_code==401
 assert public.get('/local-ads-demo').status_code==200
 assert b'$0' in client.get('/station/ads').data
 def picture():
     out=io.BytesIO();Image.new('RGB',(120,60),'blue').save(out,format='PNG');out.seek(0);return out
 def upload(**changes):
-    data=dict(owner_csrf='test-csrf',brand='Community Bakery',message='Fresh bread every morning',phone='555-0100',rights='on',image=(picture(),'image.png'))
+    data=dict(owner_csrf='test-csrf',brand='Community Bakery',message='Fresh bread every morning',phone='555-0100',contact_name='Test Business',contact_email='business@example.invalid',rights='on',image=(picture(),'image.png'))
     data.update(changes)
-    return client.post('/station/ads',data=data)
+    return public.post('/advertise/55',data=data)
 def rows():
     with app.app_context(),owners.database() as db:return [dict(r) for r in db.execute('SELECT * FROM local_ads ORDER BY rowid')]
 with patch('automatic_screening.assess',return_value={'status':'passed','reasons':['Passed']}):
     result=upload(owner_csrf='bad');assert result.status_code==400
     result=upload();assert result.status_code==302,(result.status_code,result.data[:200])
 row=rows()[0];identifier=row['id'];assert row['review']=='approved' and not row['enabled']
+assert row['contact_email']=='business@example.invalid'
+assert b'business@example.invalid' not in public.get('/advertise/55').data
+assert b'business@example.invalid' in client.get('/station/ads').data
+assert public.post('/station/ads/'+identifier+'/approve',data={'owner_csrf':'test-csrf'}).status_code==401
 image='/station/ads/'+identifier+'/image'
 assert client.get(image).status_code==200 and stranger.get(image).status_code==404 and public.get(image).status_code==401
 assert public.get('/static/wallpapers/'+row['image']).status_code==404
 assert 'no-store' in client.get(image).headers['Cache-Control']
-action='/station/ads/'+identifier+'/start'
+action='/station/ads/'+identifier+'/approve'
 assert stranger.post(action,data={'owner_csrf':'test-csrf','revision':station_ads.revision(row)}).status_code==404
 assert client.post(action,data={'owner_csrf':'test-csrf','revision':'stale'}).status_code==409
 assert client.post(action,data={'owner_csrf':'test-csrf','revision':station_ads.revision(row)}).status_code==302
@@ -60,27 +73,29 @@ assert device.post('/api/radio/ad/displayed',json=ack,headers=headers).status_co
 assert device.post('/api/radio/ad/displayed',json=ack,headers=headers).status_code==200
 assert rows()[0]['displays']==1
 assert device.post('/api/radio/ad',json={'radio_id':device_id,'station_code':'55'},headers=headers).json['ad'] is None
+admin=app.test_client()
+with app.app_context(),admin.session_transaction() as s:admin_security.new_session(s,'full');s['owner_csrf']='admin-csrf'
 row=rows()[0]
-assert client.post('/station/ads/'+identifier+'/pause',data={'owner_csrf':'test-csrf','revision':station_ads.revision(row)}).status_code==302
+assert admin.post('/admin/local-ads/'+identifier+'/pause',data={'owner_csrf':'admin-csrf','revision':station_ads.revision(row)}).status_code==302
 assert device.get(ad['pixels_path'],headers=headers).status_code==404
 row=rows()[0]
-assert client.post('/station/ads/'+identifier+'/schedule',data={'owner_csrf':'test-csrf','revision':station_ads.revision(row),'start_date':row['start_date'],'end_date':row['end_date']}).status_code==302
-assert rows()[0]['revision']==row['revision']+1
+assert client.post('/station/ads/'+identifier+'/schedule',data={'owner_csrf':'test-csrf','revision':station_ads.revision(row),'start_date':row['start_date'],'end_date':row['end_date']}).status_code==404
+assert rows()[0]['revision']==row['revision']
 
 with patch('automatic_screening.assess',return_value={'status':'review','reasons':['Needs artwork review']}):assert upload().status_code==302
 flagged=rows()[1]
-assert client.post('/station/ads/'+flagged['id']+'/start',data={'owner_csrf':'test-csrf','revision':station_ads.revision(flagged)}).status_code==400
-admin=app.test_client()
-with app.app_context(),admin.session_transaction() as s:admin_security.new_session(s,'full');s['owner_csrf']='admin-csrf'
+assert client.post('/station/ads/'+flagged['id']+'/approve',data={'owner_csrf':'test-csrf','revision':station_ads.revision(flagged)}).status_code==400
+
 assert admin.get('/admin/local-ads').status_code==200
 assert admin.get('/admin/local-ads/main').status_code==200
 assert public.get('/admin/local-ads/main').status_code==302
 with patch('automatic_screening.assess',return_value={'status':'passed','reasons':['Passed']}):
- result=admin.post('/admin/local-ads/main',data=dict(owner_csrf='admin-csrf',brand='Main station sponsor',message='Community messages',phone='',rights='on',image=(picture(),'image.png')))
+ with owners.database() as db: main_code=db.execute('SELECT code FROM listener_codes WHERE station_key=?',(key_for(dict(radio.TEST_STREAMS[0],url=radio.MAIN_STREAM_URL)),)).fetchone()[0]
+ result=public.post('/advertise/'+main_code,data=dict(owner_csrf='test-csrf',brand='Main station sponsor',message='Community messages',phone='',contact_name='Main Business',contact_email='main@example.invalid',rights='on',image=(picture(),'image.png')))
  assert result.status_code==302,result.data
 main=rows()[-1]
 assert main['brand']=='Main station sponsor'
-assert admin.post('/admin/local-ads/main/'+main['id']+'/start',data={'owner_csrf':'admin-csrf','revision':station_ads.revision(main)}).status_code==302
+assert admin.post('/admin/local-ads/main/'+main['id']+'/approve',data={'owner_csrf':'admin-csrf','revision':station_ads.revision(main)}).status_code==302
 assert stranger.get('/station/ads/'+main['id']+'/image').status_code==404
 
 junior=app.test_client()

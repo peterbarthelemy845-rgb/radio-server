@@ -4,6 +4,7 @@ import io
 import json
 import re
 import secrets
+import sqlite3
 import struct
 import time
 import warnings
@@ -16,7 +17,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from PIL import Image, ImageOps
 
 AD_WIDTH, AD_HEIGHT = 256, 76
-AD_POLICY = 'local-sponsors-2026-11-01'
+AD_POLICY = 'local-business-submissions-2026-11-01'
 
 
 def schema(db):
@@ -38,6 +39,15 @@ def schema(db):
       displayed INTEGER DEFAULT 0);
     CREATE INDEX IF NOT EXISTS local_ad_receipt_device ON local_ad_receipts(radio_id,expires);
     ''')
+    columns = {row[1] for row in db.execute('PRAGMA table_info(local_ads)')}
+    for name in ('contact_name', 'contact_email'):
+        if name not in columns:
+            try:
+                db.execute('ALTER TABLE local_ads ADD COLUMN '+name+" TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                if name not in {row[1] for row in db.execute('PRAGMA table_info(local_ads)')}:
+                    raise
+    db.commit()
 
 
 def schedule(start, end):
@@ -92,6 +102,18 @@ def register_station_ads(app, radio):
         return [dict(row) for row in rows], enabled
 
     def owner():
+        if request.path.startswith('/advertise/'):
+            code = request.view_args.get('code', '')
+            if not re.fullmatch(r'[0-9]{2,6}', code):
+                abort(404)
+            station = next((s for s in radio.load_station_store().get('custom_stations', [])
+                            if s.get('listener_code') == code and published(key_for(s))), None)
+            if not station:
+                main = primary()
+                station = main if main['listener_code'] == code else None
+            if not station:
+                abort(404)
+            return station, True
         if request.path.startswith('/admin/local-ads/main'):
             administrator()
             return primary(), True
@@ -156,20 +178,23 @@ def register_station_ads(app, radio):
 
     @app.after_request
     def local_ad_privacy(response):
-        if request.path.startswith(('/station/ads', '/admin/local-ads', '/api/radio/ad')):
+        if request.path.startswith(('/station/ads', '/admin/local-ads', '/api/radio/ad', '/advertise/')):
             response.headers['Cache-Control'] = 'private, no-store'
             response.headers['Referrer-Policy'] = 'no-referrer'
         return response
     app.after_request_funcs[None].remove(local_ad_privacy)
     app.after_request_funcs[None].insert(0, local_ad_privacy)
 
-    @app.route('/station/ads', methods=['GET', 'POST'])
-    @app.route('/admin/local-ads/main', methods=['GET', 'POST'])
-    def station_ad_dashboard():
+    @app.route('/station/ads', methods=['GET'])
+    @app.route('/admin/local-ads/main', methods=['GET'])
+    @app.route('/advertise/<code>', methods=['GET', 'POST'])
+    def station_ad_dashboard(code=None):
         station, is_published = owner()
+        submitting = code is not None
         error = ''
         if request.method == 'POST':
             check_token()
+            limit('local-ad-public-ip', 5, 3600, request.remote_addr or 'unknown')
             limit('local-ad-create', 10, 3600, key_for(station))
             limit('local-ad-create-total', 100, 3600, 'all')
             path = None
@@ -177,6 +202,12 @@ def register_station_ads(app, radio):
                 brand = request.form.get('brand', '').strip()
                 message = request.form.get('message', '').strip()
                 phone = request.form.get('phone', '').strip()
+                contact_name = request.form.get('contact_name', '').strip()
+                contact_email = request.form.get('contact_email', '').strip().casefold()
+                if not 1 <= len(contact_name) <= 80 or len(contact_email) > 254 or not re.fullmatch(r'[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+', contact_email):
+                    raise ValueError('Enter your contact name and a valid business email.')
+                if any(ord(c) < 32 for c in contact_name+contact_email):
+                    raise ValueError('Use plain text for contact details.')
                 if not 1 <= len(brand) <= 32 or not 1 <= len(message) <= 42 or len(phone) > 32:
                     raise ValueError('Use a business name up to 32 characters, a message up to 42, and a phone up to 32.')
                 if any(ord(c) < 32 for c in brand + message + phone):
@@ -227,11 +258,11 @@ def register_station_ads(app, radio):
                     if (db.execute('SELECT COUNT(*) FROM local_ads WHERE station_key=?', (key_for(station),)).fetchone()[0] >= 100
                             or db.execute('SELECT COUNT(*) FROM local_ads WHERE deleted=0').fetchone()[0] >= 4000):
                         raise ValueError('Ad storage limit reached. Contact the administrator.')
-                    db.execute('INSERT INTO local_ads (id,station_key,brand,message,phone,image,start_at,end_at,start_date,end_date,review,reasons,created,rights_version,rights_grant) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    db.execute('INSERT INTO local_ads (id,station_key,brand,message,phone,image,start_at,end_at,start_date,end_date,review,reasons,created,rights_version,rights_grant,contact_name,contact_email) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                (secrets.token_hex(16), key_for(station), brand, message, phone, filename,
                                 start_at, end_at, first, last, 'approved' if result['status'] == 'passed' else 'review',
-                                json.dumps(result['reasons']), int(time.time()), AD_POLICY, session.get('station_edit_id')))
-                return redirect(ad_base()+'?saved=1')
+                                json.dumps(result['reasons']), int(time.time()), AD_POLICY, None, contact_name, contact_email))
+                return redirect('/advertise/'+code+'?saved=1')
             except ValueError as exc:
                 error = str(exc)
                 if path:
@@ -240,6 +271,9 @@ def register_station_ads(app, radio):
                 if path:
                     path.unlink(missing_ok=True)
                 raise
+        if submitting:
+            return render_template('station_ad_submit.html', station=station, error=error,
+                                   saved=request.args.get('saved') == '1'), 400 if error else 200
         rows, enabled = db_rows(key_for(station))
         return render_template('station_ads.html', station=station, ads=rows, enabled=enabled,
                                published=is_published and bool(published(key_for(station))), error=error,
@@ -253,26 +287,15 @@ def register_station_ads(app, radio):
         check_token()
         limit('local-ad-action', 60, 3600, key_for(station))
         row = owned_ad(identifier, key_for(station))
-        if action not in ('start', 'pause', 'delete', 'schedule'):
+        if action not in ('approve', 'delete'):
             abort(404)
         if not secrets.compare_digest(request.form.get('revision', ''), revision(row)):
             abort(409, 'This ad changed. Reload and try again.')
-        if action == 'start' and (row['review'] != 'approved' or not published(key_for(station))):
+        if action == 'approve' and (row['review'] != 'approved' or row['end_at'] <= int(time.time()) or not published(key_for(station))):
             abort(400, 'Your station and this ad must be approved before starting.')
-        if action == 'schedule':
-            try:
-                first, last, first_label, last_label = schedule(request.form.get('start_date'), request.form.get('end_date'))
-            except ValueError as exc:
-                abort(400, str(exc))
-            with database() as db:
-                changed = db.execute('UPDATE local_ads SET start_at=?,end_at=?,start_date=?,end_date=?,revision=revision+1 WHERE id=? AND station_key=? AND revision=? AND deleted=0',
-                                     (first, last, first_label, last_label, identifier, key_for(station), row['revision'])).rowcount
-                if not changed:
-                    abort(409)
-            return redirect(ad_base())
         with database() as db:
             changed = db.execute('UPDATE local_ads SET enabled=?,deleted=?,revision=revision+1 WHERE id=? AND station_key=? AND revision=? AND deleted=0',
-                                (int(action == 'start'), int(action == 'delete'), identifier,
+                                (int(action == 'approve'), int(action == 'delete'), identifier,
                                  key_for(station), row['revision'])).rowcount
             if not changed:
                 abort(409)

@@ -39,7 +39,7 @@
  };
  document.addEventListener('submit',async event=>{
   const form=event.target;
-  const action=form.id==='addStationForm'||form.getAttribute('action')==='/api/add-station'?'station-submit':
+  const action=form.id==='localAdForm'?'local-ad-submit':form.id==='addStationForm'||form.getAttribute('action')==='/api/add-station'?'station-submit':
    form.id==='stationEditLoginForm'?'station-access':form.getAttribute('action')==='/station-code/resend'?'station-code-resend':null;
   if(!action)return;
   if(form.dataset.securityReady==='yes'){delete form.dataset.securityReady;return;}

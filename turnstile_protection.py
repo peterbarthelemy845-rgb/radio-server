@@ -39,7 +39,7 @@ def register_turnstile(app):
 
     @app.before_request
     def protect_public_forms():
-        action = ACTIONS.get(request.path)
+        action = 'local-ad-submit' if request.path.startswith('/advertise/') else ACTIONS.get(request.path)
         if request.method != 'POST' or not action or not enabled():
             return None
         from station_owners import check_token
