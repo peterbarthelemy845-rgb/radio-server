@@ -1,16 +1,17 @@
 {% extends 'ad_public_base.html' %}
 {% block title %}Edit station{% endblock %}
-{% block extra_head %}<style>.station-editor-card{margin-top:0}.station-editor-card h1{margin:0 0 6px}.editor-header{display:flex;justify-content:space-between;align-items:start;gap:16px}.editor-header p{margin:0;color:#64748b;font-size:14px}.editor-share{color:#1d4ed8;font-weight:bold;font-size:14px;white-space:nowrap;padding-top:6px}.editor-section{border-top:1px solid #dbe4f0;margin-top:22px;padding-top:20px}.editor-section h2{font-size:20px;margin:0 0 10px}.editor-section p{margin:8px 0}.editor-section .wide{margin-top:10px}.editor-status{background:#e0f2fe;color:#12355b;padding:12px;border-radius:12px}.editor-logout{background:#e2e8f0;color:#17233b}.editor-section details{font-size:14px;color:#64748b}.editor-section summary{cursor:pointer;color:#1d4ed8;padding:6px 0}.editor-section table td{padding:6px 0}.editor-section table th{padding:5px 0;font-size:14px}.editor-cover{display:block;width:80px;height:80px;object-fit:contain;border-radius:8px;margin:8px 0}@media(max-width:400px){.editor-header{display:block}.editor-share{display:inline-block;margin-top:8px}}</style>{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="/static/station-editor.css?v=1">{% endblock %}
 {% block content %}<section class="card station-editor-card">
-<header class="editor-header"><div><h1>{{ station.name }}</h1><p>Station code #{{ station.listener_code }}</p></div><a class="editor-share" href="/station/{{ station.listener_code }}">Share station</a></header>
-{% if saved %}<p class="editor-status" role="status">{% if station.pending_edit %}Changes saved for administrator review.{% elif station.email_verification_required and not station.email_verified %}Changes saved. Verify your email to publish.{% else %}Changes saved successfully.{% endif %}</p>{% endif %}
-<section class="editor-section"><h2>Station details</h2>{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<header class="editor-header"><div><h1>{{ station.name }}</h1><p>Station code #{{ station.listener_code }}</p></div><a class="editor-share" href="/station/{{ station.listener_code }}">Share station ↗</a></header>
+{% if saved %}<p class="editor-status" role="status">{% if station.pending_edit %}Changes saved for review.{% elif station.email_verification_required and not station.email_verified %}Changes saved. Verify your email to publish.{% else %}Changes saved successfully.{% endif %}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <form id="stationEditor" method="post" enctype="multipart/form-data"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
-<label for="stationCover">Cover art</label>{% if station.logo_url %}<img class="editor-cover" src="{{ station.logo_url }}" alt="Current station cover">{% endif %}<input id="stationCover" type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif">
+<div class="editor-cover-row">{% if station.logo_url %}<img class="editor-cover" src="{{ station.logo_url }}" alt="Current station cover">{% else %}<div class="editor-cover-empty" aria-hidden="true">♫</div>{% endif %}<div class="editor-upload"><label class="visually-hidden" for="stationCover">Cover art</label><input id="stationCover" type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif"></div></div>
 <label for="stationStream">Stream URL / IP address</label><input id="stationStream" name="url" type="url" required maxlength="1024" value="{{ station.url }}" placeholder="https://your-server.com/live">
-<label for="stationBio">Bio</label><textarea id="stationBio" name="bio" maxlength="250" rows="3">{{ station.bio or '' }}</textarea>
-<p class="hint">Family-friendly content only. Flagged or unscanned changes need review.</p>{% include 'rights_acceptance.html' %}<button class="wide">Save changes</button></form>
-<form action="/station-access/logout" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="wide editor-logout">Log out</button></form></section>
+<label for="stationBio">Bio</label><textarea id="stationBio" name="bio" maxlength="250" rows="2">{{ station.bio or '' }}</textarea>
 {% include 'station_plan.html' %}
-<section class="editor-section"><h2>Local sponsor ads</h2><p class="hint">Approve or delete business submissions. No separate ad fee.</p><a class="button wide" href="/station/ads">Review radio ads</a></section>
+<input type="hidden" name="terms_version" value="{{ terms_version }}"><label class="editor-rights"><input type="checkbox" name="rights_confirmed" value="1" required><span>I represent this station, have streaming/artwork rights, and agree to the <a href="/terms" target="_blank" rel="noopener">station terms</a> and <a href="/privacy" target="_blank" rel="noopener">privacy notice</a>.</span></label>
+<button class="wide editor-save" type="submit">Save changes</button></form>
+<a class="button wide editor-secondary" href="/station/ads">Review radio ads</a>
+<form action="/station-access/logout" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="wide editor-secondary" type="submit">Log out</button></form>
 </section>{% endblock %}
