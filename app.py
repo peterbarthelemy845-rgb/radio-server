@@ -1564,6 +1564,8 @@ from station_sharing import register_sharing
 register_sharing(app, sys.modules[__name__])
 from radio_link import register_radio_link
 register_radio_link(app, sys.modules[__name__])
+from station_plans import register_station_plans
+register_station_plans(app)
 from station_ads import register_station_ads
 register_station_ads(app, sys.modules[__name__])
 from device_help import register_device_help

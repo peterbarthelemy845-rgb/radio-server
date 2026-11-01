@@ -4,7 +4,7 @@
 {% block content %}{% set campaign_base=campaign_base|default('/station/ads') %}
 <header class="ads-heading"><p class="eyebrow-light">{{ station.name }} · Station #{{ station.listener_code }}</p><h1>Local sponsor ads</h1><p>Businesses submit ads. You approve or delete them.</p></header>
 {% if demo %}<p class="demo-notice">Dashboard preview only. These are examples. No ad is being sent and no payment is taken. <a href="/#add-station">Sign in to manage your station.</a></p>{% else %}<a class="home" href="{{ '/admin/local-ads' if admin_main else '/station/edit' }}">← Back to your station</a>{% endif %}
-<section class="card plan-card"><div><span class="plan-badge">Free pilot</span><h2>$0 <small>for now</small></h2><p>No subscription or payment method required.</p></div><p class="hint">Payments are not connected. There are no automatic charges.</p></section>
+<section class="card"><h2>Ad tools included</h2><p>No separate advertising-tool fee for station owners.</p><p class="hint">Station plans are based on monthly active radios. Billing is not active.</p></section>
 {% if not published %}<p class="demo-notice">Your station must be published and not suspended before its ads can start.</p>{% endif %}
 {% if not enabled %}<p class="demo-notice">Radio ads are paused by the administrator. You can still review submissions.</p>{% endif %}
 

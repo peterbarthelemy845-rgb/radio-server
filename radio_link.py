@@ -199,6 +199,12 @@ def register_radio_link(app,radio):
             pair=db.execute("SELECT id,check_code FROM radio_pair_claims WHERE radio_id=? AND state='waiting' AND expires>? ORDER BY created DESC LIMIT 1",(identifier,now)).fetchone()
             row=db.execute("SELECT id,code,expires FROM radio_commands WHERE radio_id=? AND state IN ('pending','delivered') AND expires>? AND lease<=? ORDER BY created LIMIT 1",(identifier,now,now)).fetchone()
             if row:db.execute("UPDATE radio_commands SET state='delivered',lease=? WHERE id=?",(now+60,row['id']))
+        try:
+            from station_plans import record_activity
+            record_activity(app,radio,data,identifier)
+        except Exception:
+            # Preview usage must never interrupt pairing or station delivery.
+            app.logger.warning('Monthly radio usage could not be recorded.')
         return jsonify(linked=linked,command_id=row['id'] if row else '',station_code=row['code'] if row else '',command_expires_in=max(0,row['expires']-now) if row else 0,pair_claim_id=pair['id'] if pair else '',pair_check=pair['check_code'] if pair else '',claim_decision_ack=decision_ack,claim_result=claim_result)
 
     @app.post('/api/radio/link/reset')

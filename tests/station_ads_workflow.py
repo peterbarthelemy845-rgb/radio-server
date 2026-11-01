@@ -32,7 +32,7 @@ assert b'id="localAdForm"' not in client.get('/station/ads').data
 assert client.post('/station/ads',data={}).status_code==405
 assert public.get('/station/ads').status_code==401
 assert public.get('/local-ads-demo').status_code==200
-assert b'$0' in client.get('/station/ads').data
+assert b'No separate advertising-tool fee' in client.get('/station/ads').data
 def picture():
     out=io.BytesIO();Image.new('RGB',(120,60),'blue').save(out,format='PNG');out.seek(0);return out
 def upload(**changes):
