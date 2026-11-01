@@ -15,6 +15,7 @@ class TurnstileTests(unittest.TestCase):
         self.app = Flask(__name__)
         self.app.secret_key = 'test-only'
         self.calls = []
+        self.app.extensions['security_limit'] = lambda *args: None
         for path in protection.ACTIONS:
             def view(path=path):
                 self.calls.append(path)
@@ -23,7 +24,7 @@ class TurnstileTests(unittest.TestCase):
         protection.register_turnstile(self.app)
         self.client = self.app.test_client()
         self.csrf = patch('station_owners.check_token')
-        self.csrf.start()
+        self.csrf_mock = self.csrf.start()
 
     def tearDown(self):
         self.csrf.stop()
@@ -62,6 +63,31 @@ class TurnstileTests(unittest.TestCase):
             self.assertEqual(self.post().status_code, 503)
             verify.assert_not_called()
         self.assertFalse(self.calls)
+
+    def test_early_limits_apply_before_csrf_parsing_or_provider(self):
+        from flask import abort
+        events = []
+        def deny(*args):
+            events.append(args)
+            abort(429)
+        self.app.extensions['security_limit'] = deny
+        with patch.object(protection, 'siteverify') as verify:
+            self.assertEqual(self.post().status_code, 429)
+            verify.assert_not_called()
+        self.assertEqual(events[0][:3], ('human-check-ip', 20, 900))
+        self.csrf_mock.assert_not_called()
+
+    def test_busy_verifier_does_not_call_provider_and_slots_release(self):
+        import threading
+        slot = threading.BoundedSemaphore(1)
+        with patch.object(protection, 'VERIFY_SLOTS', slot), patch.object(protection, 'siteverify', side_effect=TimeoutError) as verify:
+            self.assertEqual(self.post().status_code, 503)
+            self.assertTrue(slot.acquire(blocking=False))
+            try:
+                self.assertEqual(self.post().status_code, 503)
+                self.assertEqual(verify.call_count, 1)
+            finally:
+                slot.release()
 
     def test_unconfigured_release_is_safe_to_deploy_before_keys(self):
         with patch.dict(os.environ, {'TURNSTILE_SITE_KEY': '', 'TURNSTILE_SECRET_KEY': ''}):

@@ -3,6 +3,7 @@ import http.client
 import json
 import os
 import ssl
+import threading
 from flask import request, jsonify, render_template
 
 ACTIONS = {
@@ -13,6 +14,7 @@ ACTIONS = {
     '/station-code/resend': 'station-code-resend',
 }
 HOSTS = {'radiolavoixdivine.com', 'www.radiolavoixdivine.com', 'radio-server-z0hb.onrender.com'}
+VERIFY_SLOTS = threading.BoundedSemaphore(2)
 
 
 def enabled():
@@ -42,6 +44,10 @@ def register_turnstile(app):
         action = 'local-ad-submit' if request.path.startswith('/advertise/') else ACTIONS.get(request.path)
         if request.method != 'POST' or not action or not enabled():
             return None
+        # Count rejected/missing tokens too, before form parsing or provider work.
+        limit = app.extensions['security_limit']
+        limit('human-check-ip', 20, 900, request.remote_addr or 'unknown')
+        limit('human-check-total', 120, 60, 'all')
         from station_owners import check_token
         check_token()
         status = 400
@@ -52,13 +58,18 @@ def register_turnstile(app):
             data = (request.get_json(silent=True) if request.is_json else request.form) or {}
             token = data.get('cf-turnstile-response', '')
             if isinstance(token, str) and 0 < len(token) <= 2048:
-                try:
-                    result = siteverify(token)
-                    if (result.get('success') is True and result.get('action') == action
-                            and result.get('hostname') in HOSTS):
-                        return None
-                except Exception:
-                    status, message = 503, 'Security verification is temporarily unavailable. Please try again later.'
+                if not VERIFY_SLOTS.acquire(blocking=False):
+                    status, message = 503, 'Security verification is busy. Please try again shortly.'
+                else:
+                    try:
+                        result = siteverify(token)
+                        if (result.get('success') is True and result.get('action') == action
+                                and result.get('hostname') in HOSTS):
+                            return None
+                    except Exception:
+                        status, message = 503, 'Security verification is temporarily unavailable. Please try again later.'
+                    finally:
+                        VERIFY_SLOTS.release()
         if request.is_json or request.headers.get('X-Requested-With') == 'fetch' or request.path in ('/api/registration/resend', '/station-access/resend-code'):
             return jsonify(status='error', message=message), status
         return render_template('security_check_error.html', message=message), status

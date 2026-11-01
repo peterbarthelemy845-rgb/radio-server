@@ -110,6 +110,7 @@ assert admin.post('/admin/local-ads',data={'owner_csrf':'admin-csrf'}).status_co
 row=rows()[0]
 assert client.post('/station/ads/'+identifier+'/delete',data={'owner_csrf':'test-csrf','revision':station_ads.revision(row)}).status_code==302
 assert client.get(image).status_code==404
+assert not (Path(radio.UPLOAD_FOLDER)/row['image']).exists()
 assert upload(image=(io.BytesIO(b'<svg/>'),'fake.png')).status_code==400
 with client.session_transaction() as s:s['station_edit_id']=-1
 assert client.get('/station/ads').status_code==401
@@ -117,3 +118,26 @@ assert client.post(action,data={'owner_csrf':'test-csrf'}).status_code==401
 start,end,first,last=station_ads.schedule('2026-11-01','2026-11-01');assert end-start==25*3600
 assert not public.get('/local-ads-demo').data.count(b'data-cf-beacon=')
 print('PASS: free plan, mailbox-scoped uploads, CSRF, private artwork, approval before start, device authentication, bounded pixels, idempotent displays, cooldown, pause/delete, full-admin review, stale-action rejection, expired grants and DST schedules. No real mail, devices or AI calls.')
+
+# Deleted history must not permanently lock out a station.
+with owners.database() as db:
+ for number in range(100):
+  db.execute("INSERT INTO local_ads(id,station_key,brand,message,phone,image,start_at,end_at,review,reasons,created,deleted) VALUES (?,?,?,?,?,?,?,?,?,?,?,1)",(format(number+1000,'032x'),key_for(other),'Old','Old','','ad_'+format(number+1000,'032x')+'.png',int(time.time()),int(time.time())+300,'approved','[]',int(time.time())))
+with patch('automatic_screening.assess',return_value={'status':'passed','reasons':['Passed']}):
+ result=public.post('/advertise/56',environ_overrides={'REMOTE_ADDR':'192.0.2.40'},data=dict(owner_csrf='test-csrf',brand='Fresh Business',message='New offer',phone='',contact_name='Business',contact_email='business@example.invalid',rights='on',image=(picture(),'image.png')))
+ assert result.status_code==302,result.data
+# Failed bot checks are persistently limited before provider work.
+with patch.dict(os.environ,{'TURNSTILE_SITE_KEY':'test-site','TURNSTILE_SECRET_KEY':'test-secret'}),patch('turnstile_protection.siteverify',return_value={'success':False}) as verify:
+ for _ in range(20):
+  assert public.post('/advertise/55',environ_overrides={'REMOTE_ADDR':'192.0.2.41'},data={'owner_csrf':'test-csrf','cf-turnstile-response':'bad'}).status_code==400
+ assert public.post('/advertise/55',environ_overrides={'REMOTE_ADDR':'192.0.2.41'},data={'owner_csrf':'test-csrf','cf-turnstile-response':'bad'}).status_code==429
+ assert verify.call_count==20
+print('PASS: deleted history restores ad capacity, private image cleanup and persistent pre-provider limits. No real scanner or bot-verification calls.')
+
+# Main-station admin cleanup must happen after its request transaction commits.
+with owners.database() as db:
+ main_latest=dict(db.execute('SELECT * FROM local_ads WHERE id=?',(main['id'],)).fetchone())
+assert admin.post('/admin/local-ads/main/'+main['id']+'/delete',data={'owner_csrf':'admin-csrf','revision':station_ads.revision(main_latest)}).status_code==302
+with owners.database() as db:
+ assert db.execute('SELECT deleted FROM local_ads WHERE id=?',(main['id'],)).fetchone()[0]==1
+assert not (Path(radio.UPLOAD_FOLDER)/main['image']).exists()

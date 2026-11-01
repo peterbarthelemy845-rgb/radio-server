@@ -12,7 +12,7 @@ import unicodedata
 from datetime import date, datetime, time as day_time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from flask import abort, current_app, jsonify, redirect, render_template, request, send_file, session
+from flask import abort, current_app, g, jsonify, redirect, render_template, request, send_file, session
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from PIL import Image, ImageOps
 
@@ -74,6 +74,30 @@ def pixels(path):
         image = source.convert('RGB').resize((AD_WIDTH, AD_HEIGHT), Image.Resampling.LANCZOS)
     return b''.join(struct.pack('<H', ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3))
                     for r, g, b in image.getdata())
+
+
+def normalized_ad(raw, filename):
+    """Only decoded pixels survive; original files and metadata are never served."""
+    extensions = {'PNG': {'.png'}, 'JPEG': {'.jpg', '.jpeg'}, 'WEBP': {'.webp'}}
+    if not raw or len(raw) > 3*1024*1024:
+        raise ValueError('Choose an image under 3 MB.')
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(raw)) as probe:
+                if (probe.format not in extensions or Path(filename).suffix.lower() not in extensions[probe.format]
+                        or probe.width*probe.height > 4_000_000 or getattr(probe, 'n_frames', 1) != 1):
+                    raise ValueError()
+                probe.verify()
+            with Image.open(io.BytesIO(raw)) as source:
+                source.load()
+                scaled = ImageOps.pad(ImageOps.exif_transpose(source).convert('RGB'), (768, 228),
+                                      color=(8, 12, 40), method=Image.Resampling.LANCZOS)
+                clean = Image.new('RGB', scaled.size)
+                clean.paste(scaled)
+                return clean
+    except Exception:
+        raise ValueError('Use a valid, still JPG, PNG or WebP with a matching file extension, up to 4 megapixels.')
 
 
 def register_station_ads(app, radio):
@@ -178,6 +202,12 @@ def register_station_ads(app, radio):
 
     @app.after_request
     def local_ad_privacy(response):
+        cleanup = g.pop('local_ad_cleanup', None)
+        if cleanup and response.status_code < 400:
+            try:
+                cleanup.unlink(missing_ok=True)
+            except OSError:
+                app.logger.warning('Deleted ad artwork cleanup failed; private file retained.')
         if request.path.startswith(('/station/ads', '/admin/local-ads', '/api/radio/ad', '/advertise/')):
             response.headers['Cache-Control'] = 'private, no-store'
             response.headers['Referrer-Policy'] = 'no-referrer'
@@ -217,9 +247,8 @@ def register_station_ads(app, radio):
                 start_at, end_at, first, last = schedule(request.form.get('start_date'), request.form.get('end_date'))
                 rows, _ = db_rows(key_for(station))
                 with database() as db:
-                    total = db.execute('SELECT COUNT(*) FROM local_ads WHERE station_key=?', (key_for(station),)).fetchone()[0]
                     global_count = db.execute('SELECT COUNT(*) FROM local_ads WHERE deleted=0').fetchone()[0]
-                if len(rows) >= 20 or total >= 100 or global_count >= 4000:
+                if len(rows) >= 20 or global_count >= 4000:
                     raise ValueError('Ad storage limit reached. Contact the administrator.')
                 if sum(p.stat().st_size for p in Path(radio.UPLOAD_FOLDER).glob('*') if p.is_file()) > 768*1024*1024:
                     raise ValueError('Upload storage is full. Contact the administrator.')
@@ -227,18 +256,7 @@ def register_station_ads(app, radio):
                 if not upload or not upload.filename:
                     raise ValueError('Choose a JPG, PNG or WebP sponsor image.')
                 raw = upload.stream.read(3*1024*1024 + 1)
-                if not raw or len(raw) > 3*1024*1024:
-                    raise ValueError('Choose an image under 3 MB.')
-                try:
-                    with warnings.catch_warnings():
-                        warnings.simplefilter('error', Image.DecompressionBombWarning)
-                        with Image.open(io.BytesIO(raw)) as source:
-                            if source.format not in ('PNG', 'JPEG', 'WEBP') or source.width*source.height > 4_000_000:
-                                raise ValueError('Unsupported or oversized image.')
-                            image = ImageOps.pad(ImageOps.exif_transpose(source).convert('RGB'), (768, 228),
-                                                 color=(8, 12, 40), method=Image.Resampling.LANCZOS)
-                except Exception:
-                    raise ValueError('Choose a valid JPG, PNG or WebP image, up to 4 megapixels.')
+                image = normalized_ad(raw, upload.filename)
                 filename = 'ad_' + secrets.token_hex(16) + '.png'
                 path = Path(radio.UPLOAD_FOLDER) / filename
                 image.save(path, format='PNG', optimize=True)
@@ -255,8 +273,7 @@ def register_station_ads(app, radio):
                     if db.execute('SELECT COUNT(*) FROM local_ads WHERE station_key=? AND deleted=0',
                                   (key_for(station),)).fetchone()[0] >= 20:
                         raise ValueError('Your station already has twenty ads.')
-                    if (db.execute('SELECT COUNT(*) FROM local_ads WHERE station_key=?', (key_for(station),)).fetchone()[0] >= 100
-                            or db.execute('SELECT COUNT(*) FROM local_ads WHERE deleted=0').fetchone()[0] >= 4000):
+                    if db.execute('SELECT COUNT(*) FROM local_ads WHERE deleted=0').fetchone()[0] >= 4000:
                         raise ValueError('Ad storage limit reached. Contact the administrator.')
                     db.execute('INSERT INTO local_ads (id,station_key,brand,message,phone,image,start_at,end_at,start_date,end_date,review,reasons,created,rights_version,rights_grant,contact_name,contact_email) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                                (secrets.token_hex(16), key_for(station), brand, message, phone, filename,
@@ -299,6 +316,9 @@ def register_station_ads(app, radio):
                                  key_for(station), row['revision'])).rowcount
             if not changed:
                 abort(409)
+        if action == 'delete':
+            # Privacy hook runs after the owner's write transaction commits.
+            g.local_ad_cleanup = asset(row)
         return redirect(ad_base())
 
     @app.get('/station/ads/<identifier>/image')
