@@ -72,6 +72,17 @@ def register_station_ads(app, radio):
     from station_editing import find_station
     from admin_security import valid_session
 
+    def primary(with_code=True):
+        station = dict(radio.TEST_STREAMS[0], name='La Voix Divine', url=radio.MAIN_STREAM_URL)
+        if with_code:
+            from station_directory import ensure_code
+            with database() as db:
+                ensure_code(db, station)
+        return station
+
+    def ad_base():
+        return '/admin/local-ads/main' if request.path.startswith('/admin/local-ads/main') else '/station/ads'
+
     def db_rows(key=None):
         with database() as db:
             rows = db.execute('SELECT * FROM local_ads WHERE deleted=0' +
@@ -81,6 +92,9 @@ def register_station_ads(app, radio):
         return [dict(row) for row in rows], enabled
 
     def owner():
+        if request.path.startswith('/admin/local-ads/main'):
+            administrator()
+            return primary(), True
         with database() as db:
             row = db.execute('SELECT * FROM station_edit_links WHERE id=? AND used=1 AND expires>?',
                              (session.get('station_edit_id', -1), int(time.time()))).fetchone()
@@ -92,6 +106,9 @@ def register_station_ads(app, radio):
         return station, station in store.get('custom_stations', [])
 
     def published(key):
+        main = primary(False)
+        if key_for(main) == key:
+            return main
         return next((s for s in app.extensions['station_store_read_only']().get('custom_stations', [])
                      if key_for(s) == key and not s.get('suspended') and not s.get('owner_suspended')), None)
 
@@ -147,6 +164,7 @@ def register_station_ads(app, radio):
     app.after_request_funcs[None].insert(0, local_ad_privacy)
 
     @app.route('/station/ads', methods=['GET', 'POST'])
+    @app.route('/admin/local-ads/main', methods=['GET', 'POST'])
     def station_ad_dashboard():
         station, is_published = owner()
         error = ''
@@ -201,7 +219,8 @@ def register_station_ads(app, radio):
                 if key_for(latest) != key_for(station):
                     abort(409)
                 with database() as db:
-                    db.execute('BEGIN IMMEDIATE')
+                    if not db.in_transaction:
+                        db.execute('BEGIN IMMEDIATE')
                     if db.execute('SELECT COUNT(*) FROM local_ads WHERE station_key=? AND deleted=0',
                                   (key_for(station),)).fetchone()[0] >= 20:
                         raise ValueError('Your station already has twenty ads.')
@@ -212,7 +231,7 @@ def register_station_ads(app, radio):
                                (secrets.token_hex(16), key_for(station), brand, message, phone, filename,
                                 start_at, end_at, first, last, 'approved' if result['status'] == 'passed' else 'review',
                                 json.dumps(result['reasons']), int(time.time()), AD_POLICY, session.get('station_edit_id')))
-                return redirect('/station/ads?saved=1')
+                return redirect(ad_base()+'?saved=1')
             except ValueError as exc:
                 error = str(exc)
                 if path:
@@ -224,9 +243,11 @@ def register_station_ads(app, radio):
         rows, enabled = db_rows(key_for(station))
         return render_template('station_ads.html', station=station, ads=rows, enabled=enabled,
                                published=is_published and bool(published(key_for(station))), error=error,
-                               saved=request.args.get('saved') == '1', demo=False, now=int(time.time())), 400 if error else 200
+                               saved=request.args.get('saved') == '1', demo=False, now=int(time.time()),
+                               campaign_base=ad_base(), admin_main=ad_base().startswith('/admin/')), 400 if error else 200
 
     @app.post('/station/ads/<identifier>/<action>')
+    @app.post('/admin/local-ads/main/<identifier>/<action>')
     def station_ad_action(identifier, action):
         station, _ = owner()
         check_token()
@@ -248,16 +269,17 @@ def register_station_ads(app, radio):
                                      (first, last, first_label, last_label, identifier, key_for(station), row['revision'])).rowcount
                 if not changed:
                     abort(409)
-            return redirect('/station/ads')
+            return redirect(ad_base())
         with database() as db:
             changed = db.execute('UPDATE local_ads SET enabled=?,deleted=?,revision=revision+1 WHERE id=? AND station_key=? AND revision=? AND deleted=0',
                                 (int(action == 'start'), int(action == 'delete'), identifier,
                                  key_for(station), row['revision'])).rowcount
             if not changed:
                 abort(409)
-        return redirect('/station/ads')
+        return redirect(ad_base())
 
     @app.get('/station/ads/<identifier>/image')
+    @app.get('/admin/local-ads/main/<identifier>/image')
     def station_ad_image(identifier):
         station, _ = owner()
         return send_file(asset(owned_ad(identifier, key_for(station))), mimetype='image/png')
@@ -273,6 +295,7 @@ def register_station_ads(app, radio):
         rows, enabled = db_rows()
         names = {key_for(s):s.get('name', 'Station') for group in ('custom_stations', 'pending_stations')
                  for s in radio.load_station_store().get(group, [])}
+        names[key_for(primary(False))] = 'La Voix Divine'
         for row in rows:
             row['station_name'] = names.get(row['station_key'], 'Removed station')
         return render_template('admin_local_ads.html', ads=rows, enabled=enabled)
@@ -310,6 +333,10 @@ def register_station_ads(app, radio):
         code = data.get('station_code', '')
         station = next((s for s in radio.load_station_store().get('custom_stations', [])
                         if s.get('listener_code') == code and not s.get('suspended') and not s.get('owner_suspended')), None)
+        if not station:
+            main = primary()
+            if main['listener_code'] == code:
+                station = main
         if not station:
             return jsonify(ad=None)
         now = int(time.time())

@@ -73,9 +73,20 @@ assert client.post('/station/ads/'+flagged['id']+'/start',data={'owner_csrf':'te
 admin=app.test_client()
 with app.app_context(),admin.session_transaction() as s:admin_security.new_session(s,'full');s['owner_csrf']='admin-csrf'
 assert admin.get('/admin/local-ads').status_code==200
+assert admin.get('/admin/local-ads/main').status_code==200
+assert public.get('/admin/local-ads/main').status_code==302
+with patch('automatic_screening.assess',return_value={'status':'passed','reasons':['Passed']}):
+ result=admin.post('/admin/local-ads/main',data=dict(owner_csrf='admin-csrf',brand='Main station sponsor',message='Community messages',phone='',rights='on',image=(picture(),'image.png')))
+ assert result.status_code==302,result.data
+main=rows()[-1]
+assert main['brand']=='Main station sponsor'
+assert admin.post('/admin/local-ads/main/'+main['id']+'/start',data={'owner_csrf':'admin-csrf','revision':station_ads.revision(main)}).status_code==302
+assert stranger.get('/station/ads/'+main['id']+'/image').status_code==404
+
 junior=app.test_client()
 with app.app_context(),junior.session_transaction() as s:admin_security.new_session(s,'junior');s['owner_csrf']='admin-csrf'
 assert junior.get('/admin/local-ads').status_code==403
+assert junior.get('/admin/local-ads/main').status_code==403
 assert admin.post('/admin/local-ads/'+flagged['id']+'/approve',data={'owner_csrf':'admin-csrf','revision':'stale'}).status_code==409
 result=admin.post('/admin/local-ads/'+flagged['id']+'/approve',data={'owner_csrf':'admin-csrf','revision':station_ads.revision(flagged)})
 assert result.status_code==302,result.data
