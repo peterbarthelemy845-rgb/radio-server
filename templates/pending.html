@@ -11,7 +11,7 @@ details.card>summary{font-size:22px;font-weight:bold;cursor:pointer}details.card
 <div class="wrap">{% for message in get_flashed_messages(category_filter=['owner-access']) %}<div class="card" role="status" style="overflow-wrap:anywhere;user-select:text">{{ message }}</div>{% endfor %}
   <div class="top"><h1>Admin Dashboard</h1><div class="sub">Manage stations.</div></div>
   <div class="card actions">
-    <a class="btn link" href="/admin/legal" style="background:#b91c1c">Rights &amp; privacy inbox ({{ legal_pending_count() }})</a><a class="btn link" href="/admin/local-ads">Local radio ads</a><a class="btn link" href="/admin/station-codes">Station codes &amp; resend</a><a class="btn link" href="/admin/reports">Reports</a>
+    <a class="btn link" href="/admin/legal" style="background:#b91c1c">Rights &amp; privacy inbox ({{ legal_pending_count() }})</a><a class="btn link" href="/admin/device-videos">Device videos</a><a class="btn link" href="/admin/local-ads">Local radio ads</a><a class="btn link" href="/admin/station-codes">Station codes &amp; resend</a><a class="btn link" href="/admin/reports">Reports</a>
     <a class="btn link" href="{{ url_for('index') }}">Home</a>
     <a class="btn link" href="{{ url_for('export_stations') }}">Export stations</a>
     <a class="btn link" href="/admin/backups">Backups</a>

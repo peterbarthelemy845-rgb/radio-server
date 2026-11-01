@@ -1566,6 +1566,8 @@ from radio_link import register_radio_link
 register_radio_link(app, sys.modules[__name__])
 from station_ads import register_station_ads
 register_station_ads(app, sys.modules[__name__])
+from device_help import register_device_help
+register_device_help(app)
 
 from content_moderation import register_moderation
 register_moderation(app, sys.modules[__name__])

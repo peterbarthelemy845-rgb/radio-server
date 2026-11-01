@@ -30,6 +30,8 @@ def connect():
     directory_schema(db)
     from station_ads import schema as local_ads_schema
     local_ads_schema(db)
+    from device_help import schema as device_help_schema
+    device_help_schema(db)
     return db
 
 @contextmanager
