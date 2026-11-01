@@ -4,13 +4,13 @@
 {% block content %}<section class="card station-editor-card">
 <header class="editor-header"><div><h1>{{ station.name }}</h1><p>Station code #{{ station.listener_code }}</p></div><a class="editor-share" href="/station/{{ station.listener_code }}">Share station</a></header>
 {% if saved %}<p class="editor-status" role="status">{% if station.pending_edit %}Changes saved for administrator review.{% elif station.email_verification_required and not station.email_verified %}Changes saved. Verify your email to publish.{% else %}Changes saved successfully.{% endif %}</p>{% endif %}
-{% include 'station_plan.html' %}
-<section class="editor-section"><h2>Local sponsor ads</h2><p class="hint">Approve or delete business submissions. No separate ad fee.</p><a class="button wide" href="/station/ads">Review radio ads</a></section>
 <section class="editor-section"><h2>Station details</h2>{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <form id="stationEditor" method="post" enctype="multipart/form-data"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}">
+<label for="stationCover">Cover art</label>{% if station.logo_url %}<img class="editor-cover" src="{{ station.logo_url }}" alt="Current station cover">{% endif %}<input id="stationCover" type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif">
 <label for="stationStream">Stream URL / IP address</label><input id="stationStream" name="url" type="url" required maxlength="1024" value="{{ station.url }}" placeholder="https://your-server.com/live">
 <label for="stationBio">Bio</label><textarea id="stationBio" name="bio" maxlength="250" rows="3">{{ station.bio or '' }}</textarea>
-<label for="stationCover">Cover art</label>{% if station.logo_url %}<img class="editor-cover" src="{{ station.logo_url }}" alt="Current station cover">{% endif %}<input id="stationCover" type="file" name="logo_image" accept="image/png,image/jpeg,image/webp,image/gif">
 <p class="hint">Family-friendly content only. Flagged or unscanned changes need review.</p>{% include 'rights_acceptance.html' %}<button class="wide">Save changes</button></form>
 <form action="/station-access/logout" method="post"><input type="hidden" name="owner_csrf" value="{{ owner_csrf() }}"><button class="wide editor-logout">Log out</button></form></section>
+{% include 'station_plan.html' %}
+<section class="editor-section"><h2>Local sponsor ads</h2><p class="hint">Approve or delete business submissions. No separate ad fee.</p><a class="button wide" href="/station/ads">Review radio ads</a></section>
 </section>{% endblock %}
