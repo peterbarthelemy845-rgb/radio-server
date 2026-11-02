@@ -168,7 +168,8 @@ def register_directory(app, radio):
         return row['state'] if row else 'not queued'
     app.jinja_env.globals.update(listener_station_code=lambda s:s.get('listener_code',''),listener_mail_status=listener_mail_status)
     # Keep the original player UI; only the protected main station plays here.
-    app.view_functions['index']=lambda:render_template('index.html',public_web=True)
+    # Keep the homepage handler, including the old-domain redirect. The public
+    # origin is recognized by is_public_website(); do not replace the view here.
     radio.get_all_streams=lambda:[dict(radio.TEST_STREAMS[0],name='La Voix Divine',url=radio.MAIN_STREAM_URL)]
     original_state=radio.build_state
     def library_state():
