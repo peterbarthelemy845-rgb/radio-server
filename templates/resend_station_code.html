@@ -1,4 +1,4 @@
-{% set registration_open = request.args.get('create') == '1' or (status is defined and status == 'error') %}
+{% set registration_open = request.args.get('login') != '1' or (status is defined and status == 'error') %}
 <section id="ownerLoginPanel" class="owner-access-card" aria-labelledby="ownerAccessTitle" {% if registration_open %}hidden{% endif %}>
  <div class="owner-access-emblem" aria-hidden="true"><svg viewBox="0 0 64 64" width="50" height="50" fill="none" stroke="currentColor" stroke-width="3"><circle cx="32" cy="24" r="5"/><path d="M26 33l-9 23m21-23l9 23M22 44h20M23 15a13 13 0 0 0 0 18m18-18a13 13 0 0 1 0 18M16 8a23 23 0 0 0 0 32m32-32a23 23 0 0 1 0 32"/></svg></div>
  <h1 id="ownerAccessTitle">Already registered?<span>Edit your station</span></h1>
