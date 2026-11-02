@@ -52,5 +52,6 @@ if(stationEditLoginForm)stationEditLoginForm.addEventListener('submit',async eve
  event.preventDefault();const button=event.target.querySelector('button[type=submit]');button.disabled=true;
  try{const response=await fetch('/station-access/request',{method:'POST',headers:{'X-Requested-With':'fetch'},body:new FormData(event.target)});const data=await response.json();if(response.ok&&data.status==='ok')showSubmissionSuccess(data);else alert(data.message||'Please refresh the page and try again.');}catch(error){alert('Could not request your verification email. Check your connection and try again.');}finally{button.disabled=false;}
 });
-{% if edit_verification_info is defined %}showSubmissionSuccess({{ edit_verification_info|tojson }});{% elif status == 'ok' %}showSubmissionSuccess({verification_email:{{ verification_email|default('your registered email')|tojson }}});{% else %}{% set pending_verification=pending_station_edit_info() or pending_registration_info() %}{% if pending_verification %}showSubmissionSuccess({{ pending_verification|tojson }});{% endif %}{% endif %}
+{# Open only for an explicit submission/login response, never a stored session on page load. #}
+{% if edit_verification_info is defined %}showSubmissionSuccess({{ edit_verification_info|tojson }});{% elif status == 'ok' %}showSubmissionSuccess({verification_email:{{ verification_email|default('your registered email')|tojson }}});{% endif %}
 </script>
