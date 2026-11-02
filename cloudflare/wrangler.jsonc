@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "radio-server",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-02",
+  "workers_dev": true,
+  "vars": {
+    "ORIGIN_URL": "https://radio-server-z0hb.onrender.com"
+  }
+}
