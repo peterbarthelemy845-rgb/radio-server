@@ -857,6 +857,10 @@ def radio_service_worker():
 
 @app.route("/")
 def index():
+    # Only move the old browser homepage. Firmware APIs and emailed links stay valid.
+    # The Cloudflare Worker uses the onrender.com origin, which must not redirect.
+    if request.host.split(':', 1)[0].lower() in {'radiolavoixdivine.com', 'www.radiolavoixdivine.com'}:
+        return redirect('https://radiolocals.com/#radio', code=302)
     return render_template("index.html", public_web=is_public_website())
 
 def is_playlist(url):
