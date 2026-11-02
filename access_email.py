@@ -7,12 +7,17 @@ import requests
 import re
 from urllib.parse import quote
 from email.message import EmailMessage
+from email.utils import formataddr
 
 def send_station_message(email, subject, body):
     host = os.environ.get('SMTP_HOST', 'smtp.office365.com').strip()
     username = os.environ.get('SMTP_USERNAME', 'info@radiolavoixdivine.com').strip()
     password = os.environ.get('SMTP_PASSWORD', '')
     modern = os.environ.get('OWNER_MAIL_TRANSPORT', 'smtp').strip().lower() == 'graph'
+    sender = os.environ.get('OWNER_FROM_EMAIL', 'info@radiolavoixdivine.com').strip()
+    sender_name = os.environ.get('OWNER_FROM_NAME', 'Radio La Voix Divine').strip()
+    if any('\r' in value or '\n' in value for value in (sender, sender_name)):
+        return False
     if modern and not all(os.environ.get(key) for key in ('MS_TENANT_ID','MS_CLIENT_ID','MS_CLIENT_SECRET')):
         logging.getLogger(__name__).warning('Owner email skipped: Graph configuration incomplete')
         return False
@@ -22,7 +27,7 @@ def send_station_message(email, subject, body):
     try:
         port = int(os.environ.get('SMTP_PORT', '587'))
         message = EmailMessage()
-        message['From'] = 'Radio La Voix Divine <info@radiolavoixdivine.com>'
+        message['From'] = formataddr((sender_name, sender))
         message['To'] = email
         message['Subject'] = subject
         message.set_content(body)
@@ -32,7 +37,7 @@ def send_station_message(email, subject, body):
                 return False
             token=requests.post('https://login.microsoftonline.com/'+tenant+'/oauth2/v2.0/token',data={'client_id':os.environ['MS_CLIENT_ID'],'client_secret':os.environ['MS_CLIENT_SECRET'],'scope':'https://graph.microsoft.com/.default','grant_type':'client_credentials'},timeout=15)
             token.raise_for_status()
-            response=requests.post('https://graph.microsoft.com/v1.0/users/'+quote('info@radiolavoixdivine.com',safe='')+'/sendMail',headers={'Authorization':'Bearer '+token.json()['access_token']},json={'message':{'subject':message['Subject'],'body':{'contentType':'Text','content':message.get_content()},'toRecipients':[{'emailAddress':{'address':email}}]},'saveToSentItems':True},timeout=15)
+            response=requests.post('https://graph.microsoft.com/v1.0/users/'+quote(sender,safe='')+'/sendMail',headers={'Authorization':'Bearer '+token.json()['access_token']},json={'message':{'subject':message['Subject'],'body':{'contentType':'Text','content':message.get_content()},'toRecipients':[{'emailAddress':{'address':email}}]},'saveToSentItems':True},timeout=15)
             response.raise_for_status()
             return response.status_code == 202
         context = ssl.create_default_context()
