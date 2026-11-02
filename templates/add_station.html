@@ -1,4 +1,4 @@
-{% set registration_open = request.args.get('create') == '1' or (status is defined and status == 'error') %}
+{% set registration_open = request.args.get('login') != '1' or (status is defined and status == 'error') %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
