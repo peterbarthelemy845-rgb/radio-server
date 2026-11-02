@@ -48,6 +48,14 @@ class TurnstileTests(unittest.TestCase):
             verify.assert_not_called()
         self.assertFalse(self.calls)
 
+    def test_new_domain_accepts_verified_login_but_not_lookalike(self):
+        for host, expected in [('radiolocals.com', 200), ('www.radiolocals.com', 200),
+                               ('radiolocals.com.attacker.example', 400)]:
+            with patch.object(protection, 'siteverify', return_value={
+                'success': True, 'hostname': host, 'action': 'station-access',
+            }):
+                self.assertEqual(self.post('/station-access/request').status_code, expected)
+
     def test_forged_replayed_wrong_host_and_wrong_action_fail_closed(self):
         valid = dict(success=True, hostname='www.radiolavoixdivine.com', action='station-submit')
         for result in ({}, dict(valid, success=False), dict(valid, success='true'),

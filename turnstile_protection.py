@@ -13,7 +13,7 @@ ACTIONS = {
     '/station-access/resend-code': 'station-edit-resend',
     '/station-code/resend': 'station-code-resend',
 }
-HOSTS = {'radiolavoixdivine.com', 'www.radiolavoixdivine.com', 'radio-server-z0hb.onrender.com'}
+HOSTS = {'radiolocals.com', 'www.radiolocals.com', 'radiolavoixdivine.com', 'www.radiolavoixdivine.com', 'radio-server-z0hb.onrender.com'}
 VERIFY_SLOTS = threading.BoundedSemaphore(2)
 
 
