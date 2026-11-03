@@ -13,6 +13,8 @@
   }],
   "send_email": [{"name": "EMAIL", "allowed_sender_addresses": ["info@radiolocals.com"]}],
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "radio-locals-private-media"}],
+  "images": {"binding": "IMAGES"},
+  "assets": {"directory": "public", "binding": "ASSETS", "run_worker_first": true},
   "vars": {"PUBLIC_ORIGIN": "https://radiolocals.com", "MIGRATION_PREVIEW": "true"},
-  "triggers": {"crons": ["17 * * * *"]}
+  "triggers": {"crons": ["* * * * *"]}
 }

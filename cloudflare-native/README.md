@@ -36,17 +36,32 @@ Implemented and tested against real SQLite using a D1-shaped adapter:
 - Hourly expiry cleanup using a scheduled Worker handler.
 - Fail-closed responses for every unimplemented route; no fallback proxy.
 
+Registration/login migration now also implements:
+
+- Secure host-only cookies, origin and CSRF checks, D1-backed owner sessions.
+- Separate expiring single-use email codes, five guesses maximum, resend limits,
+  and an encrypted durable mail outbox with leased retries via native EMAIL binding.
+- Private image decode/re-encode via IMAGES into PNG, four-megapixel/3-MB input
+  limits, nonpublic R2 storage. New stations and edits wait for safety review.
+- Compact registration, login, verification dialog and owner editing test pages.
+- Owner-scoped updates and logout; ordinary visits never reopen verification.
+
+The native Worker requires DATA_ENCRYPTION_KEY (64 lowercase hex characters) and
+TURNSTILE_SECRET_KEY stored as secrets, plus TURNSTILE_SITE_KEY as a public variable.
+Never reuse the session/encryption key in client code or log it. Add the exact
+staging Worker hostname to the Turnstile widget before testing. API checks are
+strict: token hostname must equal the request hostname and action must match.
+Image transformations may require activation of the account's Images feature.
+No real mail is sent by the automated tests.
+
 Test command: `node --test worker.test.mjs` (Node with node:sqlite support).
 
 ## Required before production cutover
 
-- Native website pages preserving the existing appearance and navigation.
-- Session/CSRF lifecycle and strict Origin validation for browser writes.
+- Complete the Radio/Library/shared station pages and legal/Support content.
 - Device registration, code allocation, browser claim and command enqueue routes.
-- Owner registration/editing, expiring email codes, attempt limits, mail delivery
-  retries with encrypted outbox payloads, and Cloudflare Turnstile validation.
-- R2 private artwork upload storage, safe image decoding/re-encoding, moderation,
-  media grants and ad artwork delivery. Unscanned uploads must stay unpublished.
+- Connect automatic moderation, media grants and ad artwork delivery.
+  Unscanned uploads must stay unpublished; current native uploads wait for review.
 - Admin MFA/session management and moderation, legal removal/complaints, station
   rights acceptance, Support page, reports, local ads, usage measurement.
 - Backups and restoration, privacy/retention review, verified sender test delivery.

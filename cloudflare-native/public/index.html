@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Radio Locals</title><link rel="stylesheet" href="/assets/site.css"><script src="/assets/site.js" defer></script></head>
+<body><aside class="preview">Test website — your current radio website has not switched yet.</aside>
+<main>
+<section id="library"><h1>Radio Locals</h1><p>Find a station for your radio.</p><input id="search" aria-label="Search stations or codes" placeholder="Search stations or codes"><div id="stations"></div></section>
+<section id="register" class="card" hidden><button class="link" id="openLogin">Already registered? Log in</button><h1>Create your station</h1>
+<div class="legal"><a href="https://www.radiolavoixdivine.com/terms" target="_blank" rel="noopener">Station terms</a> <a href="https://www.radiolavoixdivine.com/privacy" target="_blank" rel="noopener">Privacy & contact</a></div>
+<form id="registerForm"><label>Location<select name="location" required><option value="">Choose a location</option><option>New York</option><option>New Jersey</option><option>Connecticut</option></select></label>
+<label>Station name<input name="name" maxlength="96" placeholder="Example: Test Radio" required></label>
+<label>Stream URL<input name="stream_url" type="url" placeholder="https://example.com/stream.mp3" required></label>
+<label>Bio (optional)<textarea name="bio" maxlength="250" rows="3" placeholder="Tell listeners about your station"></textarea></label>
+<label>Contact email<input name="email" type="email" maxlength="254" autocomplete="email" placeholder="owner@example.com" required></label>
+<label>Radio logo<input name="artwork" type="file" accept="image/png,image/jpeg,image/webp" required></label>
+<p class="small">PNG, JPG or WebP. Up to 3 MB and 4 megapixels. New submissions stay private until safety review.</p>
+<label class="check"><input name="rights_confirmed" type="checkbox" required> I represent this station, have streaming/artwork rights, and agree to the station terms and privacy notice.</label>
+<div class="human"></div><button type="submit">Save Station</button></form></section>
+<section id="login" class="card" hidden><button class="link" id="openRegister">← Create your station</button><h1>Already registered?<small>Edit your station</small></h1>
+<form id="loginForm"><label>Registered email<input name="email" type="email" maxlength="254" autocomplete="email" required placeholder="owner@example.com"></label>
+<label>Station code<input name="code" inputmode="numeric" pattern="[0-9]{2,6}" maxlength="6" required placeholder="Station code"></label>
+<div class="human"></div><button type="submit">Log in to edit station</button></form></section>
+<section id="editor" class="card" hidden><h1 id="ownerName">Your station</h1><p id="ownerStatus" class="small"></p>
+<form id="editForm"><label>Cover art (optional replacement)<input name="artwork" type="file" accept="image/png,image/jpeg,image/webp"></label><label>Stream URL<input name="stream_url" type="url" required></label><label>Bio<textarea name="bio" rows="3" maxlength="250"></textarea></label><button type="submit">Save changes</button></form><button id="logout" class="secondary">Log out</button></section>
+<p id="message" role="status" aria-live="polite"></p></main>
+<dialog id="verification"><h2>Verify it’s you</h2><p id="verifyText"></p><form id="verifyForm"><label>6-digit email code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="______"></label><button type="submit">Verify code</button></form><p id="verifyMessage" role="status"></p><button id="resend" class="secondary">Resend email</button><div class="human"></div><button id="closeVerify" class="secondary">Close for now</button></dialog>
+<nav aria-label="Main navigation"><button id="navRadio">Radio</button><button id="navLibrary">Library</button><button id="navAdd">Add Station</button><a href="https://radiolocals.com/device">Support</a></nav></body></html>

@@ -1,41 +1,8 @@
 // Independent Cloudflare foundation. No Render origin, proxy, or local disk.
 // Only the routes explicitly implemented here are available in this staging build.
-const encoder = new TextEncoder();
-const json = (value, status = 200) => new Response(JSON.stringify(value), {
-  status, headers: {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',
-    'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin',
-    'Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"},
-});
-export async function digest(value) {
-  const bytes = await crypto.subtle.digest('SHA-256', encoder.encode(value));
-  return Array.from(new Uint8Array(bytes), x => x.toString(16).padStart(2,'0')).join('');
-}
-export function randomHex(size=32) {
-  return Array.from(crypto.getRandomValues(new Uint8Array(size)), x=>x.toString(16).padStart(2,'0')).join('');
-}
-export class HttpError extends Error { constructor(status,message){super(message);this.status=status;} }
-export async function limit(db, scope, identity, maximum, seconds, now) {
-  const key = scope + ':' + await digest(identity);
-  // One atomic statement: simultaneous Workers cannot race a read/increment pair.
-  const row = await db.prepare(`INSERT INTO rate_limits(key,count,expires) VALUES (?,1,?)
-    ON CONFLICT(key) DO UPDATE SET
-      count=CASE WHEN expires<=? THEN 1 ELSE count+1 END,
-      expires=CASE WHEN expires<=? THEN excluded.expires ELSE expires END
-    RETURNING count`).bind(key,now+seconds,now,now).first();
-  if (row.count > maximum) throw new HttpError(429,'Too many attempts. Please try again later.');
-}
-async function readJson(request) {
-  if (!request.headers.get('content-type')?.startsWith('application/json')) throw new HttpError(415,'JSON required.');
-  if (Number(request.headers.get('content-length'))>4096) throw new HttpError(413,'Request too large.');
-  const reader=request.body?.getReader();
-  let size=0,parts=[];
-  if(reader) for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;
-    if(size>4096){await reader.cancel();throw new HttpError(413,'Request too large.');}parts.push(value);}
-  let body;
-  try {body=JSON.parse(await new Blob(parts).text());} catch {throw new HttpError(400,'Invalid JSON.');}
-  if(!body || Array.isArray(body) || typeof body!=='object')throw new HttpError(400,'JSON object required.');
-  return body;
-}
+import {json,digest,randomHex,HttpError,limit,readJson} from './security.mjs';
+export {digest,randomHex,HttpError,limit} from './security.mjs';
+import {authRoutes,processMail} from './owner-auth.mjs';
 async function authenticate(request, db, body) {
   const id=body.radio_id, auth=request.headers.get('Authorization')||'';
   if(typeof id!=='string'|| !/^[0-9a-f]{32}$/.test(id)||!/^Bearer [0-9a-f]{64}$/.test(auth))throw new HttpError(401,'Radio authentication required.');
@@ -51,6 +18,8 @@ async function publicStation(db,code) {
 }
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
+  const ownerResponse=await authRoutes(request,env,now);
+  if(ownerResponse)return ownerResponse;
   if(path==='/health' && request.method==='GET') {
     await env.DB.prepare('SELECT 1 AS healthy').first();
     if(env.MEDIA)await env.MEDIA.head('health-probe-does-not-exist');
@@ -131,20 +100,36 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
+  if(env.ASSETS && request.method==='GET' && (['/','/add-station','/station-edit'].includes(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+    const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname='/index.html';
+    const asset=await env.ASSETS.fetch(new Request(target,request));
+    const response=new Response(asset.body,asset);
+    response.headers.set('Cache-Control','no-store');
+    response.headers.set('X-Content-Type-Options','nosniff');
+    response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');
+    response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data:; connect-src 'self' https://challenges.cloudflare.com");
+    return response;
+  }
   return json({message:'This feature has not migrated yet. This is an isolated test backend.',preview:true},404);
 }
-export async function fetchHandler(request,env) {
-  try{return await handle(request,env);}catch(error){
+export async function fetchHandler(request,env,ctx) {
+  try{const response=await handle(request,env);
+    if(ctx&&request.method==='POST'&&new URL(request.url).pathname.startsWith('/api/owner/')&&response.ok)
+      ctx.waitUntil(processMail(env));
+    return response;
+  }catch(error){
     return json({message:error instanceof HttpError?error.message:'Service temporarily unavailable.'},
       error instanceof HttpError?error.status:503);
   }
 }
 export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
   await env.DB.batch([
+    env.DB.prepare("UPDATE mail_outbox SET state='failed',encrypted_payload='',lease=0 WHERE expires<=? AND state!='sent'").bind(now),
+    env.DB.prepare("UPDATE email_verifications SET code_hash='' WHERE expires<=? OR consumed_at IS NOT NULL").bind(now),
     env.DB.prepare('DELETE FROM rate_limits WHERE expires<?').bind(now),
     env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE state='waiting' AND expires<=?").bind(now),
     env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE state IN ('pending','delivered') AND expires<=?").bind(now),
     env.DB.prepare('DELETE FROM phone_radios WHERE expires<=?').bind(now),
   ]);
 }
-export default {fetch:fetchHandler,async scheduled(_event,env){await cleanup(env);}};
+export default {fetch:fetchHandler,async scheduled(_event,env){await cleanup(env);await processMail(env);}};
