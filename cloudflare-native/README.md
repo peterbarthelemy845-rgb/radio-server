@@ -46,6 +46,13 @@ Registration/login migration now also implements:
 - Compact registration, login, verification dialog and owner editing test pages.
 - Owner-scoped updates and logout; ordinary visits never reopen verification.
 
+Shared-station migration now includes `/station/{station_code}` and phone claim,
+claim status, station enqueue and command status routes. Pairing requires a
+Turnstile check, strict attempt limits, and physical approval by the authenticated
+radio. The one-page browser flow waits for radio acknowledgment before showing
+success. Device enrollment/code generation and physical staging-radio validation
+are still outstanding; do not switch production or firmware to this backend yet.
+
 The native Worker requires DATA_ENCRYPTION_KEY (64 lowercase hex characters) and
 TURNSTILE_SECRET_KEY stored as secrets, plus TURNSTILE_SITE_KEY as a public variable.
 Never reuse the session/encryption key in client code or log it. Add the exact

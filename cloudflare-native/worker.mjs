@@ -3,6 +3,7 @@
 import {json,digest,randomHex,HttpError,limit,readJson} from './security.mjs';
 export {digest,randomHex,HttpError,limit} from './security.mjs';
 import {authRoutes,processMail} from './owner-auth.mjs';
+import {phoneRoutes} from './phone-link.mjs';
 async function authenticate(request, db, body) {
   const id=body.radio_id, auth=request.headers.get('Authorization')||'';
   if(typeof id!=='string'|| !/^[0-9a-f]{32}$/.test(id)||!/^Bearer [0-9a-f]{64}$/.test(auth))throw new HttpError(401,'Radio authentication required.');
@@ -20,6 +21,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
   const ownerResponse=await authRoutes(request,env,now);
   if(ownerResponse)return ownerResponse;
+  const phoneResponse=await phoneRoutes(request,env,now);
+  if(phoneResponse)return phoneResponse;
   if(path==='/health' && request.method==='GET') {
     await env.DB.prepare('SELECT 1 AS healthy').first();
     if(env.MEDIA)await env.MEDIA.head('health-probe-does-not-exist');
@@ -100,7 +103,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/add-station','/station-edit'].includes(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+  if(env.ASSETS && request.method==='GET' && (['/','/add-station','/station-edit'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
     const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname='/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const response=new Response(asset.body,asset);

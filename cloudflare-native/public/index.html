@@ -3,6 +3,7 @@
 <title>Radio Locals</title><link rel="stylesheet" href="/assets/site.css"><script src="/assets/site.js" defer></script></head>
 <body><aside class="preview">Test website — your current radio website has not switched yet.</aside>
 <main>
+<section id="shared" class="card" hidden><img id="shareArt" width="80" height="80" alt="" hidden><p class="small">Add to your radio</p><h1 id="shareName"></h1><p class="small">Keep your radio on and connected to Wi-Fi.</p><form id="shareForm"><label id="deviceLabel">Device code<input name="device_code" autocomplete="off" maxlength="9" placeholder="Code on your radio screen"></label><label id="radioLabel" hidden>Your radio<select name="radio_id"></select></label><div class="human"></div><button id="shareSubmit" type="submit">Add station</button></form><p id="shareStatus" role="status" aria-live="polite"></p><button id="otherRadio" class="link" hidden>Connect another radio</button></section>
 <section id="library"><h1>Radio Locals</h1><p>Find a station for your radio.</p><input id="search" aria-label="Search stations or codes" placeholder="Search stations or codes"><div id="stations"></div></section>
 <section id="register" class="card" hidden><button class="link" id="openLogin">Already registered? Log in</button><h1>Create your station</h1>
 <div class="legal"><a href="https://www.radiolavoixdivine.com/terms" target="_blank" rel="noopener">Station terms</a> <a href="https://www.radiolavoixdivine.com/privacy" target="_blank" rel="noopener">Privacy & contact</a></div>
