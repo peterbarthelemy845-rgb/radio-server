@@ -154,7 +154,7 @@ export async function authRoutes(request,env,now,deps={human}){
       AND consumed_at IS NULL AND expires>? RETURNING station_code,purpose`).bind(now,id,current.token_hash,now).first();
     if(!consumed)throw new HttpError(400,'Incorrect or expired code.');
     const updates=[env.DB.prepare(`UPDATE sessions SET owner_station=?,owner_expires=? WHERE token_hash=?`)
-      .bind(consumed.station_code,now+1800,current.token_hash)];
+      .bind(consumed.station_code,now+8*60*60,current.token_hash)];
     if(consumed.purpose==='registration')updates.push(env.DB.prepare(`UPDATE stations SET email_verified_at=?,
       status='pending_review',updated_at=? WHERE code=? AND status='pending_email'`).bind(now,now,consumed.station_code));
     await env.DB.batch(updates);

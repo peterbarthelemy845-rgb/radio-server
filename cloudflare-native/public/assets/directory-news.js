@@ -43,10 +43,10 @@ $('register').append($('openLogin'));$('login').append($('openRegister'));
 $('login').querySelector('h1').innerHTML='Sign in<small>Edit your station</small>';
 const coverInput=$('registerForm').elements.artwork,coverLabel=coverInput.closest('label');
 const coverRow=document.createElement('div');coverRow.className='cover-upload';
-const coverPreview=document.createElement('img');coverPreview.className='cover-preview';coverPreview.alt='Station cover preview';coverPreview.hidden=true;
-coverRow.append(coverPreview,coverLabel);$('registerForm').prepend(coverRow);
+const coverPreview=document.createElement('img');coverPreview.className='cover-preview';coverPreview.alt='No logo uploaded yet';coverPreview.src='/assets/logo-placeholder.svg';
+const coverHint=document.createElement('span');coverHint.className='cover-hint';coverHint.textContent='No logo uploaded yet';coverInput.before(coverHint);coverRow.append(coverPreview,coverLabel);$('registerForm').prepend(coverRow);
 let coverPreviewUrl;
-coverInput.addEventListener('change',()=>{if(coverPreviewUrl)URL.revokeObjectURL(coverPreviewUrl);const file=coverInput.files[0];coverPreview.hidden=!file;if(file){coverPreviewUrl=URL.createObjectURL(file);coverPreview.src=coverPreviewUrl;}});
+coverInput.addEventListener('change',()=>{if(coverPreviewUrl)URL.revokeObjectURL(coverPreviewUrl);const file=coverInput.files[0];if(file){coverPreviewUrl=URL.createObjectURL(file);coverPreview.src=coverPreviewUrl;coverPreview.alt='Station cover preview';coverHint.textContent='Selected logo';}else{coverPreview.src='/assets/logo-placeholder.svg';coverPreview.alt='No logo uploaded yet';coverHint.textContent='No logo uploaded yet';}});
 
 function highlightMenu(){const active=!$('library').hidden?'navLibrary':!$('support').hidden?'support':'navAdd';for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){if(tab.id===active||(active==='support'&&tab.getAttribute('href')==='/device'))tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');}}
 new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attributes:true,attributeFilter:['hidden'],subtree:true});highlightMenu();

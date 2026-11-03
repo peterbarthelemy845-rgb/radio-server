@@ -100,3 +100,5 @@ nav[aria-label="Main navigation"]>:focus-visible{outline:2px solid #73d7ff;outli
 /* Always-visible, bounded station bios. */
 #library .station.editorial .station-about h3{margin:0 0 6px;color:#f3f7ff;font-size:13px;font-weight:700;line-height:1.3}
 #library .station.editorial .station-about p{margin:0;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;max-height:5.8em;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
+
+#register .cover-upload .cover-preview{width:76px;height:76px;flex-shrink:0;border:0;border-radius:10px}#register .cover-hint{display:block;font-size:11px;color:#64748b;font-weight:400;margin:5px 0 2px}

@@ -99,3 +99,11 @@ test('owner removal requires confirmation and hides only the signed-in station',
  assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(own+1).status,'published');
  await assert.rejects(f.post('/api/owner/delete',{confirm:true}),e=>e.status===401);
 });
+
+test('station-owner login lasts eight hours and then expires',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+ const request=()=>new Request(host+'/api/owner/station',{headers:{Cookie:f.cookie}});
+ const response=await authRoutes(request(),f.env,now+2*60*60);assert.equal(response.status,200);
+ assert.equal(f.sqlite.prepare('SELECT owner_expires FROM sessions').get().owner_expires,now+8*60*60);
+ await assert.rejects(authRoutes(request(),f.env,now+8*60*60),e=>e.status===401);
+});
