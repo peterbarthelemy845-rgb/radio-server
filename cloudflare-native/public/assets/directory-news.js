@@ -11,3 +11,13 @@ async function loadHeadlines(){try{const result=await api('/api/haitian-times');
 window.addEventListener('radio-locals-ready',()=>{list();loadHeadlines();});if(state){list();loadHeadlines();}
 setInterval(()=>{if(!document.hidden&&!$('radio').hidden&&headlines.length){headlineIndex=(headlineIndex+1)%headlines.length;renderHeadlines();}},6500);
 const directoryReady=setInterval(()=>{if(state){clearInterval(directoryReady);list();loadHeadlines();}},250);
+
+// Match registration and sign-in to the compact white owner card.
+$('register').append($('openLogin'));$('login').append($('openRegister'));
+$('login').querySelector('h1').innerHTML='Sign in<small>Edit your station</small>';
+const coverInput=$('registerForm').elements.artwork,coverLabel=coverInput.closest('label');
+const coverRow=document.createElement('div');coverRow.className='cover-upload';
+const coverPreview=document.createElement('img');coverPreview.className='cover-preview';coverPreview.alt='Station cover preview';coverPreview.hidden=true;
+coverRow.append(coverPreview,coverLabel);$('registerForm').prepend(coverRow);
+let coverPreviewUrl;
+coverInput.addEventListener('change',()=>{if(coverPreviewUrl)URL.revokeObjectURL(coverPreviewUrl);const file=coverInput.files[0];coverPreview.hidden=!file;if(file){coverPreviewUrl=URL.createObjectURL(file);coverPreview.src=coverPreviewUrl;}});
