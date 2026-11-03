@@ -20,3 +20,4 @@ main:has(#library:not([hidden])){max-width:1400px}
 @media(min-width:1200px){.station.restored>img{width:112px;height:148px}.station.restored{min-height:230px;padding:16px}.station.restored h2{font-size:23px}}
 @media(max-width:899px){#stations{grid-template-columns:repeat(2,minmax(0,1fr))}.station.restored{min-height:220px}}
 @media(max-width:639px){#stations{grid-template-columns:1fr}.station.restored{min-height:190px}#library>h1{font-size:38px;margin-bottom:22px}}
+.social svg{width:29px;height:29px;display:block;margin:auto}.social.facebook{font-family:Arial,sans-serif;font-weight:900}
