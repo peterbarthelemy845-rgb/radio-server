@@ -1,2 +1,22 @@
 #library>h1{font-size:40px}#stationCount{font-size:13px;color:#bed8f7}#stations{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}.station.restored{display:flex;align-items:center;gap:14px;border:0;border-radius:22px;background:#ffffff1c;padding:14px}.station.restored>img{width:100px;height:145px;object-fit:cover;flex-shrink:0;background:#11265c}.station-body{min-width:0;flex:1}.station h2{margin:0 0 5px;font-weight:900;font-size:22px}.station .code{margin:4px 0 9px;font-size:12px;font-weight:bold}.socials{display:flex;gap:9px}.social{width:44px;height:44px;min-height:44px;border-radius:50%;padding:0;font-size:26px;background:#0866ff}.social.whatsapp{background:#0cbd42}.social.more{background:#119e47;font-size:20px}.bio-small{background:#285277;min-height:30px;font-size:12px;padding:7px 12px;margin-top:8px}.station-advertise{margin-top:9px;font-size:12px}.news-carousel{display:flex;gap:20px;align-items:center;justify-content:center;width:100%;overflow:hidden;min-height:160px;margin:12px 0}.news-card{display:flex;gap:12px;text-decoration:none;color:white;background:#ffffff14;border-radius:18px;padding:10px;flex:0 0 310px;height:145px;opacity:.55;transform:scale(.92)}.news-card.active{opacity:1;transform:none;background:#ffffff22}.news-card img{width:110px;height:125px;border-radius:12px;object-fit:cover}.news-card>span{display:flex;flex-direction:column;justify-content:center;min-width:0}.news-card small{color:#a3d1ff;letter-spacing:2px;font-size:10px;font-weight:bold}.news-card strong{font-size:17px;line-height:1.15;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;margin-top:8px}.radio-home{overflow:hidden}nav{z-index:20}@media(max-width:380px){#stations{grid-template-columns:1fr}.station.restored>img{width:78px}.station h2{font-size:19px}}@media(prefers-reduced-motion:reduce){.news-card{transform:none}}
 .station .station-advertise{display:block;background:#b91c1c;color:white;padding:6px 9px;border-radius:5px;text-decoration:none;font-weight:bold}
+/* Desktop Library follows the original wide, three-card layout. */
+main:has(#library:not([hidden])){max-width:1400px}
+#library>h1{font-size:46px;line-height:1.1;margin:0 0 24px;font-weight:900}
+#library #search{height:54px;border:0;border-radius:18px;background:#ffffff22;color:#fff;font-size:21px;font-weight:800;padding:0 18px;margin:0 0 14px}
+#library #search::placeholder{color:#c5cce0;opacity:1}
+#library details{font-size:13px;color:#c8e0ff;font-weight:700;margin:0 0 16px}
+#library details p{font-weight:400;line-height:1.5}
+#stationCount{margin:0 0 16px;font-size:13px}
+#stations{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:0}
+.station.restored{padding:12px;gap:12px;min-height:230px;border-radius:22px}
+.station.restored>img{width:100px;height:134px;object-fit:contain;background:linear-gradient(#142963,#050a20)}
+.station.restored h2{font-size:20px;line-height:1.08;margin:0 0 7px}
+.station.restored .code{font-size:11px;margin:0 0 10px}
+.station.restored .socials{gap:8px}
+.station.restored .social{width:40px;height:40px;min-height:40px;font-size:28px}
+.station.restored .bio-small{font-size:11px;min-height:28px;padding:6px 10px;margin-top:8px}
+.station.restored .station-advertise{font-size:12px;line-height:1.25;margin-top:8px;padding:7px 9px}
+@media(min-width:1200px){.station.restored>img{width:112px;height:148px}.station.restored{min-height:230px;padding:16px}.station.restored h2{font-size:23px}}
+@media(max-width:899px){#stations{grid-template-columns:repeat(2,minmax(0,1fr))}.station.restored{min-height:220px}}
+@media(max-width:639px){#stations{grid-template-columns:1fr}.station.restored{min-height:190px}#library>h1{font-size:38px;margin-bottom:22px}}
