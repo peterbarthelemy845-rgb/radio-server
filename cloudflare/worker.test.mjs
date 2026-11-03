@@ -2,6 +2,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {proxy} from './worker.mjs';
 const env = {ORIGIN_URL: 'https://radio-server-z0hb.onrender.com'};
+test('dedicated radio address serves the player without redirecting the browser',async()=>{
+ for(const path of ['/radiolavoixdivine','/radiolavoixdivine/']){
+  const response=await proxy(new Request('https://radiolocals.com'+path+'?source=share'),env,async sent=>{assert.equal(sent.url,env.ORIGIN_URL+'/?source=share');return new Response('player');});
+  assert.equal(response.status,200);assert.equal(response.headers.get('Location'),null);
+ }
+});
 test('preserves POST, query, session and CSRF; removes forged forwarding headers', async () => {
   const request = new Request('https://radiolocals.com/api/add-station?x=1', {
     method:'POST', body:'csrf_token=example', headers:{cookie:'session=private',

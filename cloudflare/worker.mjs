@@ -9,7 +9,9 @@ export async function proxy(request, env, fetchOrigin = fetch) {
   }
   const incoming = new URL(request.url);
   const target = new URL(origin.origin);
-  target.pathname = incoming.pathname;
+  // Dedicated radio address retains the requested URL in the browser while
+  // serving the existing player. Other paths, including device APIs, are intact.
+  target.pathname = ['/radiolavoixdivine','/radiolavoixdivine/'].includes(incoming.pathname) && ['GET','HEAD'].includes(request.method) ? '/' : incoming.pathname;
   target.search = incoming.search;
   const headers = new Headers(request.headers);
   // Never let visitors choose the upstream host or impersonate a trusted proxy.
