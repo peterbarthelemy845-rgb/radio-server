@@ -110,7 +110,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
     const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname='/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
-    const response=new Response(asset.body,asset);
+    const html=asset.headers.get('Content-Type')?.includes('text/html');
+    const response=env.MIGRATION_PREVIEW==='false'&&html?new Response((await asset.text()).replace('<aside class="preview">Test website — your current radio website has not switched yet.</aside>',''),asset):new Response(asset.body,asset);
     response.headers.set('Cache-Control','no-store');
     response.headers.set('X-Content-Type-Options','nosniff');
     response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');

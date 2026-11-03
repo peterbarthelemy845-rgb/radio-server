@@ -2,6 +2,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {proxy} from './worker.mjs';
 const env = {ORIGIN_URL: 'https://radio-server-z0hb.onrender.com'};
+test('migrated routes preserve the real URL and never fall back after a native error',async()=>{
+ let legacy=0;const bound={...env,NATIVE:{async fetch(request){assert.equal(new URL(request.url).hostname,'radiolocals.com');return new Response('native unavailable',{status:503});}}};
+ const response=await proxy(new Request('https://radiolocals.com/api/admin/stations'),bound,async()=>{legacy++;return new Response('legacy');});
+ assert.equal(response.status,503);assert.equal(legacy,0);
+ await proxy(new Request('https://radiolocals.com/advertise/10'),bound,async()=>{legacy++;return new Response('legacy');});assert.equal(legacy,1);
+});
 test('dedicated radio address serves the player without redirecting the browser',async()=>{
  for(const path of ['/radiolavoixdivine','/radiolavoixdivine/']){
   const response=await proxy(new Request('https://radiolocals.com'+path+'?source=share'),env,async sent=>{assert.equal(sent.url,env.ORIGIN_URL+'/?source=share');return new Response('player');});
