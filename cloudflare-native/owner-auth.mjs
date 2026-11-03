@@ -80,7 +80,7 @@ export async function authRoutes(request,env,now,deps={human}){
       owner_station:current.owner_expires>now?current.owner_station:null});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);return response;
   }
-  if(!['/api/owner/register','/api/owner/login','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend'].includes(path))return null;
+  if(!['/api/owner/register','/api/owner/login','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/delete'].includes(path))return null;
   if(path==='/api/owner/station'&&request.method==='GET'){
     const current=await session(request,env,now);
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -94,6 +94,16 @@ export async function authRoutes(request,env,now,deps={human}){
   if(path==='/api/owner/logout'){
     await env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL WHERE token_hash=?').bind(current.token_hash).run();
     return json({status:'ok'});
+  }
+  if(path==='/api/owner/delete'){
+    if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
+    if(body.confirm!==true)throw new HttpError(400,'Confirm station removal.');
+    await env.DB.batch([
+      env.DB.prepare("UPDATE stations SET status='deleted',updated_at=? WHERE code=?").bind(now,current.owner_station),
+      env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered')").bind(current.owner_station),
+      env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL WHERE owner_station=?').bind(current.owner_station)
+    ]);
+    return json({status:'ok',message:'Station removed from the directory.'});
   }
   if(path==='/api/owner/register'){
     await deps.human(request,env,body.turnstile_token,'station-submit',now);

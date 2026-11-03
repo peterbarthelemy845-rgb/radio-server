@@ -4,6 +4,7 @@ import {json,digest,randomHex,HttpError,limit,readJson} from './security.mjs';
 export {digest,randomHex,HttpError,limit} from './security.mjs';
 import {authRoutes,processMail} from './owner-auth.mjs';
 import {phoneRoutes} from './phone-link.mjs';
+import {adminRoutes} from './admin.mjs';
 async function authenticate(request, db, body) {
   const id=body.radio_id, auth=request.headers.get('Authorization')||'';
   if(typeof id!=='string'|| !/^[0-9a-f]{32}$/.test(id)||!/^Bearer [0-9a-f]{64}$/.test(auth))throw new HttpError(401,'Radio authentication required.');
@@ -23,6 +24,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(ownerResponse)return ownerResponse;
   const phoneResponse=await phoneRoutes(request,env,now);
   if(phoneResponse)return phoneResponse;
+  const adminResponse=await adminRoutes(request,env,now);
+  if(adminResponse)return adminResponse;
   if(path==='/health' && request.method==='GET') {
     await env.DB.prepare('SELECT 1 AS healthy').first();
     if(env.MEDIA)await env.MEDIA.head('health-probe-does-not-exist');
@@ -103,7 +106,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/add-station','/station-edit'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+  if(env.ASSETS && request.method==='GET' && (['/','/add-station','/station-edit','/admin'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
     const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname='/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const response=new Response(asset.body,asset);
@@ -117,7 +120,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
 }
 export async function fetchHandler(request,env,ctx) {
   try{const response=await handle(request,env);
-    if(ctx&&request.method==='POST'&&new URL(request.url).pathname.startsWith('/api/owner/')&&response.ok)
+    if(ctx&&request.method==='POST'&&/^\/api\/(owner|admin)\//.test(new URL(request.url).pathname)&&response.ok)
       ctx.waitUntil(processMail(env));
     return response;
   }catch(error){

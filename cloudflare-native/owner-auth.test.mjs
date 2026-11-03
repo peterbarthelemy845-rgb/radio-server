@@ -89,3 +89,13 @@ test('encryption detects modification and server-side Turnstile requires exact a
     await human(new Request(host),f.env,'test-token','station-submit',now);
   }finally{globalThis.fetch=original;}
 });
+test('owner removal requires confirmation and hides only the signed-in station',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+ const own=f.sqlite.prepare('SELECT code FROM stations').get().code;
+ f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Other','https://example.com/other','other@example.com','published',?,?)").run(now,now);
+ await assert.rejects(f.post('/api/owner/delete',{confirm:false}),e=>e.status===400);
+ await f.post('/api/owner/delete',{confirm:true,code:own+1});
+ assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(own).status,'deleted');
+ assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(own+1).status,'published');
+ await assert.rejects(f.post('/api/owner/delete',{confirm:true}),e=>e.status===401);
+});

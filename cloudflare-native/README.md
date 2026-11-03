@@ -65,6 +65,16 @@ Test command: `node --test worker.test.mjs` (Node with node:sqlite support).
 
 ## Required before production cutover
 
+Staging admin: `/admin`, with ADMIN_EMAIL restricted to the configured owner.
+Email-code sign-in grants 15-minute admin sessions; this is not MFA. Turnstile,
+CSRF/origin protection, five OTP attempts, single-use codes, reviewed-content
+revision checks and an action audit apply. Admins can approve verified pending
+stations, suspend them, or soft-delete them. Station owners can soft-delete only
+their own station after explicit confirmation. Records and private artwork are
+retained; deletion removes directory/artwork access and cancels pending commands.
+Migration 0002_admin.sql was applied to staging through the D1 console.
+Production admin MFA/Access protection remains a cutover requirement.
+
 - Complete the Radio/Library/shared station pages and legal/Support content.
 - Device registration, code allocation, browser claim and command enqueue routes.
 - Connect automatic moderation, media grants and ad artwork delivery.
