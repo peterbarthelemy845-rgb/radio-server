@@ -32,7 +32,7 @@ const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search
 
 const bioDialog=document.createElement('dialog');bioDialog.id='stationBio';const bioTitle=document.createElement('h2');bioTitle.id='stationBioTitle';const bioText=document.createElement('p');bioText.id='stationBioText';const closeBio=document.createElement('button');closeBio.textContent='Close';closeBio.onclick=()=>bioDialog.close();bioDialog.append(bioTitle,bioText,closeBio);document.body.append(bioDialog);
 const carousel=document.createElement('div');carousel.className='news-carousel';carousel.setAttribute('aria-label','Haitian Times headlines');$('playerPlay').after(carousel);let headlines=[],headlineIndex=0;
-function renderHeadlines(){carousel.replaceChildren();if(!headlines.length){carousel.textContent='Headlines are temporarily unavailable.';return;}const indices=headlines.length>2?[(headlineIndex+headlines.length-1)%headlines.length,headlineIndex,(headlineIndex+1)%headlines.length]:headlines.map((_,i)=>i);for(const index of indices){const item=headlines[index],card=document.createElement('a');card.className='news-card'+(index===headlineIndex?' active':'');card.href=item.url;card.target='_blank';card.rel='noopener noreferrer';if(item.image){const image=document.createElement('img');image.src=item.image;image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';card.append(image);}const content=document.createElement('span'),source=document.createElement('small'),title=document.createElement('strong');source.textContent=item.source;title.textContent=item.title;content.append(source,title);card.append(content);carousel.append(card);}}
+function renderHeadlines(){renderLibraryNews();carousel.replaceChildren();if(!headlines.length){carousel.textContent='Headlines are temporarily unavailable.';return;}const indices=headlines.length>2?[(headlineIndex+headlines.length-1)%headlines.length,headlineIndex,(headlineIndex+1)%headlines.length]:headlines.map((_,i)=>i);for(const index of indices){const item=headlines[index],card=document.createElement('a');card.className='news-card'+(index===headlineIndex?' active':'');card.href=item.url;card.target='_blank';card.rel='noopener noreferrer';if(item.image){const image=document.createElement('img');image.src=item.image;image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';card.append(image);}const content=document.createElement('span'),source=document.createElement('small'),title=document.createElement('strong');source.textContent=item.source;title.textContent=item.title;content.append(source,title);card.append(content);carousel.append(card);}}
 async function loadHeadlines(){try{const result=await api('/api/haitian-times');headlines=result.items||[];}catch{}renderHeadlines();}
 window.addEventListener('radio-locals-ready',()=>{list();loadHeadlines();});if(state){list();loadHeadlines();}
 setInterval(()=>{if(!document.hidden&&!$('radio').hidden&&headlines.length){headlineIndex=(headlineIndex+1)%headlines.length;renderHeadlines();}},6500);
@@ -54,3 +54,29 @@ new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attr
 // One consistent outline icon family above the persistent menu labels.
 const menuIconPaths={navRadio:'<rect x="4" y="7" width="16" height="13" rx="3"/><path d="m7 7 10-4M8 11h8"/><circle cx="9" cy="16" r="2"/><path d="M15 15h2m-2 3h2"/>',navLibrary:'<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/><path d="m17 5 4 14-3 1-4-14z"/>',navAdd:'<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8m-4-4h8"/>',support:'<path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="11" width="4" height="7" rx="2"/><rect x="17" y="11" width="4" height="7" rx="2"/><path d="M19 18c0 2-2 3-5 3h-2"/>'};
 for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){const label=tab.textContent,icon=menuIconPaths[tab.id||'support'];tab.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'+icon+'</svg>';const text=document.createElement('span');text.textContent=label;tab.append(text);}
+
+const libraryNews=document.createElement('section');libraryNews.className='library-news';libraryNews.setAttribute('aria-label','Latest news');
+const newsHeading=document.createElement('div');newsHeading.className='library-news-heading';
+const newsTitle=document.createElement('h2');newsTitle.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2" fill="currentColor"/><path d="M3 10a11 11 0 0 1 11 11M3 3a18 18 0 0 1 18 18" fill="none" stroke="currentColor" stroke-width="3"/></svg><span>Latest News</span>';
+const newsNote=document.createElement('span');newsNote.className='news-note';newsNote.textContent='Headlines from Haitian Times';
+const viewNews=document.createElement('a');viewNews.href='https://haitiantimes.com/';viewNews.target='_blank';viewNews.rel='noopener noreferrer';viewNews.textContent='View all ›';newsHeading.append(newsTitle,newsNote,viewNews);
+const newsRow=document.createElement('div');newsRow.className='library-news-row';
+const previousNews=document.createElement('button');previousNews.textContent='‹';previousNews.className='news-arrow';previousNews.setAttribute('aria-label','Previous headlines');
+const newsTrack=document.createElement('div');newsTrack.className='library-news-track';
+const nextNews=document.createElement('button');nextNews.textContent='›';nextNews.className='news-arrow';nextNews.setAttribute('aria-label','Next headlines');
+const newsDots=document.createElement('div');newsDots.className='library-news-dots';let libraryNewsPage=0;
+previousNews.onclick=()=>{libraryNewsPage=(libraryNewsPage-1+Math.ceil(headlines.length/3))%Math.ceil(headlines.length/3);renderLibraryNews();};nextNews.onclick=()=>{libraryNewsPage=(libraryNewsPage+1)%Math.ceil(headlines.length/3);renderLibraryNews();};
+newsRow.append(previousNews,newsTrack,nextNews);libraryNews.append(newsHeading,newsRow,newsDots);$('search').after(libraryNews);
+function renderLibraryNews(){
+ newsTrack.replaceChildren();newsDots.replaceChildren();previousNews.disabled=nextNews.disabled=headlines.length<=3;
+ if(!headlines.length){const empty=document.createElement('p');empty.className='news-empty';empty.textContent='Headlines are temporarily unavailable.';newsTrack.append(empty);return;}
+ const pages=Math.ceil(headlines.length/3);libraryNewsPage%=pages;
+ for(const item of headlines.slice(libraryNewsPage*3,libraryNewsPage*3+3)){
+  const card=document.createElement('a');card.className='library-news-card';card.href=item.url;card.target='_blank';card.rel='noopener noreferrer';
+  if(item.image){const image=document.createElement('img');image.src=item.image;image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';card.append(image);}
+  const text=document.createElement('div'),source=document.createElement('small'),title=document.createElement('strong');source.textContent=item.source;title.textContent=item.title;text.append(source,title);
+  if(item.published_at){const time=document.createElement('time');time.dateTime=item.published_at;time.textContent=new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric'}).format(new Date(item.published_at));text.append(time);}
+  card.append(text);newsTrack.append(card);
+ }
+ for(let i=0;i<pages;i++){const dot=document.createElement('button');dot.className='news-page-dot';dot.setAttribute('aria-label','Headlines page '+(i+1));dot.setAttribute('aria-pressed',String(i===libraryNewsPage));dot.onclick=()=>{libraryNewsPage=i;renderLibraryNews();};newsDots.append(dot);}
+}
