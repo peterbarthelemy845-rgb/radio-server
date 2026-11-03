@@ -100,10 +100,11 @@ test('owner removal requires confirmation and hides only the signed-in station',
  await assert.rejects(f.post('/api/owner/delete',{confirm:true}),e=>e.status===401);
 });
 
-test('station-owner login lasts eight hours and then expires',async()=>{
+test('station-owner session survives navigation and expires after thirty minutes',async()=>{
  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
  const request=()=>new Request(host+'/api/owner/station',{headers:{Cookie:f.cookie}});
- const response=await authRoutes(request(),f.env,now+2*60*60);assert.equal(response.status,200);
- assert.equal(f.sqlite.prepare('SELECT owner_expires FROM sessions').get().owner_expires,now+8*60*60);
- await assert.rejects(authRoutes(request(),f.env,now+8*60*60),e=>e.status===401);
+ const navigation=await authRoutes(new Request(host+'/api/session',{headers:{Cookie:f.cookie}}),f.env,now+1200);assert.equal((await navigation.json()).owner_station,10);
+ const response=await authRoutes(request(),f.env,now+1200);assert.equal(response.status,200);
+ assert.equal(f.sqlite.prepare('SELECT owner_expires FROM sessions').get().owner_expires,now+1800);
+ await assert.rejects(authRoutes(request(),f.env,now+1800),e=>e.status===401);
 });
