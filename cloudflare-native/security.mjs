@@ -68,7 +68,7 @@ export async function human(request,env,token,action,now){
   let result;try{
     const response=await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify',{
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret:env.TURNSTILE_SECRET_KEY,response:token}),
-      signal:AbortSignal.timeout(8000),redirect:'error'});
+      signal:AbortSignal.timeout(8000),redirect:'manual'});
     result=response.ok?await response.json():null;
   }catch{throw new HttpError(503,'Security check is temporarily unavailable.');}
   if(result?.success!==true||result.action!==action||result.hostname!==new URL(request.url).hostname)
