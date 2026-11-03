@@ -1,3 +1,4 @@
+import {newsResponse} from './news.mjs';
 // Independent Cloudflare foundation. No Render origin, proxy, or local disk.
 // Only the routes explicitly implemented here are available in this staging build.
 import {json,digest,randomHex,HttpError,limit,readJson} from './security.mjs';
@@ -14,6 +15,7 @@ async function publicStation(db,code) {
 }
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
+  if(path==='/api/haitian-times'&&request.method==='GET')return newsResponse(request);
   const ownerResponse=await authRoutes(request,env,now);
   if(ownerResponse)return ownerResponse;
   const phoneResponse=await phoneRoutes(request,env,now);
@@ -115,7 +117,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     response.headers.set('Cache-Control','no-store');
     response.headers.set('X-Content-Type-Options','nosniff');
     response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');
-    response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data:; media-src https:; connect-src 'self' https://challenges.cloudflare.com");
+    response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data: https:; media-src https:; connect-src 'self' https://challenges.cloudflare.com");
     return response;
   }
   return json({message:'This feature has not migrated yet. This is an isolated test backend.',preview:true},404);
