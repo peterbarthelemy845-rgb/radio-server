@@ -95,3 +95,16 @@ test('invalid/oversized payloads and unimplemented routes fail closed',async()=>
   assert.equal((await fetchHandler(new Request('https://native.example/api/add-station',{method:'POST'}),env)).status,404);
   assert.equal((await fetchHandler(new Request('https://native.example/health'),env)).status,200);
 });
+test('private artwork requires published reference and trusted sanitizer metadata',async()=>{
+  const env=await fixture(),key='f'.repeat(64)+'.png';let reads=0;
+  env.MEDIA={async get(){reads++;return {size:8,body:'safe png',customMetadata:{sanitizer_version:'1'}};}};
+  const req=()=>new Request('https://native.example/artwork/'+key);
+  assert.equal((await handle(req(),env,now)).status,404);assert.equal(reads,0);
+  env.DB.sqlite.prepare('UPDATE stations SET artwork_key=?').run(key);
+  assert.equal((await handle(req(),env,now)).headers.get('content-type'),'image/png');
+  env.MEDIA.get=async()=>({size:8,body:'raw untrusted',customMetadata:{}});
+  assert.equal((await handle(req(),env,now)).status,404);
+  env.DB.sqlite.exec("UPDATE stations SET status='pending_review'");
+  assert.equal((await handle(req(),env,now)).status,404);
+  assert.equal((await handle(new Request('https://native.example/artwork/../../private'),env,now)).status,404);
+});

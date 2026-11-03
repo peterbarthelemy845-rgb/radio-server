@@ -53,9 +53,24 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
   if(path==='/health' && request.method==='GET') {
     await env.DB.prepare('SELECT 1 AS healthy').first();
+    if(env.MEDIA)await env.MEDIA.head('health-probe-does-not-exist');
     return json({status:'ok',backend:'cloudflare-native',preview:true,
+      private_media_configured:Boolean(env.MEDIA),
       implemented:['public-directory','station-code-lookup','authenticated-radio-poll','radio-unlink'],
       cutover_ready:false});
+  }
+  const artwork=path.match(/^\/artwork\/([a-f0-9]{64}\.png)$/);
+  if(artwork && request.method==='GET') {
+    // A bucket object is never public merely because its name is known. Only
+    // sanitized artwork attached to a currently published station may be served.
+    const approved=await env.DB.prepare("SELECT 1 FROM stations WHERE artwork_key=? AND status='published' LIMIT 1")
+      .bind(artwork[1]).first();
+    if(!approved || !env.MEDIA)return json({message:'Artwork not found.'},404);
+    const object=await env.MEDIA.get('sanitized/'+artwork[1]);
+    if(!object || object.customMetadata?.sanitizer_version!=='1' || object.size>3*1024*1024)
+      return json({message:'Artwork not found.'},404);
+    return new Response(object.body,{headers:{'Content-Type':'image/png','X-Content-Type-Options':'nosniff',
+      'Content-Security-Policy':"default-src 'none'; sandbox",'Cache-Control':'no-store'}});
   }
   if(request.method==='GET' && path==='/api/stations') {
     const rows=await env.DB.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,

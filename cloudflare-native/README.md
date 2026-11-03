@@ -8,6 +8,12 @@ ID: `c23a0beb-c018-4586-83f4-bf6e75117a70`.
 Initial schema was applied to the fresh database through the Cloudflare console.
 No existing user data was deleted, exported, or imported.
 
+Private R2 bucket: `radio-locals-private-media`. No public bucket URL, CORS rules,
+or external API keys are enabled. MEDIA is bound only to the native test Worker.
+Artwork GET requires a published station reference and a sanitized PNG object
+with trusted sanitizer metadata. There is no raw-upload serving route. The
+sanitizing upload and moderation pipeline is still required before uploads open.
+
 Create a **separate** Worker with the existing repository:
 
 - Name: `radio-locals-native`
