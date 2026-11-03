@@ -8,3 +8,4 @@ function renderHeadlines(){carousel.replaceChildren();if(!headlines.length){caro
 async function loadHeadlines(){try{const result=await api('/api/haitian-times');headlines=result.items||[];}catch{}renderHeadlines();}
 window.addEventListener('radio-locals-ready',()=>{list();loadHeadlines();});if(state){list();loadHeadlines();}
 setInterval(()=>{if(!document.hidden&&!$('radio').hidden&&headlines.length){headlineIndex=(headlineIndex+1)%headlines.length;renderHeadlines();}},6500);
+const directoryReady=setInterval(()=>{if(state){clearInterval(directoryReady);list();loadHeadlines();}},250);
