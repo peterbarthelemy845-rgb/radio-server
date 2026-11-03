@@ -1,6 +1,32 @@
 'use strict';
 function shareButton(label,kind,name,url){const button=document.createElement('button');button.className='social '+kind;button.setAttribute('aria-label',label);button.title=label;button.textContent={facebook:'f',whatsapp:'◉',more:'•••'}[kind];if(kind==='whatsapp')button.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 26l1-5a11 11 0 1 1 4 4z" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M12 10q-2 4 5 9l3-1 2 3q-5 5-12-5-3-5 0-7z" fill="currentColor"/></svg>';if(kind==='more')button.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 7h22v16H14l-6 5v-5H5z" fill="currentColor"/><g fill="#119e47"><circle cx="10" cy="15" r="1.6"/><circle cx="16" cy="15" r="1.6"/><circle cx="22" cy="15" r="1.6"/></g></svg>';button.onclick=async()=>{if(kind==='facebook'||kind==='whatsapp'){const target=kind==='facebook'?'https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(url):'https://wa.me/?text='+encodeURIComponent(name+' '+url);window.open(target,'_blank','noopener,noreferrer');}else try{if(navigator.share)await navigator.share({title:name,url});else{await navigator.clipboard.writeText(url);button.title='Link copied';}}catch{}};return button;}
-list=function(){const query=$('search').value.trim().toLowerCase(),found=stations.filter(s=>(s.name+' '+s.listener_code).toLowerCase().includes(query));$('stations').replaceChildren();$('stationCount').textContent=found.length+' stations found · showing '+found.length;for(const station of found){const card=document.createElement('article');card.className='station restored';card.dataset.actions='1';const image=document.createElement('img');image.src=station.logo_url||'/assets/radiolavoixdivine.png';image.alt=station.name;image.loading='lazy';const body=document.createElement('div');body.className='station-body';const title=document.createElement('h2');title.textContent=station.name;const code=document.createElement('p');code.className='code';code.textContent='Station code #'+station.listener_code;const shares=document.createElement('div');shares.className='socials';const url=location.origin+'/station/'+station.listener_code;for(const [label,kind] of [['Share on Facebook','facebook'],['Share on WhatsApp','whatsapp'],['More sharing options','more']])shares.append(shareButton(label,kind,station.name,url));const bio=document.createElement('button');bio.className='bio-small';bio.textContent='Bio';bio.onclick=()=>{const dialog=$('stationBio');$('stationBioTitle').textContent=station.name;$('stationBioText').textContent=station.bio||'No bio provided.';dialog.showModal();};const advertise=document.createElement('a');advertise.className='station-advertise';advertise.href='/advertise/'+station.listener_code;advertise.textContent='Advertise on this station';body.append(title,code,shares,bio,advertise);card.append(image,body);$('stations').append(card);}if(!found.length)$('stationCount').textContent=query?'No matching stations.':'No published stations yet.';};
+list=function(){
+ const query=$('search').value.trim().toLowerCase(),found=stations.filter(s=>(s.name+' '+s.listener_code).toLowerCase().includes(query));
+ $('stations').replaceChildren();$('stationCount').textContent=found.length+' stations found · showing '+found.length;
+ for(const station of found){
+  const card=document.createElement('article');card.className='station restored editorial';card.dataset.actions='1';
+  const image=document.createElement('img');image.src=station.logo_url||'/assets/radiolavoixdivine.png';image.alt=station.name;image.loading='lazy';
+  const body=document.createElement('div');body.className='station-body';
+  const eyebrow=document.createElement('p');eyebrow.className='station-eyebrow';eyebrow.textContent='INTERNET RADIO';
+  const title=document.createElement('h2');title.textContent=station.name;
+  const code=document.createElement('p');code.className='code';code.textContent='Station code #'+station.listener_code;
+  const shares=document.createElement('div');shares.className='socials';const url=location.origin+'/station/'+station.listener_code;
+  for(const [label,kind] of [['Share on Facebook','facebook'],['Share on WhatsApp','whatsapp'],['More sharing options','more']])shares.append(shareButton(label,kind,station.name,url));
+  const ownStation=station.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine';
+  const action=document.createElement(ownStation?'button':'a');action.className='station-primary';
+  if(ownStation){action.textContent=$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';action.onclick=()=>{$('playerPlay').click();};action.dataset.stationPlay='1';}
+  else{action.href='/station/'+station.listener_code;action.textContent='+ Add to your radio';}
+  body.append(eyebrow,title,code,shares,action);
+  const about=document.createElement('details');about.className='station-about';about.open=true;
+  const summary=document.createElement('summary');summary.textContent='About '+station.name;
+  const bio=document.createElement('p');bio.textContent=station.bio||'The station owner has not added a bio yet.';about.append(summary,bio);
+  const advertise=document.createElement('a');advertise.className='station-advertise';advertise.href='/advertise/'+station.listener_code;
+  advertise.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v5h4l10 5V5L7 10zm4 5 2 6h3m8-12v7"/></svg><span>Advertise on this station</span>';
+  card.append(image,body,about,advertise);$('stations').append(card);
+ }
+ if(!found.length)$('stationCount').textContent=query?'No matching stations.':'No published stations yet.';
+};
+for(const event of ['playing','pause','waiting','error'])$('playerAudio').addEventListener(event,()=>{for(const button of document.querySelectorAll('[data-station-play]')){button.textContent=event==='waiting'?'Connecting…':$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';}});
 $('search').oninput=list;
 const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search').after(libraryHelp);
 
