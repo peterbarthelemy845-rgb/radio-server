@@ -96,3 +96,7 @@ nav[aria-label="Main navigation"]>:focus-visible{outline:2px solid #73d7ff;outli
 .station.editorial .station-about p{color:#d0dcf2}
 .station.restored.editorial>img{background:#e8eef9}
 .station.editorial .station-primary{background:linear-gradient(120deg,#0bb9f4,#3931f8)}
+
+/* Always-visible, bounded station bios. */
+#library .station.editorial .station-about h3{margin:0 0 6px;color:#f3f7ff;font-size:13px;font-weight:700;line-height:1.3}
+#library .station.editorial .station-about p{margin:0;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;max-height:5.8em;font-size:13px;line-height:1.45;overflow-wrap:anywhere}

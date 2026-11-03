@@ -17,9 +17,9 @@ list=function(){
   if(ownStation){action.textContent=$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';action.onclick=()=>{$('playerPlay').click();};action.dataset.stationPlay='1';}
   else{action.href='/station/'+station.listener_code;action.textContent='+ Add to your radio';}
   body.append(eyebrow,title,code,shares,action);
-  const about=document.createElement('details');about.className='station-about';
-  const summary=document.createElement('summary');summary.textContent='About';
-  const bio=document.createElement('p');bio.textContent=station.bio||'The station owner has not added a bio yet.';about.append(summary,bio);
+  const about=document.createElement('section');about.className='station-about';about.setAttribute('aria-label','Bio for '+station.name);
+  const summary=document.createElement('h3');summary.textContent='Bio';
+  const bio=document.createElement('p');bio.textContent=(station.bio||'The station owner has not added a bio yet.').slice(0,250);about.append(summary,bio);
   const advertise=document.createElement('a');advertise.className='station-advertise';advertise.href='/advertise/'+station.listener_code;
   advertise.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v5h4l10 5V5L7 10zm4 5 2 6h3m8-12v7"/></svg><span>Advertise on this station</span>';
   card.append(image,body,about,advertise);$('stations').append(card);
