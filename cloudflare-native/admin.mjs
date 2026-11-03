@@ -12,6 +12,7 @@ export async function adminRoutes(request,env,now,deps={human}){
   const id=randomHex(16),email=String(body.email||'').trim().toLowerCase();
   if(email===env.ADMIN_EMAIL.trim().toLowerCase()){
    const code=otp();await env.DB.batch([
+    env.DB.prepare('UPDATE admin_email_proofs SET consumed_at=? WHERE session_hash=? AND consumed_at IS NULL').bind(now,current.token_hash),
     env.DB.prepare('UPDATE admin_verifications SET consumed_at=? WHERE session_hash=? AND consumed_at IS NULL').bind(now,current.token_hash),
     env.DB.prepare('INSERT INTO admin_verifications(id,session_hash,code_hash,expires,created_at) VALUES (?,?,?,?,?)').bind(id,current.token_hash,await mac(env,'admin:'+id+':'+code),now+600,now),
     env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) VALUES (?,?,?,?,?,?)').bind(randomHex(16),env.ADMIN_EMAIL,'Your Radio Locals admin code',await encrypt(env,JSON.stringify({text:'Your private Radio Locals admin code is '+code+'. It expires in 10 minutes and works once. Never share this code.'})),now,now+600)
@@ -24,9 +25,20 @@ export async function adminRoutes(request,env,now,deps={human}){
   if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the six-digit email code.');
   const check=await env.DB.prepare(`UPDATE admin_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING code_hash`).bind(id,current.token_hash,now).first();
   if(!check||check.code_hash!==await mac(env,'admin:'+id+':'+code))throw new HttpError(400,'Incorrect or expired code.');
-  if(!await consumeTotp(env,body.authenticator_code,now))throw new HttpError(400,'Incorrect or already-used authenticator code. Wait for the next code and try again.');
   const consumed=await env.DB.prepare('UPDATE admin_verifications SET consumed_at=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? RETURNING id').bind(now,id,current.token_hash,now).first();
   if(!consumed)throw new HttpError(400,'Incorrect or expired code.');
+  const proof=randomHex(16);
+  await env.DB.prepare('INSERT INTO admin_email_proofs(id,session_hash,expires) VALUES (?,?,?)').bind(proof,current.token_hash,now+300).run();
+  return json({status:'mfa_required',mfa_id:proof});
+ }
+ if(path==='/api/admin/mfa'&&request.method==='POST'){
+  await limit(env.DB,'admin-mfa-ip',ip,20,900,now);const body=await readJson(request),id=String(body.mfa_id||'');
+  if(!/^[a-f0-9]{32}$/.test(id))throw new HttpError(400,'Start sign-in again.');
+  const proof=await env.DB.prepare(`UPDATE admin_email_proofs SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING id`).bind(id,current.token_hash,now).first();
+  if(!proof)throw new HttpError(400,'This sign-in expired. Start again.');
+  if(!await consumeTotp(env,body.authenticator_code,now))throw new HttpError(400,'Incorrect or already-used authenticator code. Wait for the next code and try again.');
+  const consumed=await env.DB.prepare('UPDATE admin_email_proofs SET consumed_at=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? RETURNING id').bind(now,id,current.token_hash,now).first();
+  if(!consumed)throw new HttpError(400,'This sign-in expired. Start again.');
   await env.DB.batch([
    env.DB.prepare('INSERT INTO admin_sessions(session_hash,expires) VALUES (?,?) ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires').bind(current.token_hash,now+900),
    env.DB.prepare('INSERT INTO admin_mfa_sessions(session_hash,expires) VALUES (?,?) ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires').bind(current.token_hash,now+900)
