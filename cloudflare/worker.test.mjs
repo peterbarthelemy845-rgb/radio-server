@@ -6,14 +6,15 @@ test('migrated routes preserve the real URL and never fall back after a native e
  let legacy=0;const bound={...env,NATIVE:{async fetch(request){assert.equal(new URL(request.url).hostname,'radiolocals.com');return new Response('native unavailable',{status:503});}}};
  const response=await proxy(new Request('https://radiolocals.com/api/admin/stations'),bound,async()=>{legacy++;return new Response('legacy');});
  assert.equal(response.status,503);assert.equal(legacy,0);
- await proxy(new Request('https://radiolocals.com/advertise/10'),bound,async()=>{legacy++;return new Response('legacy');});assert.equal(legacy,1);
+ await proxy(new Request('https://radiolocals.com/legacy-test'),bound,async()=>{legacy++;return new Response('legacy');});assert.equal(legacy,1);
 });
-test('dedicated radio address serves the player without redirecting the browser',async()=>{
- for(const path of ['/radiolavoixdivine','/radiolavoixdivine/']){
-  const response=await proxy(new Request('https://radiolocals.com'+path+'?source=share'),env,async sent=>{assert.equal(sent.url,env.ORIGIN_URL+'/?source=share');return new Response('player');});
-  assert.equal(response.status,200);assert.equal(response.headers.get('Location'),null);
+test('retired station player address redirects to the root without contacting an origin',async()=>{
+ for(const method of ['GET','HEAD'])for(const path of ['/radiolavoixdivine','/radiolavoixdivine/']){
+  const response=await proxy(new Request('https://radiolocals.com'+path+'?source=share',{method}),env,async()=>{throw Error('Origin must not be used');});
+  assert.equal(response.status,308);assert.equal(response.headers.get('Location'),'https://radiolocals.com/?source=share');
  }
 });
+
 test('preserves POST, query, session and CSRF; removes forged forwarding headers', async () => {
   const request = new Request('https://radiolocals.com/api/add-station?x=1', {
     method:'POST', body:'csrf_token=example', headers:{cookie:'session=private',
