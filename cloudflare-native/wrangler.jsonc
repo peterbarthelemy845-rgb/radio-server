@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "radio-locals-native",
+  "account_id": "ab18d3ad3112c3800a5e35005fcc31d9",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-02",
+  "workers_dev": true,
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "radio-locals-native",
+    "database_id": "c23a0beb-c018-4586-83f4-bf6e75117a70",
+    "migrations_dir": "migrations"
+  }],
+  "send_email": [{"name": "EMAIL", "allowed_sender_addresses": ["info@radiolocals.com"]}],
+  "vars": {"PUBLIC_ORIGIN": "https://radiolocals.com", "MIGRATION_PREVIEW": "true"},
+  "triggers": {"crons": ["17 * * * *"]}
+}
