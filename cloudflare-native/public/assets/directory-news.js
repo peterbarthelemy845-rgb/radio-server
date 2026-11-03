@@ -21,3 +21,6 @@ const coverPreview=document.createElement('img');coverPreview.className='cover-p
 coverRow.append(coverPreview,coverLabel);$('registerForm').prepend(coverRow);
 let coverPreviewUrl;
 coverInput.addEventListener('change',()=>{if(coverPreviewUrl)URL.revokeObjectURL(coverPreviewUrl);const file=coverInput.files[0];coverPreview.hidden=!file;if(file){coverPreviewUrl=URL.createObjectURL(file);coverPreview.src=coverPreviewUrl;}});
+
+function highlightMenu(){const active=!$('radio').hidden?'navRadio':!$('library').hidden?'navLibrary':!$('support').hidden?'support':'navAdd';for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){if(tab.id===active||(active==='support'&&tab.getAttribute('href')==='/device'))tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');}}
+new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attributes:true,attributeFilter:['hidden'],subtree:true});highlightMenu();

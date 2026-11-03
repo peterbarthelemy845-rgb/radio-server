@@ -41,3 +41,10 @@ main:has(#library:not([hidden])){max-width:1400px}
 #register input[type=file]::file-selector-button{border:0;border-radius:6px;color:#fff;background:#0863df;padding:8px 10px;margin-right:7px;font-weight:700;cursor:pointer}
 #login.card{margin-top:30px}#login form{border-top:1px solid #e2eaf6;margin-top:12px;padding-top:3px}
 #register .human:empty,#login .human:empty{margin:0}
+/* Distinct, equal-width bottom tabs with safe spacing on small screens. */
+nav[aria-label="Main navigation"]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-top:1px solid #52658e;box-shadow:0 -5px 18px #0002;padding:0 0 env(safe-area-inset-bottom);background:#090f25}
+nav[aria-label="Main navigation"]>button,nav[aria-label="Main navigation"]>a{display:flex;align-items:center;justify-content:center;min-width:0;min-height:64px;padding:12px 5px;margin:0;border:0;border-radius:0;font-size:14px;line-height:1.2;text-align:center;color:#edf4ff;font-weight:700;text-decoration:none}
+nav[aria-label="Main navigation"]>:not(:first-child){border-left:1px solid #344665}
+nav[aria-label="Main navigation"]>[aria-current="page"]{background:#1e2d4d;color:#a5dbff;box-shadow:inset 0 3px #40c7ff}
+nav[aria-label="Main navigation"]>:focus-visible{outline:2px solid #73d7ff;outline-offset:-5px}
+@media(max-width:380px){nav[aria-label="Main navigation"]>button,nav[aria-label="Main navigation"]>a{font-size:12px;min-height:60px}}
