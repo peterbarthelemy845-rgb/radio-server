@@ -15,7 +15,6 @@ async function publicStation(db,code) {
 }
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
-  if(/^\/radiolavoixdivine\/?$/.test(path)&&['GET','HEAD'].includes(request.method)){const target=new URL(request.url);target.pathname='/';return Response.redirect(target.href,308);}
   if(path==='/api/haitian-times'&&request.method==='GET')return newsResponse(request);
   const ownerResponse=await authRoutes(request,env,now);
   if(ownerResponse)return ownerResponse;
@@ -110,8 +109,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
-    const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname='/index.html';
+  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+    const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname=/^\/radiolavoixdivine\/?$/.test(path)?'/station-player.html':'/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const html=asset.headers.get('Content-Type')?.includes('text/html');
     const response=env.MIGRATION_PREVIEW==='false'&&html?new Response((await asset.text()).replace('<aside class="preview">Test website — your current radio website has not switched yet.</aside>',''),asset):new Response(asset.body,asset);

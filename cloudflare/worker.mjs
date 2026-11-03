@@ -3,10 +3,9 @@ const ORIGIN_HOST = 'radio-server-z0hb.onrender.com';
 
 export async function proxy(request, env, fetchOrigin = fetch) {
   const path=new URL(request.url).pathname;
-  if(/^\/radiolavoixdivine\/?$/.test(path)&&['GET','HEAD'].includes(request.method)){const target=new URL(request.url);target.pathname='/';return Response.redirect(target.href,308);}
   // Completed features use the independent Worker through a private service
   // binding, preserving the real hostname, browser cookies and Origin checks.
-  const nativePath=['/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice','/api/session','/api/player','/api/haitian-times','/api/stations','/api/support','/api/legal/request','/api/radio/enroll','/api/radio/link/start','/api/radio/link/reset','/api/radio/poll'].includes(path)||/^\/(?:assets\/|artwork\/|station\/[0-9]|api\/(?:owner\/|admin\/|phone\/|device\/|support\/|stations\/))/.test(path);
+  const nativePath=['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice','/api/session','/api/player','/api/haitian-times','/api/stations','/api/support','/api/legal/request','/api/radio/enroll','/api/radio/link/start','/api/radio/link/reset','/api/radio/poll'].includes(path)||/^\/(?:assets\/|artwork\/|station\/[0-9]|api\/(?:owner\/|admin\/|phone\/|device\/|support\/|stations\/))/.test(path);
   if(env.NATIVE&&nativePath)return env.NATIVE.fetch(request);
   const origin = new URL(env.ORIGIN_URL);
   if (origin.protocol !== 'https:' || origin.hostname !== ORIGIN_HOST ||

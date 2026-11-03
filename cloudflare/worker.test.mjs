@@ -8,10 +8,10 @@ test('migrated routes preserve the real URL and never fall back after a native e
  assert.equal(response.status,503);assert.equal(legacy,0);
  await proxy(new Request('https://radiolocals.com/legacy-test'),bound,async()=>{legacy++;return new Response('legacy');});assert.equal(legacy,1);
 });
-test('retired station player address redirects to the root without contacting an origin',async()=>{
- for(const method of ['GET','HEAD'])for(const path of ['/radiolavoixdivine','/radiolavoixdivine/']){
-  const response=await proxy(new Request('https://radiolocals.com'+path+'?source=share',{method}),env,async()=>{throw Error('Origin must not be used');});
-  assert.equal(response.status,308);assert.equal(response.headers.get('Location'),'https://radiolocals.com/?source=share');
+test('standalone player address uses the native service without redirecting',async()=>{
+ for(const path of ['/radiolavoixdivine','/radiolavoixdivine/']){
+  const response=await proxy(new Request('https://radiolocals.com'+path),{...env,NATIVE:{fetch:async request=>{assert.equal(new URL(request.url).pathname,path);return new Response('standalone player');}}},async()=>{throw Error('Legacy origin must not be used');});
+  assert.equal(response.status,200);assert.equal(response.headers.get('Location'),null);assert.equal(await response.text(),'standalone player');
  }
 });
 
