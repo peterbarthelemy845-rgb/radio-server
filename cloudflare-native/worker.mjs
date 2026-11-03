@@ -5,14 +5,8 @@ export {digest,randomHex,HttpError,limit} from './security.mjs';
 import {authRoutes,processMail} from './owner-auth.mjs';
 import {phoneRoutes} from './phone-link.mjs';
 import {adminRoutes} from './admin.mjs';
-async function authenticate(request, db, body) {
-  const id=body.radio_id, auth=request.headers.get('Authorization')||'';
-  if(typeof id!=='string'|| !/^[0-9a-f]{32}$/.test(id)||!/^Bearer [0-9a-f]{64}$/.test(auth))throw new HttpError(401,'Radio authentication required.');
-  const hash=await digest(auth.slice(7));
-  const row=await db.prepare('SELECT id FROM radios WHERE id=? AND secret_hash=?').bind(id,hash).first();
-  if(!row)throw new HttpError(401,'Radio authentication required.');
-  return id;
-}
+import {communityRoutes} from './community.mjs';
+import {authenticate,deviceRoutes} from './devices.mjs';
 async function publicStation(db,code) {
   return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
     'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
@@ -26,6 +20,10 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(phoneResponse)return phoneResponse;
   const adminResponse=await adminRoutes(request,env,now);
   if(adminResponse)return adminResponse;
+  const communityResponse=await communityRoutes(request,env,now);
+  if(communityResponse)return communityResponse;
+  const deviceResponse=await deviceRoutes(request,env,now);
+  if(deviceResponse)return deviceResponse;
   if(path==='/health' && request.method==='GET') {
     await env.DB.prepare('SELECT 1 AS healthy').first();
     if(env.MEDIA)await env.MEDIA.head('health-probe-does-not-exist');
@@ -53,6 +51,9 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
       FROM stations WHERE status='published' ORDER BY code LIMIT 1000`).all();
     return json({stations:rows.results});
   }
+  if(request.method==='GET'&&path==='/api/device/default-station')return json({name:'La Voix Divine',url:'https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live',listener_code:'',logo_url:'/assets/radiolavoixdivine.png'});
+  const deviceLookup=path.match(/^\/api\/device\/stations\/([0-9]{2,6})$/);
+  if(deviceLookup&&request.method==='GET'){const station=await publicStation(env.DB,deviceLookup[1]);return station?json(station):json({message:'Station not found.'},404);}
   const lookup=path.match(/^\/api\/stations\/([0-9]{2,6})$/);
   if(lookup && request.method==='GET') {
     const station=await publicStation(env.DB,lookup[1]);
@@ -106,14 +107,14 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/add-station','/station-edit','/admin'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
     const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname='/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const response=new Response(asset.body,asset);
     response.headers.set('Cache-Control','no-store');
     response.headers.set('X-Content-Type-Options','nosniff');
     response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');
-    response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data:; connect-src 'self' https://challenges.cloudflare.com");
+    response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data:; media-src https:; connect-src 'self' https://challenges.cloudflare.com");
     return response;
   }
   return json({message:'This feature has not migrated yet. This is an isolated test backend.',preview:true},404);

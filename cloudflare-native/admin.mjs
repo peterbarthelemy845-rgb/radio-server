@@ -1,4 +1,4 @@
-import {json,session,browserWrite,readJson,limit,human,otp,mac,randomHex,encrypt,HttpError} from './security.mjs';
+import {json,session,browserWrite,readJson,limit,human,otp,mac,randomHex,encrypt,decrypt,digest,HttpError} from './security.mjs';
 import {consumeTotp} from './totp.mjs';
 async function revision(env,row){return mac(env,'station-review:'+JSON.stringify(row));}
 export async function adminRoutes(request,env,now,deps={human}){
@@ -47,6 +47,26 @@ export async function adminRoutes(request,env,now,deps={human}){
  }
  const grant=await env.DB.prepare('SELECT 1 FROM admin_sessions a JOIN admin_mfa_sessions m ON m.session_hash=a.session_hash WHERE a.session_hash=? AND a.expires>? AND m.expires>?').bind(current.token_hash,now,now).first();
  if(!grant)throw new HttpError(401,'Please sign in as administrator.');
+ if(path==='/api/admin/enrollment'&&request.method==='POST'){
+  await limit(env.DB,'admin-enroll',current.token_hash,20,3600,now);const token=randomHex();
+  await env.DB.prepare('INSERT INTO device_enrollments(token_hash,expires) VALUES (?,?)').bind(await digest(token),now+600).run();
+  return json({enrollment_token:token,expires_in:600});
+ }
+ if(path==='/api/admin/legal'&&request.method==='GET'){
+  const rows=await env.DB.prepare('SELECT * FROM legal_requests ORDER BY created_at DESC LIMIT 200').all();
+  return json({requests:await Promise.all(rows.results.map(async row=>({id:row.id,kind:row.kind,state:row.state,created_at:row.created_at,payload:JSON.parse(await decrypt(env,row.encrypted_payload))})))});
+ }
+ if(path==='/api/admin/legal'&&request.method==='POST'){
+  const body=await readJson(request);if(!['review','closed'].includes(body.state)||typeof body.notes!=='string'||body.notes.length>4000)throw new HttpError(400,'Check the request state and notes.');
+  if(!await env.DB.prepare('SELECT 1 FROM legal_requests WHERE id=?').bind(String(body.id)).first())throw new HttpError(404,'Request not found.');
+  await env.DB.batch([env.DB.prepare('UPDATE legal_requests SET state=? WHERE id=?').bind(body.state,body.id),env.DB.prepare('INSERT INTO legal_actions VALUES (?,?,?,?,?)').bind(randomHex(16),body.id,body.state,body.notes,now)]);return json({status:'ok'});
+ }
+ if(path==='/api/admin/videos'&&request.method==='GET')return json({videos:(await env.DB.prepare('SELECT * FROM help_videos ORDER BY id').all()).results});
+ if(path==='/api/admin/videos'&&request.method==='POST'){
+  const body=await readJson(request);if(body.action==='delete'){await env.DB.prepare('DELETE FROM help_videos WHERE id=?').bind(Number(body.id)).run();return json({status:'ok'});}
+  if(!['setup','wifi','stations','troubleshooting'].includes(body.topic)||typeof body.title!=='string'||!body.title.trim()||body.title.length>100||typeof body.description!=='string'||body.description.length>500||!/^[-\w]{11}$/.test(body.video_id||''))throw new HttpError(400,'Enter a topic, title and valid YouTube video ID.');
+  await env.DB.prepare('INSERT INTO help_videos(topic,title,description,video_id,created_at) SELECT ?,?,?,?,? WHERE (SELECT count(*) FROM help_videos)<50').bind(body.topic,body.title,body.description,body.video_id,now).run();return json({status:'ok'});
+ }
  const art=path.match(/^\/api\/admin\/artwork\/([a-f0-9]{64}\.png)$/);
  if(art&&request.method==='GET'){
   const station=await env.DB.prepare("SELECT 1 FROM stations WHERE artwork_key=? AND status!='deleted'").bind(art[1]).first();

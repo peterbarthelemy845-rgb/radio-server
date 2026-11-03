@@ -1,4 +1,4 @@
-import {json,digest,randomHex,HttpError,limit,readJson,session,browserWrite,otp,human} from './security.mjs';
+import {json,digest,mac,randomHex,HttpError,limit,readJson,session,browserWrite,otp,human} from './security.mjs';
 
 // Phone grants permit station additions only. Device secrets never reach browsers.
 export async function phoneRoutes(request,env,now,deps={human}) {
@@ -22,7 +22,7 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     const code=String(body.device_code||'').replace(/[-\s]/g,'').toUpperCase();
     if(!/^(?:[0-9]{4,8}|[A-Z0-9]{8})$/.test(code))throw new HttpError(400,'Check the device code on your radio.');
     const pair=await env.DB.prepare(`SELECT radio_id FROM radio_pairs WHERE code_hash=? AND (expires=0 OR expires>?)`)
-      .bind(await digest(code),now).first();
+      .bind(await mac(env,'device-code:'+code),now).first();
     if(!pair)throw new HttpError(400,'Check the device code on your radio.');
     await limit(env.DB,'claim-radio',pair.radio_id,5,900,now);
     await env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE radio_id=? AND state='waiting' AND expires<=?")

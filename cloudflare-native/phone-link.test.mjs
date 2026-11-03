@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {phoneRoutes} from './phone-link.mjs';
 import {authRoutes} from './owner-auth.mjs';
-import {digest} from './security.mjs';
+import {digest,mac} from './security.mjs';
 import {handle} from './worker.mjs';
 const now=1800000000,host='https://native.example',radio='a'.repeat(32),secret='b'.repeat(64);
 async function fixture(){
@@ -12,7 +12,7 @@ async function fixture(){
   const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(qs){sqlite.exec('BEGIN');try{for(const q of qs)await q.run();sqlite.exec('COMMIT');}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
   const env={DB,DATA_ENCRYPTION_KEY:'e'.repeat(64)};
   sqlite.prepare('INSERT INTO radios VALUES (?,?,?,?,?)').run(radio,await digest(secret),'My radio',now,now);
-  sqlite.prepare('INSERT INTO radio_pairs VALUES (?,?,0)').run(radio,await digest('1234'));
+  sqlite.prepare('INSERT INTO radio_pairs VALUES (?,?,0)').run(radio,await mac({DATA_ENCRYPTION_KEY:'e'.repeat(64)},'device-code:1234'));
   sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Test','https://example.com/live','owner@example.com','published',?,?)").run(now,now);
   async function browser(){const res=await authRoutes(new Request(host+'/api/session'),env,now);const state=await res.json(),cookie=res.headers.get('set-cookie').split(';')[0];
     return {async post(path,body){return phoneRoutes(new Request(host+'/api/phone/'+path,{method:'POST',headers:{Cookie:cookie,Origin:host,'X-CSRF-Token':state.csrf,'Content-Type':'application/json'},body:JSON.stringify(body)}),env,now,{human:async()=>{}});}};}
