@@ -1,3 +1,4 @@
+import {unifyNavigation} from './shared-nav.mjs';
 // Migration stage 1: Cloudflare front door; Render still owns persistent data.
 const ORIGIN_HOST = 'radio-server-z0hb.onrender.com';
 
@@ -48,7 +49,7 @@ export async function proxy(request, env, fetchOrigin = fetch) {
       responseHeaders.set('Location', destination.href);
     }
   }
-  return new Response(upstream.body, {status: upstream.status, headers: responseHeaders});
+  return unifyNavigation(new Response(upstream.body, {status: upstream.status, headers: responseHeaders}),path);
 }
 
 export default {fetch(request, env) { return proxy(request, env); }};

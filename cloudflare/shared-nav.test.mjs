@@ -1,0 +1,3 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {menuHtml,unifyNavigation} from './shared-nav.mjs';
+test('legacy pages receive only the three current menu destinations',()=>{for(const path of ['/advertise/10','/owner/ads','/admin','/device','/privacy']){const html=menuHtml(path);assert.equal((html.match(/<a /g)||[]).length,3);assert.equal((html.match(/<svg /g)||[]).length,3);assert.ok(!html.includes('#radio'));for(const link of ['/#library','/#add-station','/device'])assert.ok(html.includes('href="'+link+'"'));}});
+test('API responses are returned untouched',()=>{const response=Response.json({ok:true});assert.equal(unifyNavigation(response,'/api/stations'),response);});
