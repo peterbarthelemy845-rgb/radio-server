@@ -10,7 +10,7 @@ import {communityRoutes} from './community.mjs';
 import {authenticate,deviceRoutes} from './devices.mjs';
 async function publicStation(db,code) {
   return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
-    'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
+    'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
     FROM stations WHERE code=? AND status='published'`).bind(Number(code)).first();
 }
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
@@ -49,7 +49,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   }
   if(request.method==='GET' && path==='/api/stations') {
     const rows=await env.DB.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
-      'Internet Radio' AS subtitle,CASE WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
+      'Internet Radio' AS subtitle,CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
       FROM stations WHERE status='published' ORDER BY code LIMIT 1000`).all();
     return json({stations:rows.results});
   }
