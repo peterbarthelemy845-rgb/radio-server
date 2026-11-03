@@ -42,7 +42,7 @@ main:has(#library:not([hidden])){max-width:1400px}
 #login.card{margin-top:30px}#login form{border-top:1px solid #e2eaf6;margin-top:12px;padding-top:3px}
 #register .human:empty,#login .human:empty{margin:0}
 /* Icon tabs: quiet borders, clear labels and a rounded active indicator. */
-nav[aria-label="Main navigation"]{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;border-top:1px solid #ffffff0d;box-shadow:0 -8px 28px #02071833;padding:6px max(8px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom));background:#0b1229f5;backdrop-filter:blur(18px)}
+nav[aria-label="Main navigation"]{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;border-top:1px solid #ffffff0d;box-shadow:0 -8px 28px #02071833;padding:6px max(8px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom));background:#0b1229f5;backdrop-filter:blur(18px)}
 nav[aria-label="Main navigation"]>button,nav[aria-label="Main navigation"]>a{position:relative;display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;min-width:0;min-height:64px;padding:7px 4px 10px;margin:0;border:0;border-radius:12px;background:transparent;font-size:12px;line-height:1.2;text-align:center;color:#9ba9c2;font-weight:600;text-decoration:none;box-shadow:none;transition:color .16s ease,background .16s ease}
 nav[aria-label="Main navigation"] .nav-icon{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 nav[aria-label="Main navigation"]>[aria-current="page"]{color:#66b7ff;background:#1c62cf14}

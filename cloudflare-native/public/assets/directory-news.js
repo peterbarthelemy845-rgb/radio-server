@@ -31,11 +31,11 @@ $('search').oninput=list;
 const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search').after(libraryHelp);
 
 const bioDialog=document.createElement('dialog');bioDialog.id='stationBio';const bioTitle=document.createElement('h2');bioTitle.id='stationBioTitle';const bioText=document.createElement('p');bioText.id='stationBioText';const closeBio=document.createElement('button');closeBio.textContent='Close';closeBio.onclick=()=>bioDialog.close();bioDialog.append(bioTitle,bioText,closeBio);document.body.append(bioDialog);
-const carousel=document.createElement('div');carousel.className='news-carousel';carousel.setAttribute('aria-label','Haitian Times headlines');$('playerPlay').after(carousel);let headlines=[],headlineIndex=0;
-function renderHeadlines(){renderLibraryNews();carousel.replaceChildren();if(!headlines.length){carousel.textContent='Headlines are temporarily unavailable.';return;}const indices=headlines.length>2?[(headlineIndex+headlines.length-1)%headlines.length,headlineIndex,(headlineIndex+1)%headlines.length]:headlines.map((_,i)=>i);for(const index of indices){const item=headlines[index],card=document.createElement('a');card.className='news-card'+(index===headlineIndex?' active':'');card.href=item.url;card.target='_blank';card.rel='noopener noreferrer';if(item.image){const image=document.createElement('img');image.src=item.image;image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';card.append(image);}const content=document.createElement('span'),source=document.createElement('small'),title=document.createElement('strong');source.textContent=item.source;title.textContent=item.title;content.append(source,title);card.append(content);carousel.append(card);}}
+let headlines=[];
+function renderHeadlines(){renderLibraryNews();}
 async function loadHeadlines(){try{const result=await api('/api/haitian-times');headlines=result.items||[];}catch{}renderHeadlines();}
 window.addEventListener('radio-locals-ready',()=>{list();loadHeadlines();});if(state){list();loadHeadlines();}
-setInterval(()=>{if(!document.hidden&&!$('radio').hidden&&headlines.length){headlineIndex=(headlineIndex+1)%headlines.length;renderHeadlines();}},6500);
+
 const directoryReady=setInterval(()=>{if(state){clearInterval(directoryReady);list();loadHeadlines();}},250);
 
 // Match registration and sign-in to the compact white owner card.
@@ -48,7 +48,7 @@ coverRow.append(coverPreview,coverLabel);$('registerForm').prepend(coverRow);
 let coverPreviewUrl;
 coverInput.addEventListener('change',()=>{if(coverPreviewUrl)URL.revokeObjectURL(coverPreviewUrl);const file=coverInput.files[0];coverPreview.hidden=!file;if(file){coverPreviewUrl=URL.createObjectURL(file);coverPreview.src=coverPreviewUrl;}});
 
-function highlightMenu(){const active=!$('radio').hidden?'navRadio':!$('library').hidden?'navLibrary':!$('support').hidden?'support':'navAdd';for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){if(tab.id===active||(active==='support'&&tab.getAttribute('href')==='/device'))tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');}}
+function highlightMenu(){const active=!$('library').hidden?'navLibrary':!$('support').hidden?'support':'navAdd';for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){if(tab.id===active||(active==='support'&&tab.getAttribute('href')==='/device'))tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');}}
 new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attributes:true,attributeFilter:['hidden'],subtree:true});highlightMenu();
 
 // One consistent outline icon family above the persistent menu labels.
