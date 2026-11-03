@@ -66,14 +66,14 @@ Test command: `node --test worker.test.mjs` (Node with node:sqlite support).
 ## Required before production cutover
 
 Staging admin: `/admin`, with ADMIN_EMAIL restricted to the configured owner.
-Email-code sign-in grants 15-minute admin sessions; this is not MFA. Turnstile,
+Email-code plus the existing authenticator grants 15-minute admin sessions. ADMIN_TOTP_SECRET is an encrypted Worker secret. Authenticator counters are consumed atomically in D1; email-only legacy grants are rejected. Turnstile,
 CSRF/origin protection, five OTP attempts, single-use codes, reviewed-content
 revision checks and an action audit apply. Admins can approve verified pending
 stations, suspend them, or soft-delete them. Station owners can soft-delete only
 their own station after explicit confirmation. Records and private artwork are
 retained; deletion removes directory/artwork access and cancels pending commands.
 Migration 0002_admin.sql was applied to staging through the D1 console.
-Production admin MFA/Access protection remains a cutover requirement.
+Migration 0003_admin_mfa.sql was applied through the staging D1 console. A physical authenticator sign-in must be verified before production cutover.
 
 - Complete the Radio/Library/shared station pages and legal/Support content.
 - Device registration, code allocation, browser claim and command enqueue routes.

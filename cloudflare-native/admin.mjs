@@ -1,9 +1,10 @@
 import {json,session,browserWrite,readJson,limit,human,otp,mac,randomHex,encrypt,HttpError} from './security.mjs';
+import {consumeTotp} from './totp.mjs';
 async function revision(env,row){return mac(env,'station-review:'+JSON.stringify(row));}
 export async function adminRoutes(request,env,now,deps={human}){
  const path=new URL(request.url).pathname;if(!path.startsWith('/api/admin/'))return null;
  const current=request.method==='GET'?await session(request,env,now):await browserWrite(request,env,now);
- if(!env.ADMIN_EMAIL)throw new HttpError(503,'Admin sign-in is not configured.');
+ if(!env.ADMIN_EMAIL||!env.ADMIN_TOTP_SECRET)throw new HttpError(503,'Admin MFA is not configured.');
  const ip=request.headers.get('CF-Connecting-IP')||'unknown';
  if(path==='/api/admin/login'&&request.method==='POST'){
   await limit(env.DB,'admin-login-ip',ip,5,900,now);await limit(env.DB,'admin-login-global','all',10,900,now);
@@ -23,12 +24,16 @@ export async function adminRoutes(request,env,now,deps={human}){
   if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the six-digit email code.');
   const check=await env.DB.prepare(`UPDATE admin_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING code_hash`).bind(id,current.token_hash,now).first();
   if(!check||check.code_hash!==await mac(env,'admin:'+id+':'+code))throw new HttpError(400,'Incorrect or expired code.');
+  if(!await consumeTotp(env,body.authenticator_code,now))throw new HttpError(400,'Incorrect or already-used authenticator code. Wait for the next code and try again.');
   const consumed=await env.DB.prepare('UPDATE admin_verifications SET consumed_at=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? RETURNING id').bind(now,id,current.token_hash,now).first();
   if(!consumed)throw new HttpError(400,'Incorrect or expired code.');
-  await env.DB.prepare('INSERT INTO admin_sessions(session_hash,expires) VALUES (?,?) ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires').bind(current.token_hash,now+900).run();
+  await env.DB.batch([
+   env.DB.prepare('INSERT INTO admin_sessions(session_hash,expires) VALUES (?,?) ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires').bind(current.token_hash,now+900),
+   env.DB.prepare('INSERT INTO admin_mfa_sessions(session_hash,expires) VALUES (?,?) ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires').bind(current.token_hash,now+900)
+  ]);
   return json({status:'ok'});
  }
- const grant=await env.DB.prepare('SELECT 1 FROM admin_sessions WHERE session_hash=? AND expires>?').bind(current.token_hash,now).first();
+ const grant=await env.DB.prepare('SELECT 1 FROM admin_sessions a JOIN admin_mfa_sessions m ON m.session_hash=a.session_hash WHERE a.session_hash=? AND a.expires>? AND m.expires>?').bind(current.token_hash,now,now).first();
  if(!grant)throw new HttpError(401,'Please sign in as administrator.');
  const art=path.match(/^\/api\/admin\/artwork\/([a-f0-9]{64}\.png)$/);
  if(art&&request.method==='GET'){
@@ -42,7 +47,7 @@ export async function adminRoutes(request,env,now,deps={human}){
   return json({stations:await Promise.all(rows.results.map(async row=>({...row,revision:await revision(env,row)})))});
  }
  if(path==='/api/admin/logout'&&request.method==='POST'){
-  await env.DB.prepare('DELETE FROM admin_sessions WHERE session_hash=?').bind(current.token_hash).run();return json({status:'ok'});
+  await env.DB.batch([env.DB.prepare('DELETE FROM admin_sessions WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM admin_mfa_sessions WHERE session_hash=?').bind(current.token_hash)]);return json({status:'ok'});
  }
  if(path==='/api/admin/station'&&request.method==='POST'){
   await limit(env.DB,'admin-actions',current.token_hash,60,900,now);const body=await readJson(request);
