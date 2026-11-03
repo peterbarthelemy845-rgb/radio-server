@@ -1,4 +1,5 @@
 import {HttpError,json,digest,randomHex,mac,otp,encrypt,decrypt,limit,readJson,session,browserWrite,human} from './security.mjs';
+import {screenStation} from './moderation.mjs';
 const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
 const emailPattern=/^[^\s@\r\n]{1,64}@[^\s@\r\n]+\.[^\s@\r\n]+$/;
@@ -147,7 +148,8 @@ export async function authRoutes(request,env,now,deps={human}){
     if(consumed.purpose==='registration')updates.push(env.DB.prepare(`UPDATE stations SET email_verified_at=?,
       status='pending_review',updated_at=? WHERE code=? AND status='pending_email'`).bind(now,now,consumed.station_code));
     await env.DB.batch(updates);
-    return json({status:'ok',message:consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),review_required:consumed.purpose==='registration'});
+    const approved=await screenStation(env,consumed.station_code);
+    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),review_required:consumed.purpose==='registration'&&!approved});
   }
   if(path==='/api/owner/station'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -159,7 +161,8 @@ export async function authRoutes(request,env,now,deps={human}){
     const key=body.artwork?await artwork(env,body.artwork):station.artwork_key;
     await env.DB.prepare("UPDATE stations SET stream_url=?,bio=?,artwork_key=?,status='pending_review',updated_at=? WHERE code=?")
       .bind(url,bio,key,now,station.code).run();
-    return json({status:'ok',message:'Changes saved for safety review.'});
+    const approved=await screenStation(env,station.code);
+    return json({status:'ok',message:approved?'Changes saved successfully.':'Changes saved for safety review.'});
   }
   return null;
 }
