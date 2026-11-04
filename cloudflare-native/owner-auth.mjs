@@ -80,11 +80,21 @@ export async function authRoutes(request,env,now,deps={human}){
       owner_station:current.owner_expires>now?current.owner_station:null});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);return response;
   }
+  if(path==='/api/owner/artwork'&&request.method==='GET'){
+    const current=await session(request,env,now);
+    if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
+    const station=await env.DB.prepare("SELECT artwork_key FROM stations WHERE code=? AND status!='deleted'").bind(current.owner_station).first();
+    const key=station?.artwork_key;
+    const object=key&&/^[a-f0-9]{64}\.png$/.test(key)&&env.MEDIA?await env.MEDIA.get('sanitized/'+key):null;
+    if(!object||object.customMetadata?.sanitizer_version!=='1')throw new HttpError(404,'Artwork not found.');
+    return new Response(object.body,{headers:{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}});
+  }
   if(!['/api/owner/register','/api/owner/login','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/delete'].includes(path))return null;
   if(path==='/api/owner/station'&&request.method==='GET'){
     const current=await session(request,env,now);
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
-    const station=await env.DB.prepare('SELECT code,name,stream_url,bio,location,status FROM stations WHERE code=?').bind(current.owner_station).first();
+    const station=await env.DB.prepare('SELECT code,name,stream_url,bio,location,status,artwork_key FROM stations WHERE code=?').bind(current.owner_station).first();
+    if(station){station.artwork_url=station.artwork_key?'/api/owner/artwork':'';delete station.artwork_key;}
     return station?json({station}):json({message:'Station not found.'},404);
   }
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
@@ -159,7 +169,7 @@ export async function authRoutes(request,env,now,deps={human}){
       status='pending_review',updated_at=? WHERE code=? AND status='pending_email'`).bind(now,now,consumed.station_code));
     await env.DB.batch(updates);
     const approved=await screenStation(env,consumed.station_code);
-    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),review_required:consumed.purpose==='registration'&&!approved});
+    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved});
   }
   if(path==='/api/owner/station'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');

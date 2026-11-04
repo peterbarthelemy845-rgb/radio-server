@@ -12,7 +12,7 @@ async function fixture(){
     async batch(queries){sqlite.exec('BEGIN');try{for(const q of queries)await q.run();sqlite.exec('COMMIT');}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
   const objects=new Map(),mail=[];
   const env={DB,DATA_ENCRYPTION_KEY:'a'.repeat(64),TURNSTILE_SITE_KEY:'test',TURNSTILE_SECRET_KEY:'private-test',
-    MEDIA:{async put(key,data,meta){objects.set(key,{data,meta});}},
+    MEDIA:{async put(key,data,meta){objects.set(key,{data,meta});},async get(key){const o=objects.get(key);return o?{body:o.data,customMetadata:o.meta.customMetadata}:null;}},
     IMAGES:{async info(){return {width:1,height:1};},input(){return {transform(){return {async output(){return {response:()=>new Response(png)};}};}};}},
     EMAIL:{async send(message){mail.push(message);return {messageId:'test'};}}};
   const response=await authRoutes(new Request(host+'/api/session'),env,now);
@@ -107,4 +107,13 @@ test('station-owner session survives navigation and expires after thirty minutes
  const response=await authRoutes(request(),f.env,now+1200);assert.equal(response.status,200);
  assert.equal(f.sqlite.prepare('SELECT owner_expires FROM sessions').get().owner_expires,now+1800);
  await assert.rejects(authRoutes(request(),f.env,now+1800),e=>e.status===401);
+});
+
+test('verified owner sees private current cover art even pending review; other sessions cannot fetch it',async()=>{
+ const f=await registered();const verified=await (await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code})).json();assert.equal(verified.registration_completed,true);
+ const ownerRequest=path=>new Request(host+path,{headers:{Cookie:f.cookie}});
+ const station=await (await authRoutes(ownerRequest('/api/owner/station'),f.env,now)).json();assert.equal(station.station.artwork_url,'/api/owner/artwork');assert.equal(station.station.artwork_key,undefined);
+ const art=await authRoutes(ownerRequest('/api/owner/artwork'),f.env,now);assert.equal(art.headers.get('cache-control'),'private, no-store');assert.deepEqual(new Uint8Array(await art.arrayBuffer()),png);
+ const other=await authRoutes(new Request(host+'/api/session'),f.env,now);const cookie=other.headers.get('set-cookie').split(';')[0];await assert.rejects(authRoutes(new Request(host+'/api/owner/artwork',{headers:{Cookie:cookie}}),f.env,now),e=>e.status===401);
+ await assert.rejects(authRoutes(ownerRequest('/api/owner/artwork'),f.env,now+1800),e=>e.status===401);
 });
