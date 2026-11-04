@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {fetchHandler,digest,handle,cleanup} from './worker.mjs';
 const schema=readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8');
 function database(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(schema);
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec(schema);sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0007_local_ads.sql',import.meta.url),'utf8'));
   return {sqlite,prepare(sql){
     let args=[];
     const query={bind(...values){args=values;return query;},
@@ -27,7 +27,7 @@ async function fixture(){
 function request(path,body={},token=secret){return new Request('https://native.example'+path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({radio_id:id,...body})});}
 async function poll(env,body={}){return handle(request('/api/radio/poll',body),env,now);}
 test('schema reapplies safely and starts station identifiers at 10',async()=>{
-  const env=await fixture();env.DB.sqlite.exec(schema);
+  const env=await fixture();env.DB.sqlite.exec(schema);env.DB.sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));env.DB.sqlite.exec(readFileSync(new URL('./migrations/0007_local_ads.sql',import.meta.url),'utf8'));
   assert.equal(env.DB.sqlite.prepare('SELECT code FROM stations').get().code,10);
   assert.equal(env.DB.sqlite.prepare("SELECT count(*) n FROM sqlite_sequence WHERE name='stations'").get().n,1);
 });

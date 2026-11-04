@@ -1,0 +1,2 @@
+import {session,browserWrite,HttpError} from './security.mjs';
+export async function administrator(request,env,now){const current=request.method==='GET'?await session(request,env,now):await browserWrite(request,env,now);const grant=env.ADMIN_TOTP_SECRET&&await env.DB.prepare('SELECT 1 FROM admin_sessions a JOIN admin_mfa_sessions m ON a.session_hash=m.session_hash WHERE a.session_hash=? AND a.expires>? AND m.expires>?').bind(current.token_hash,now,now).first();if(!grant)throw new HttpError(401,'Please sign in as administrator.');return current;}

@@ -1,3 +1,5 @@
+import {reportsRoutes,recordListening} from './reports.mjs';
+import {backupRoutes,scheduledBackup,expireBackups} from './backups.mjs';
 import {newsResponse} from './news.mjs';
 // Independent Cloudflare foundation. No Render origin, proxy, or local disk.
 // Only the routes explicitly implemented here are available in this staging build.
@@ -8,6 +10,7 @@ import {phoneRoutes} from './phone-link.mjs';
 import {adminRoutes} from './admin.mjs';
 import {communityRoutes} from './community.mjs';
 import {authenticate,deviceRoutes} from './devices.mjs';
+import {adsRoutes} from './local-ads.mjs';
 async function publicStation(db,code) {
   return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
     'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
@@ -20,6 +23,10 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(ownerResponse)return ownerResponse;
   const phoneResponse=await phoneRoutes(request,env,now);
   if(phoneResponse)return phoneResponse;
+  const adResponse=await adsRoutes(request,env,now);
+  if(adResponse)return adResponse;
+  const reportsResponse=await reportsRoutes(request,env,now);if(reportsResponse)return reportsResponse;
+  const backupsResponse=await backupRoutes(request,env,now);if(backupsResponse)return backupsResponse;
   const adminResponse=await adminRoutes(request,env,now);
   if(adminResponse)return adminResponse;
   const communityResponse=await communityRoutes(request,env,now);
@@ -84,6 +91,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     statements.push(env.DB.prepare(`UPDATE radio_commands SET state='expired' WHERE radio_id=?
       AND expires<=? AND state IN ('pending','delivered')`).bind(id,now));
     await env.DB.batch(statements);
+    await recordListening(env,id,body.playing_station_code,now);
     if(decisionAck)claimResult=(await env.DB.prepare('SELECT state FROM pair_claims WHERE id=? AND radio_id=?').bind(claim,id).first())?.state||'';
     const pair=await env.DB.prepare(`SELECT id,confirmation_code FROM pair_claims
       WHERE radio_id=? AND state='waiting' AND expires>? ORDER BY created_at DESC LIMIT 1`).bind(id,now).first();
@@ -109,7 +117,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice'].includes(path)||/^\/station\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice'].includes(path)||/^\/(?:station|advertise)\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
     const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname=/^\/radiolavoixdivine\/?$/.test(path)?'/station-player.html':'/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const html=asset.headers.get('Content-Type')?.includes('text/html');
@@ -140,6 +148,9 @@ export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
     env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE state='waiting' AND expires<=?").bind(now),
     env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE state IN ('pending','delivered') AND expires<=?").bind(now),
     env.DB.prepare('DELETE FROM phone_radios WHERE expires<=?').bind(now),
+    env.DB.prepare('DELETE FROM share_events WHERE created_at<?').bind(now-93*86400),
+    env.DB.prepare('DELETE FROM ad_receipts WHERE expires<?').bind(now-86400),
+    env.DB.prepare('DELETE FROM listening_sessions WHERE last_seen<?').bind(now-86400),
   ]);
 }
-export default {fetch:fetchHandler,async scheduled(_event,env){await cleanup(env);await processMail(env);}};
+export default {fetch:fetchHandler,async scheduled(event,env){await cleanup(env);await processMail(env);const now=Math.floor((event.scheduledTime||Date.now())/1000);await scheduledBackup(env,now);if(new Date(now*1000).getUTCMinutes()===10)await expireBackups(env,now);}};

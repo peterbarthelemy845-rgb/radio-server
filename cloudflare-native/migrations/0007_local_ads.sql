@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS ad_policy(ad_id TEXT PRIMARY KEY REFERENCES local_ads(id),phone TEXT NOT NULL,scanner_passed INTEGER NOT NULL DEFAULT 0,owner_approved INTEGER NOT NULL DEFAULT 0,pixels_key TEXT NOT NULL,start_at INTEGER NOT NULL,end_at INTEGER NOT NULL,rights_version TEXT NOT NULL,rights_hash TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ad_device_windows(radio_id TEXT PRIMARY KEY REFERENCES radios(id),next_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS ad_receipts(id TEXT PRIMARY KEY,radio_id TEXT NOT NULL REFERENCES radios(id),ad_id TEXT NOT NULL REFERENCES local_ads(id),token_hash TEXT NOT NULL UNIQUE,expires INTEGER NOT NULL,created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS ad_impressions(receipt_id TEXT PRIMARY KEY,ad_id TEXT NOT NULL REFERENCES local_ads(id),created_at INTEGER NOT NULL);

@@ -9,6 +9,7 @@ import {handle} from './worker.mjs';
 const now=1800000000,host='https://native.example',radio='a'.repeat(32),secret='b'.repeat(64);
 async function fixture(){
   const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));
   const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(qs){sqlite.exec('BEGIN');try{for(const q of qs)await q.run();sqlite.exec('COMMIT');}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
   const env={DB,DATA_ENCRYPTION_KEY:'e'.repeat(64)};
   sqlite.prepare('INSERT INTO radios VALUES (?,?,?,?,?)').run(radio,await digest(secret),'My radio',now,now);
