@@ -1,17 +1,13 @@
 'use strict';
 let headlines=[];
 const libraryNews=document.createElement('section');libraryNews.className='library-news';libraryNews.setAttribute('aria-label','Latest news');
-const newsHeading=document.createElement('div');newsHeading.className='library-news-heading';
-const newsTitle=document.createElement('h2');newsTitle.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2" fill="currentColor"/><path d="M3 10a11 11 0 0 1 11 11M3 3a18 18 0 0 1 18 18" fill="none" stroke="currentColor" stroke-width="3"/></svg><span>Latest News</span>';
-const newsNote=document.createElement('span');newsNote.className='news-note';newsNote.textContent='Headlines from Haitian Times';
-const viewNews=document.createElement('a');viewNews.href='https://haitiantimes.com/';viewNews.target='_blank';viewNews.rel='noopener noreferrer';viewNews.textContent='View all ›';newsHeading.append(newsTitle,newsNote,viewNews);
 const newsRow=document.createElement('div');newsRow.className='library-news-row';
 const previousNews=document.createElement('button');previousNews.textContent='‹';previousNews.className='news-arrow';previousNews.setAttribute('aria-label','Previous headlines');
 const newsTrack=document.createElement('div');newsTrack.className='library-news-track';
 const nextNews=document.createElement('button');nextNews.textContent='›';nextNews.className='news-arrow';nextNews.setAttribute('aria-label','Next headlines');
 const newsDots=document.createElement('div');newsDots.className='library-news-dots';let libraryNewsPage=0;
 previousNews.onclick=()=>{if(!headlines.length)return;libraryNewsPage=(libraryNewsPage-1+Math.ceil(headlines.length/3))%Math.ceil(headlines.length/3);renderLibraryNews();};nextNews.onclick=()=>{if(!headlines.length)return;libraryNewsPage=(libraryNewsPage+1)%Math.ceil(headlines.length/3);renderLibraryNews();};
-newsRow.append(previousNews,newsTrack,nextNews);libraryNews.append(newsHeading,newsRow,newsDots);document.getElementById('stationNews').append(libraryNews);
+newsRow.append(previousNews,newsTrack,nextNews);libraryNews.append(newsRow,newsDots);document.getElementById('stationNews').append(libraryNews);
 function renderLibraryNews(){
  newsTrack.replaceChildren();newsDots.replaceChildren();previousNews.disabled=nextNews.disabled=headlines.length<=3;
  if(!headlines.length){const empty=document.createElement('p');empty.className='news-empty';empty.textContent='Headlines are temporarily unavailable.';newsTrack.append(empty);return;}
