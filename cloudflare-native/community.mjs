@@ -4,8 +4,7 @@ export async function communityRoutes(request,env,now,deps={human}){
  if(path==='/api/player'&&request.method==='GET')return json({name:'La Voix Divine',stream_url:'https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live',logo_url:'/assets/radiolavoixdivine.png'});
  if(!['/api/support','/api/support/unlock','/api/support/lock','/api/legal/request'].includes(path))return null;
  if(request.method==='GET'&&path==='/api/support'){
-  const current=await session(request,env,now),grant=await env.DB.prepare('SELECT 1 FROM support_grants WHERE session_hash=? AND expires>?').bind(current.token_hash,now).first();
-  return json({unlocked:Boolean(grant),videos:grant?(await env.DB.prepare('SELECT id,topic,title,description,video_id FROM help_videos ORDER BY topic,id LIMIT 50').all()).results:[]});
+  return json({unlocked:true,public:true,videos:(await env.DB.prepare('SELECT id,topic,title,description,video_id FROM help_videos ORDER BY topic,id LIMIT 50').all()).results});
  }
  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
  const current=await browserWrite(request,env,now),body=await readJson(request,30000),ip=request.headers.get('CF-Connecting-IP')||'unknown';
