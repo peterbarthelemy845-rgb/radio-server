@@ -48,3 +48,6 @@ function showOwnerCover(url){if(ownerCoverObjectUrl){URL.revokeObjectURL(ownerCo
 $('ownerCover').onerror=()=>{$('ownerCover').hidden=true;$('ownerCoverEmpty').hidden=false;$('ownerCoverEmpty').textContent='Cover art could not load. Please try refreshing.';};
 $('editForm').elements.artwork.onchange=event=>{const file=event.target.files[0];if(!file)return;showOwnerCover('');ownerCoverObjectUrl=URL.createObjectURL(file);$('ownerCover').src=ownerCoverObjectUrl;$('ownerCover').hidden=false;$('ownerCoverEmpty').hidden=true;};
 $('stationSuccessDone').onclick=()=>$('stationSuccess').close();
+
+$('ticketForm').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);$('ticketMessage').textContent='';try{const data=Object.fromEntries(new FormData(form));data.turnstile_token=await human(form,'support-ticket');const result=await api('/api/support/ticket',data);form.reset();$('ticketReference').textContent='Ticket reference: '+result.reference;$('ticketSuccess').showModal();}catch(e){$('ticketMessage').textContent=e.message;}finally{busy(form,false);}};
+$('closeTicketSuccess').onclick=()=>$('ticketSuccess').close();
