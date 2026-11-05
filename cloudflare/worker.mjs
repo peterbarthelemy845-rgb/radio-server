@@ -4,7 +4,7 @@ const ORIGIN_HOST = 'radio-server-z0hb.onrender.com';
 
 export async function proxy(request, env, fetchOrigin = fetch) {
   const path=new URL(request.url).pathname;
-  const legacyTargets={'/station/ads':'/station-edit?view=ads','/admin/local-ads':'/admin?view=ads','/admin/local-ads/main':'/admin?view=ads','/admin/viewership':'/admin?view=reports','/admin/reports':'/admin?view=reports','/admin/backups':'/admin?view=backups'};
+  const legacyTargets={'/device':'/support','/station/ads':'/station-edit?view=ads','/admin/local-ads':'/admin?view=ads','/admin/local-ads/main':'/admin?view=ads','/admin/viewership':'/admin?view=reports','/admin/reports':'/admin?view=reports','/admin/backups':'/admin?view=backups'};
   if(legacyTargets[path]&&request.method==='GET')return Response.redirect(new URL(legacyTargets[path],request.url).href,302);
   if(/^\/(?:station\/ads\/|admin\/(?:local-ads\/|backups\/))/.test(path))return Response.json({message:'This old endpoint is retired. Open the current station editor or admin dashboard.'},{status:410,headers:{'Cache-Control':'no-store'}});
 
