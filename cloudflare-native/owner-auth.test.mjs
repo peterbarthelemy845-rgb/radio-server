@@ -93,8 +93,13 @@ test('owner removal requires confirmation and hides only the signed-in station',
  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
  const own=f.sqlite.prepare('SELECT code FROM stations').get().code;
  f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Other','https://example.com/other','other@example.com','published',?,?)").run(now,now);
- await assert.rejects(f.post('/api/owner/delete',{confirm:false}),e=>e.status===400);
- await f.post('/api/owner/delete',{confirm:true,code:own+1});
+ const challenge=await(await f.post('/api/owner/delete',{})).json();
+ assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(own).status!=='deleted',true);
+ await assert.rejects(f.post('/api/owner/delete',{confirm:true,verification_id:challenge.verification_id,code:'000000'}),e=>e.status===400);
+ const mail=f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get();
+ const deletionCode=JSON.parse(await decrypt(f.env,mail.encrypted_payload)).text.match(/code is (\d{6})/)[1];
+ await assert.rejects(f.post('/api/owner/verify',{verification_id:challenge.verification_id,code:deletionCode}),e=>e.status===400);
+ await f.post('/api/owner/delete',{confirm:true,verification_id:challenge.verification_id,code:deletionCode});
  assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(own).status,'deleted');
  assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(own+1).status,'published');
  await assert.rejects(f.post('/api/owner/delete',{confirm:true}),e=>e.status===401);

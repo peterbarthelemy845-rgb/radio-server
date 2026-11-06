@@ -107,7 +107,21 @@ export async function authRoutes(request,env,now,deps={human}){
   }
   if(path==='/api/owner/delete'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
+    if(!body.verification_id){
+      await limit(env.DB,'delete-email',current.token_hash,3,900,now);
+      const station=await env.DB.prepare("SELECT code,contact_email FROM stations WHERE code=? AND status!='deleted'").bind(current.owner_station).first();
+      if(!station)throw new HttpError(404,'Station not found.');
+      const result=await verification(env,current,station,'edit',now);
+      await env.DB.prepare("UPDATE email_verifications SET code_hash='delete:'||code_hash WHERE id=?").bind(result.verification_id).run();
+      return json({status:'verification_required',...result});
+    }
     if(body.confirm!==true)throw new HttpError(400,'Confirm station removal.');
+    const id=String(body.verification_id),code=String(body.code||'');
+    if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the 6-digit email code.');
+    const check=await env.DB.prepare(`UPDATE email_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND station_code=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *`).bind(id,current.token_hash,current.owner_station,now).first();
+    if(!check||check.code_hash!=='delete:'+await mac(env,'email:'+id+':'+code))throw new HttpError(400,'Incorrect or expired deletion code.');
+    const used=await env.DB.prepare('UPDATE email_verifications SET consumed_at=? WHERE id=? AND consumed_at IS NULL RETURNING id').bind(now,id).first();
+    if(!used)throw new HttpError(400,'Code already used.');
     await env.DB.batch([
       env.DB.prepare("UPDATE stations SET status='deleted',updated_at=? WHERE code=?").bind(now,current.owner_station),
       env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered')").bind(current.owner_station),
