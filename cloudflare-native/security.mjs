@@ -39,9 +39,12 @@ export async function readJson(request,maximum=4096){
   if(!body||Array.isArray(body)||typeof body!=='object')throw new HttpError(400,'JSON object required.');return body;
 }
 export async function session(request,env,now,create=false){
+  const mobilePath=new URL(request.url).pathname.startsWith('/api/phone/');
+  const bearer=mobilePath?request.headers.get('Authorization')?.match(/^Bearer ([a-f0-9]{64})$/)?.[1]:null;
   const cookie=request.headers.get('Cookie')?.match(/(?:^|;\s*)__Host-rl_session=([a-f0-9]{64})(?:;|$)/)?.[1];
-  let token=cookie,hash=token?await digest(token):'',row;
+  let token=bearer||cookie,hash=token?await digest(token):'',row;
   if(hash)row=await env.DB.prepare('SELECT * FROM sessions WHERE token_hash=? AND expires>?').bind(hash,now).first();
+  if(row&&((bearer&&row.csrf_hash!=='mobile-only')||(!bearer&&row.csrf_hash==='mobile-only')))row=null;
   let setCookie;
   if(!row && create){token=randomHex();hash=await digest(token);const csrf=await mac(env,'csrf:'+token);
     await env.DB.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)')
@@ -52,6 +55,9 @@ export async function session(request,env,now,create=false){
   return {...row,csrf:await mac(env,'csrf:'+token),setCookie};
 }
 export async function browserWrite(request,env,now){
+  if(new URL(request.url).pathname.startsWith('/api/phone/')&&request.headers.get('Authorization')?.startsWith('Bearer ')){
+    const current=await session(request,env,now);if(current.csrf_hash!=='mobile-only')throw new HttpError(403,'Mobile session required.');return current;
+  }
   const origin=request.headers.get('Origin'),expected=new URL(request.url).origin;
   if(origin!==expected)throw new HttpError(403,'Request origin did not match.');
   const current=await session(request,env,now);

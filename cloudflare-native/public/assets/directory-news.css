@@ -108,3 +108,5 @@ nav[aria-label="Main navigation"]>:focus-visible{outline:2px solid #73d7ff;outli
 #ticketForm select{min-height:36px;padding:6px 9px;margin-top:3px;font-size:16px}
 
 nav[aria-label="Main navigation"]{grid-template-columns:repeat(4,minmax(0,1fr))}#myRadio article{border-bottom:1px solid #dbe5f4;padding:10px 0}#myRadio h2{font-size:20px}.radio-online{color:#167044;font-weight:700}.radio-offline{color:#ad2929;font-weight:700}#connectRadio{width:100%;margin-top:16px}#myRadio details{margin-top:20px;font-size:14px;line-height:1.6}
+
+body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat(3,minmax(0,1fr))}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}

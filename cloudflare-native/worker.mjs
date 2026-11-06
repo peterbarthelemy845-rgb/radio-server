@@ -1,3 +1,4 @@
+import {mobileRoutes} from './mobile.mjs';
 import {reportsRoutes,recordListening} from './reports.mjs';
 import {backupRoutes,scheduledBackup,expireBackups} from './backups.mjs';
 import {newsResponse} from './news.mjs';
@@ -19,6 +20,7 @@ async function publicStation(db,code) {
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
   if(path==='/api/haitian-times'&&request.method==='GET')return newsResponse(request);
+  const mobileResponse=await mobileRoutes(request,env,now);if(mobileResponse)return mobileResponse;
   const ownerResponse=await authRoutes(request,env,now);
   if(ownerResponse)return ownerResponse;
   const phoneResponse=await phoneRoutes(request,env,now);

@@ -15,6 +15,13 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now),body=await readJson(request);
   const ip=request.headers.get('CF-Connecting-IP')||'unknown';
+  if(path==='/api/phone/unlink'){
+    await env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').bind(current.token_hash,String(body.radio_id||'')).run();
+    return json({status:'ok'});
+  }
+  if(path==='/api/phone/logout'){
+    await env.DB.batch([env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').bind(now,current.token_hash)]);return json({status:'ok'});
+  }
   if(path==='/api/phone/claim'){
     await limit(env.DB,'claim-ip',ip,5,900,now);
     await limit(env.DB,'claim-global','all',60,60,now);
