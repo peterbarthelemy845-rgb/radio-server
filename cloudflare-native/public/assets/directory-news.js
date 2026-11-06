@@ -15,7 +15,7 @@ list=function(){
   const ownStation=station.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine';
   const action=document.createElement(ownStation?'button':'a');action.className='station-primary';
   if(ownStation){action.textContent=$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';action.onclick=()=>{$('playerPlay').click();};action.dataset.stationPlay='1';}
-  else{action.href='/station/'+station.listener_code;action.textContent='+ Add to your radio';}
+  else{action.href='/station/'+station.listener_code+(new URLSearchParams(location.search).get('app')==='1'?'?app=1':'');action.textContent='+ Add to your radio';}
   body.append(eyebrow,title,code,shares,action);
   const about=document.createElement('section');about.className='station-about';about.setAttribute('aria-label','Bio for '+station.name);
   const summary=document.createElement('h3');summary.textContent='Bio';
