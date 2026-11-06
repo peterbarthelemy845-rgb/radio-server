@@ -1,0 +1,9 @@
+ 'use strict';
+function readSelectedRadio(){try{return localStorage.getItem('selectedRadio')||'';}catch{return '';}}
+function rememberSelectedRadio(id){try{localStorage.setItem('selectedRadio',id);}catch{}}
+async function updateStationConfirmation(){const select=$('shareForm').elements.radio_id,id=select.value;if(!id)return;rememberSelectedRadio(id);$('shareSubmit').textContent='Add to '+select.selectedOptions[0].textContent.split(' · ')[0];try{const result=await api('/api/phone/stations?radio_id='+encodeURIComponent(id));if(select.value!==id)return;if(result.confirmed_station_codes.includes(String(sharedCode))){$('shareStatus').textContent='✓ Previously added to this radio. If you removed it on the radio, you can add it again.';$('shareSubmit').textContent='Add again';}else $('shareStatus').textContent='';}catch{$('shareStatus').textContent='Saved-station history is unavailable. Check your radio before adding again.';}}
+$('shareForm').elements.radio_id.addEventListener('change',updateStationConfirmation);
+const draftForms=['registerForm','editForm','ticketForm','advertiseForm'];for(const id of draftForms){const form=$(id);form.addEventListener('input',()=>form.dataset.dirty='1');form.addEventListener('reset',()=>delete form.dataset.dirty);}
+function visibleDrafts(){return draftForms.map($).filter(form=>form.dataset.dirty&&form.getClientRects().length);}
+window.addEventListener('beforeunload',event=>{if(visibleDrafts().length){event.preventDefault();event.returnValue='';}});
+document.addEventListener('click',event=>{const navigation=event.target.closest('nav button,nav a,a[href]');if(!navigation||navigation.target==='_blank')return;const drafts=visibleDrafts();if(drafts.length&&!confirm('Leave this form? Your unsaved changes will be lost.')){event.preventDefault();event.stopImmediatePropagation();}},true);

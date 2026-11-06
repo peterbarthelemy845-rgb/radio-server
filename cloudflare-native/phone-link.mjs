@@ -12,6 +12,11 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);
     return response;
   }
+  if(request.method==='GET'&&path==='/api/phone/stations'){
+    const current=await session(request,env,now),id=new URL(request.url).searchParams.get('radio_id')||'';
+    const grant=await env.DB.prepare('SELECT 1 FROM phone_radios WHERE radio_id=? AND session_hash=? AND expires>?').bind(id,current.token_hash,now).first();if(!grant)throw new HttpError(403,'Link this radio first.');
+    const rows=await env.DB.prepare("SELECT DISTINCT station_code FROM radio_commands WHERE radio_id=? AND state='added' LIMIT 1000").bind(id).all();return json({confirmed_station_codes:rows.results.map(r=>String(r.station_code)),note:'Previously confirmed additions; the radio may have removed stations since then.'});
+  }
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now),body=await readJson(request);
   const ip=request.headers.get('CF-Connecting-IP')||'unknown';
