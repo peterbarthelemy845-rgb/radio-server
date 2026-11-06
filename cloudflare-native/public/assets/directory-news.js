@@ -30,9 +30,7 @@ for(const event of ['playing','pause','waiting','error'])$('playerAudio').addEve
 $('search').oninput=list;
 const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search').after(libraryHelp);
 
-const bioDialog=document.createElement('dialog');bioDialog.id='stationBio';const bioTitle=document.createElement('h2');bioTitle.id='stationBioTitle';const bioText=document.createElement('p');bioText.id='stationBioText';const closeBio=document.createElement('button');closeBio.textContent='Close';closeBio.onclick=()=>bioDialog.close();bioDialog.append(bioTitle,bioText,closeBio);document.body.append(bioDialog);
-window.addEventListener('radio-locals-ready',list);if(state)list();
-const directoryReady=setInterval(()=>{if(state){clearInterval(directoryReady);list();}},250);
+window.addEventListener('radio-locals-ready',list);
 
 // Match registration and sign-in to the compact white owner card.
 $('register').append($('openLogin'));$('login').append($('openRegister'));
@@ -50,4 +48,3 @@ new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attr
 // One consistent outline icon family above the persistent menu labels.
 const menuIconPaths={navRadio:'<rect x="4" y="7" width="16" height="13" rx="3"/><path d="m7 7 10-4M8 11h8"/><circle cx="9" cy="16" r="2"/><path d="M15 15h2m-2 3h2"/>',navLibrary:'<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/><path d="m17 5 4 14-3 1-4-14z"/>',navAdd:'<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8m-4-4h8"/>',support:'<path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="11" width="4" height="7" rx="2"/><rect x="17" y="11" width="4" height="7" rx="2"/><path d="M19 18c0 2-2 3-5 3h-2"/>'};
 for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){const label=tab.textContent,icon=menuIconPaths[tab.id||'support'];tab.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'+icon+'</svg>';const text=document.createElement('span');text.textContent=label;tab.append(text);}
-
