@@ -19,6 +19,9 @@ async function publicStation(db,code) {
 }
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
+  if(path==='/api/stream-status'&&request.method==='GET'){
+    const rows=await env.DB.prepare("SELECT DISTINCT station_code FROM listening_sessions WHERE qualified=1 AND last_seen>? LIMIT 1000").bind(now-90).all();return json({recently_played:rows.results.map(r=>String(r.station_code)),note:'Recent radio reports only. No report does not mean the stream is unavailable.'});
+  }
   if(path==='/api/haitian-times'&&request.method==='GET')return newsResponse(request);
   const mobileResponse=await mobileRoutes(request,env,now);if(mobileResponse)return mobileResponse;
   const ownerResponse=await authRoutes(request,env,now);

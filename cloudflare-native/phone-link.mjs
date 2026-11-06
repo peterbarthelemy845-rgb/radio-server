@@ -20,6 +20,11 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now),body=await readJson(request);
   const ip=request.headers.get('CF-Connecting-IP')||'unknown';
+  if(path==='/api/phone/rename'){
+    const id=String(body.radio_id||''),name=String(body.name||'').trim();if(!name||name.length>40||/[\x00-\x1f]/.test(name))throw new HttpError(400,'Use a name between 1 and 40 characters.');
+    const grant=await env.DB.prepare('SELECT 1 FROM phone_radios WHERE radio_id=? AND session_hash=? AND expires>?').bind(id,current.token_hash,now).first();if(!grant)throw new HttpError(403,'Link this radio first.');
+    await env.DB.prepare('UPDATE radios SET name=? WHERE id=?').bind(name,id).run();return json({status:'ok'});
+  }
   if(path==='/api/phone/unlink'){
     await env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').bind(current.token_hash,String(body.radio_id||'')).run();
     return json({status:'ok'});

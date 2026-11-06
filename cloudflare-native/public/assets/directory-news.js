@@ -1,4 +1,5 @@
 'use strict';
+const recentlyPlayed=new Set();window.addEventListener('radio-locals-ready',async()=>{try{const data=await api('/api/stream-status');for(const code of data.recently_played)recentlyPlayed.add(code);list();}catch{}});
 function shareButton(label,kind,name,url){const button=document.createElement('button');button.className='social '+kind;button.setAttribute('aria-label',label);button.title=label;button.textContent={facebook:'f',whatsapp:'◉',more:'•••'}[kind];if(kind==='whatsapp')button.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 26l1-5a11 11 0 1 1 4 4z" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M12 10q-2 4 5 9l3-1 2 3q-5 5-12-5-3-5 0-7z" fill="currentColor"/></svg>';if(kind==='more')button.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 7h22v16H14l-6 5v-5H5z" fill="currentColor"/><g fill="#119e47"><circle cx="10" cy="15" r="1.6"/><circle cx="16" cy="15" r="1.6"/><circle cx="22" cy="15" r="1.6"/></g></svg>';button.onclick=async()=>{api('/api/events',{event_id:crypto.randomUUID().replaceAll('-',''),station_code:url.split('/').pop(),channel:kind}).catch(()=>{});if(kind==='facebook'||kind==='whatsapp'){const target=kind==='facebook'?'https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(url):'https://wa.me/?text='+encodeURIComponent(name+' '+url);window.open(target,'_blank','noopener,noreferrer');}else try{if(navigator.share)await navigator.share({title:name,url});else{await navigator.clipboard.writeText(url);button.title='Link copied';}}catch{}};return button;}
 list=function(){
  const listenerMode=new URLSearchParams(location.search).get('app')==='1';
@@ -10,7 +11,7 @@ list=function(){
   const body=document.createElement('div');body.className='station-body';
   const eyebrow=document.createElement('p');eyebrow.className='station-eyebrow';eyebrow.textContent='INTERNET RADIO';
   const title=document.createElement('h2');title.textContent=station.name;
-  const code=document.createElement('p');code.className='code';code.textContent='Station code #'+station.listener_code;
+  const health=document.createElement('p');health.className='station-health';health.dataset.code=station.listener_code;health.textContent=recentlyPlayed.has(String(station.listener_code))?'● Recent playback reported':'Stream availability unverified';body.append(health);const code=document.createElement('p');code.className='code';code.textContent='Station code #'+station.listener_code;
   const shares=document.createElement('div');shares.className='socials';const url=location.origin+'/station/'+station.listener_code;
   for(const [label,kind] of [['Share on Facebook','facebook'],['Share on WhatsApp','whatsapp'],['More sharing options','more']])shares.append(shareButton(label,kind,station.name,url));
   const ownStation=!listenerMode&&station.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine';
