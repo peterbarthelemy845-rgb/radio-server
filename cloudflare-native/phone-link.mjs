@@ -6,7 +6,7 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   if(!path.startsWith('/api/phone/'))return null;
   if(request.method==='GET'&&path==='/api/phone/radios'){
     const current=await session(request,env,now);
-    const rows=await env.DB.prepare(`SELECT r.id,r.name,r.last_seen FROM phone_radios p JOIN radios r ON r.id=p.radio_id
+    const rows=await env.DB.prepare(`SELECT r.id,r.name,r.last_seen,(SELECT s.name FROM listening_sessions l JOIN stations s ON s.code=l.station_code WHERE l.radio_id=r.id AND l.last_seen>${now-90}) AS current_station FROM phone_radios p JOIN radios r ON r.id=p.radio_id
       WHERE p.session_hash=? AND p.expires>? ORDER BY r.name`).bind(current.token_hash,now).all();
     const response=json({radios:rows.results.map(r=>({...r,online:r.last_seen>now-120}))});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);
