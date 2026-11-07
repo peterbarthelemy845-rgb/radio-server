@@ -1,4 +1,4 @@
-import {json,digest,mac,randomHex,HttpError,limit,readJson,session,browserWrite,otp,human} from './security.mjs';
+import {json,digest,mac,encrypt,decrypt,randomHex,HttpError,limit,readJson,session,browserWrite,otp,human} from './security.mjs';
 
 // Phone grants permit station additions only. Device secrets never reach browsers.
 export async function phoneRoutes(request,env,now,deps={human}) {
@@ -6,9 +6,18 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   if(!path.startsWith('/api/phone/'))return null;
   if(request.method==='GET'&&path==='/api/phone/radios'){
     const current=await session(request,env,now);
-    const rows=await env.DB.prepare(`SELECT r.id,r.name,r.last_seen,(SELECT s.name FROM listening_sessions l JOIN stations s ON s.code=l.station_code WHERE l.radio_id=r.id AND l.last_seen>${now-90}) AS current_station FROM phone_radios p JOIN radios r ON r.id=p.radio_id
-      WHERE p.session_hash=? AND p.expires>? ORDER BY r.name`).bind(current.token_hash,now).all();
-    const response=json({radios:rows.results.map(r=>({...r,online:r.last_seen>now-120}))});
+    const rows=await env.DB.prepare(`SELECT r.id,r.name,r.last_seen,rp.code_hash,rp.code_encrypted,(SELECT s.name FROM listening_sessions l JOIN stations s ON s.code=l.station_code WHERE l.radio_id=r.id AND l.last_seen>${now-90}) AS current_station FROM phone_radios p JOIN radios r ON r.id=p.radio_id
+      LEFT JOIN radio_pairs rp ON rp.radio_id=r.id AND (rp.expires=0 OR rp.expires>?)
+      WHERE p.session_hash=? AND p.expires>? ORDER BY r.name`).bind(now,current.token_hash,now).all();
+    const radios=await Promise.all(rows.results.map(async r=>{
+      let device_code=null;
+      if(r.code_encrypted)try{
+        const code=await decrypt(env,r.code_encrypted);
+        if(/^(?:[0-9]{4,8}|[A-Z0-9]{8})$/.test(code)&&await mac(env,'device-code:'+code)===r.code_hash)device_code=code;
+      }catch{} // Legacy or unauthenticated stored values never become a displayed code.
+      return {id:r.id,name:r.name,last_seen:r.last_seen,current_station:r.current_station,online:r.last_seen>now-120,device_code};
+    }));
+    const response=json({radios});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);
     return response;
   }
@@ -33,8 +42,9 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     await deps.human(request,env,body.turnstile_token,'radio-link',now);
     const code=String(body.device_code||'').replace(/[-\s]/g,'').toUpperCase();
     if(!/^(?:[0-9]{4,8}|[A-Z0-9]{8})$/.test(code))throw new HttpError(400,'Check the device code on your radio.');
+    const codeHash=await mac(env,'device-code:'+code);
     const pair=await env.DB.prepare(`SELECT radio_id FROM radio_pairs WHERE code_hash=? AND (expires=0 OR expires>?)`)
-      .bind(await mac(env,'device-code:'+code),now).first();
+      .bind(codeHash,now).first();
     if(!pair)throw new HttpError(400,'Check the device code on your radio.');
     await limit(env.DB,'claim-radio',pair.radio_id,5,900,now);
     await env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE radio_id=? AND state='waiting' AND expires<=?")
@@ -48,6 +58,9 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     const claim=await env.DB.prepare(`SELECT id,confirmation_code,session_hash FROM pair_claims
       WHERE radio_id=? AND state='waiting' AND expires>?`).bind(pair.radio_id,now).first();
     if(!claim||claim.session_hash!==current.token_hash)throw new HttpError(409,'Another request is waiting on this radio. Try again shortly.');
+    // Backfill older radios only after a valid, rate-limited pairing request.
+    await env.DB.prepare('UPDATE radio_pairs SET code_encrypted=? WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?)')
+      .bind(await encrypt(env,code),pair.radio_id,codeHash,now).run();
     return json({claim_id:claim.id,confirmation_code:claim.confirmation_code});
   }
   if(path==='/api/phone/claim/status'){

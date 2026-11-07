@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {fetchHandler,digest,handle,cleanup} from './worker.mjs';
 const schema=readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8');
 function database(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(schema);sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0007_local_ads.sql',import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec(schema);sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0007_local_ads.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0009_device_code.sql',import.meta.url),'utf8'));
   return {sqlite,prepare(sql){
     let args=[];
     const query={bind(...values){args=values;return query;},
@@ -75,7 +75,7 @@ test('suspended station is never delivered to device',async()=>{
 test('reset revokes phone grants, pairing codes, claims, and pending commands',async()=>{
   const env=await fixture();
   env.DB.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run('session',id,now+300);
-  env.DB.sqlite.prepare('INSERT INTO radio_pairs VALUES (?,?,?)').run(id,'hash',0);
+  env.DB.sqlite.prepare('INSERT INTO radio_pairs(radio_id,code_hash,expires) VALUES (?,?,?)').run(id,'hash',0);
   env.DB.sqlite.prepare('INSERT INTO pair_claims VALUES (?,?,?,?,?,?,?)').run(claim,id,'session','1234','approved',now+120,now);
   await handle(request('/api/radio/link/reset'),env,now);
   assert.equal(env.DB.sqlite.prepare('SELECT count(*) n FROM phone_radios').get().n,0);

@@ -1,4 +1,4 @@
-import {digest,mac,json,readJson,limit,HttpError} from './security.mjs';
+import {digest,mac,encrypt,json,readJson,limit,HttpError} from './security.mjs';
 export function credentials(request,body){const id=body.radio_id,auth=request.headers.get('Authorization')||'';
  if(typeof id!=='string'||!/^[a-f0-9]{32}$/.test(id)||!/^Bearer [a-f0-9]{64}$/.test(auth))throw new HttpError(401,'Radio authentication required.');return {id,secret:auth.slice(7)};}
 export async function authenticate(request,db,body){const {id,secret}=credentials(request,body);if(!await db.prepare('SELECT id FROM radios WHERE id=? AND secret_hash=?').bind(id,await digest(secret)).first())throw new HttpError(401,'Radio authentication required.');return id;}
@@ -22,11 +22,13 @@ export async function deviceRoutes(request,env,now){const path=new URL(request.u
  const existing=await env.DB.prepare('SELECT code_hash FROM radio_pairs WHERE radio_id=? AND (expires=0 OR expires>?)').bind(id,now).first();
  const stable=body.stable_pair_code;
  if(stable!==undefined&&(!/^[0-9]{4,8}$/.test(stable)))throw new HttpError(400,'Invalid device code.');
- if(existing){if(!stable||existing.code_hash!==await mac(env,'device-code:'+stable))throw new HttpError(409,'Reset the device code before replacing it.');return json({pair_code:stable,persistent:true,expires_in:0});}
+ if(existing){if(!stable||existing.code_hash!==await mac(env,'device-code:'+stable))throw new HttpError(409,'Reset the device code before replacing it.');
+  await env.DB.prepare('UPDATE radio_pairs SET code_encrypted=? WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?)').bind(await encrypt(env,stable),id,existing.code_hash,now).run();
+  return json({pair_code:stable,persistent:true,expires_in:0});}
  for(let attempt=0;attempt<30;attempt++){
   const number=crypto.getRandomValues(new Uint32Array(1))[0];const code=attempt===0&&stable?stable:String(1000+number%9000),codeHash=await mac(env,'device-code:'+code);
   // Unique indices reject collisions; no existing radio's code can be replaced.
-  await env.DB.prepare('INSERT INTO radio_pairs(radio_id,code_hash,expires) VALUES (?,?,0) ON CONFLICT DO NOTHING').bind(id,codeHash).run();
+  await env.DB.prepare('INSERT INTO radio_pairs(radio_id,code_hash,expires,code_encrypted) VALUES (?,?,0,?) ON CONFLICT DO NOTHING').bind(id,codeHash,await encrypt(env,code)).run();
   const row=await env.DB.prepare('SELECT code_hash FROM radio_pairs WHERE radio_id=?').bind(id).first();
   if(row?.code_hash===codeHash)return json({pair_code:code,persistent:true,expires_in:0});
   if(row)throw new HttpError(409,'Device code changed. Try again.');

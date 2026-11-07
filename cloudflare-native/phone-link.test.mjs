@@ -4,22 +4,75 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {phoneRoutes} from './phone-link.mjs';
 import {authRoutes} from './owner-auth.mjs';
-import {digest,mac} from './security.mjs';
+import {digest,mac,encrypt,decrypt} from './security.mjs';
 import {handle} from './worker.mjs';
 const now=1800000000,host='https://native.example',radio='a'.repeat(32),secret='b'.repeat(64);
 async function fixture(){
   const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0009_device_code.sql',import.meta.url),'utf8'));
   const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(qs){sqlite.exec('BEGIN');try{for(const q of qs)await q.run();sqlite.exec('COMMIT');}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
   const env={DB,DATA_ENCRYPTION_KEY:'e'.repeat(64)};
   sqlite.prepare('INSERT INTO radios VALUES (?,?,?,?,?)').run(radio,await digest(secret),'My radio',now,now);
-  sqlite.prepare('INSERT INTO radio_pairs VALUES (?,?,0)').run(radio,await mac({DATA_ENCRYPTION_KEY:'e'.repeat(64)},'device-code:1234'));
+  sqlite.prepare('INSERT INTO radio_pairs(radio_id,code_hash,expires) VALUES (?,?,0)').run(radio,await mac(env,'device-code:1234'));
   sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Test','https://example.com/live','owner@example.com','published',?,?)").run(now,now);
   async function browser(){const res=await authRoutes(new Request(host+'/api/session'),env,now);const state=await res.json(),cookie=res.headers.get('set-cookie').split(';')[0];
-    return {async post(path,body){return phoneRoutes(new Request(host+'/api/phone/'+path,{method:'POST',headers:{Cookie:cookie,Origin:host,'X-CSRF-Token':state.csrf,'Content-Type':'application/json'},body:JSON.stringify(body)}),env,now,{human:async()=>{}});}};}
+    return {async get(path='radios',at=now){return phoneRoutes(new Request(host+'/api/phone/'+path,{headers:{Cookie:cookie}}),env,at);},async post(path,body){return phoneRoutes(new Request(host+'/api/phone/'+path,{method:'POST',headers:{Cookie:cookie,Origin:host,'X-CSRF-Token':state.csrf,'Content-Type':'application/json'},body:JSON.stringify(body)}),env,now,{human:async()=>{}});}};}
   async function poll(body){return handle(new Request(host+'/api/radio/poll',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify({radio_id:radio,...body})}),env,now);}
   return {sqlite,env,browser,poll};
 }
+
+test('actual device code is encrypted and visible only after this phone receives physical approval',async()=>{
+  const f=await fixture(),one=await f.browser(),two=await f.browser();
+  assert.deepEqual((await(await one.get()).json()).radios,[]);
+  const claim=await(await one.post('claim',{device_code:' 12-34 '})).json();
+  const stored=f.sqlite.prepare('SELECT code_hash,code_encrypted FROM radio_pairs').get();
+  assert.notEqual(stored.code_encrypted,'1234');
+  assert.match(stored.code_encrypted,/^[a-f0-9]{24}:[a-f0-9]+$/);
+  assert.equal(await decrypt(f.env,stored.code_encrypted),'1234');
+  assert.deepEqual((await(await one.get()).json()).radios,[]);
+  assert.deepEqual((await(await two.get()).json()).radios,[]);
+  const approved=await(await f.poll({pair_claim_id:claim.claim_id,pair_decision:'approve'})).json();
+  assert.equal(approved.device_code,undefined);
+  const response=await one.get(),result=await response.json();
+  assert.equal(response.headers.get('Cache-Control'),'no-store');
+  assert.equal(result.radios[0].device_code,'1234');
+  assert.deepEqual(Object.keys(result.radios[0]).sort(),['current_station','device_code','id','last_seen','name','online']);
+  assert.ok(!JSON.stringify(result).includes(stored.code_encrypted));
+  assert.ok(!JSON.stringify(result).includes(stored.code_hash));
+  assert.ok(!JSON.stringify(result).includes(secret));
+  assert.deepEqual((await(await two.get()).json()).radios,[]);
+  f.sqlite.prepare('UPDATE phone_radios SET expires=?').run(now);
+  assert.deepEqual((await(await one.get()).json()).radios,[]);
+});
+
+test('missing, expired, corrupted, or stale stored device codes are never displayed',async()=>{
+  const f=await fixture(),phone=await f.browser();
+  const claim=await(await phone.post('claim',{device_code:'1234'})).json();
+  await f.poll({pair_claim_id:claim.claim_id,pair_decision:'approve'});
+  for(const value of [null,'corrupted',await encrypt(f.env,'5678'),await encrypt(f.env,'1234!')]){
+    f.sqlite.prepare('UPDATE radio_pairs SET code_encrypted=?').run(value);
+    assert.equal((await(await phone.get()).json()).radios[0].device_code,null);
+  }
+  f.sqlite.prepare('UPDATE radio_pairs SET code_encrypted=?,expires=?').run(await encrypt(f.env,'1234'),now);
+  assert.equal((await(await phone.get()).json()).radios[0].device_code,null);
+  f.sqlite.exec('DELETE FROM radio_pairs');
+  assert.equal((await(await phone.get()).json()).radios[0].device_code,null);
+});
+
+test('unlink and physical reset revoke display of the saved device code',async()=>{
+  const f=await fixture(),phone=await f.browser();
+  let claim=await(await phone.post('claim',{device_code:'1234'})).json();
+  await f.poll({pair_claim_id:claim.claim_id,pair_decision:'approve'});
+  await phone.post('unlink',{radio_id:radio});
+  assert.deepEqual((await(await phone.get()).json()).radios,[]);
+  assert.ok(f.sqlite.prepare('SELECT code_encrypted FROM radio_pairs').get().code_encrypted);
+  claim=await(await phone.post('claim',{device_code:'1234'})).json();
+  await f.poll({pair_claim_id:claim.claim_id,pair_decision:'approve'});
+  await handle(new Request(host+'/api/radio/link/reset',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify({radio_id:radio})}),f.env,now);
+  assert.deepEqual((await(await phone.get()).json()).radios,[]);
+  assert.equal(f.sqlite.prepare('SELECT code_encrypted FROM radio_pairs').get(),undefined);
+});
 test('phone cannot add until physical approval, then command is deduplicated and acknowledged',async()=>{
   const f=await fixture(),phone=await f.browser();
   await assert.rejects(phone.post('add',{radio_id:radio,station_code:'10'}),e=>e.status===403);
