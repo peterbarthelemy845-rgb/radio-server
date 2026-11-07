@@ -1,29 +1,29 @@
-/* Listener screens use a shared header; radio sections keep their white cards. */
+/* Listener and station-owner screens share compact white cards and a blue backdrop. */
 #listenerAppHeader{display:none}
-body.app-listener-page{color:#172b4d;background:linear-gradient(160deg,#eaf2ff,#f6f8fc 55%);min-height:100dvh;padding:env(safe-area-inset-top) max(16px,env(safe-area-inset-right)) calc(100px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));font-size:1rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+body.app-listener-page{color:#172b4d;background:radial-gradient(ellipse at top,#203b9a,#060c25 75%);min-height:100dvh;padding:calc(24px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(100px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));font-size:1rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 body.app-listener-page input,body.app-listener-page select,body.app-listener-page textarea,body.app-listener-page button{font-family:inherit}
-body.app-listener-page main{max-width:600px}
-body.app-listener-page #listenerAppHeader{display:flex;align-items:center;gap:12px;padding:18px 0 16px}
-#listenerAppHeader>img{display:block;width:52px;height:52px;object-fit:contain;flex-shrink:0}
-#listenerAppHeader>div{flex:1;min-width:0}
-#listenerAppHeader p{font-size:.8125rem;font-weight:700;color:#566b87;margin:0 0 3px}
-#listenerAppHeader h1{font-size:1.625rem;line-height:1.2;margin:0;color:#132b50}
+body.app-listener-page main{max-width:460px}
+body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px 12px;padding:16px 16px 12px;background:#fff;border:1px solid #d9e4f5;border-bottom:0;border-radius:15px 15px 0 0;margin:0}
+#listenerAppHeader>img{display:block;grid-column:1/-1;justify-self:center;width:112px;height:112px;max-width:100%;object-fit:contain;margin:0 auto 4px;padding:13px;border:6px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 8px 18px #1675e72b}
+#listenerAppHeader>div{min-width:0}
+#listenerAppHeader p{display:none}
+#listenerAppHeader h1{font-size:23px;line-height:1.2;margin:0;color:#152b50}
 #listenerTextSize{background:#e0eafa;color:#1a4e93;border:1px solid #c6d8f1;min-height:48px;max-width:112px;padding:8px 10px;font-size:.8125rem;line-height:1.25}
 #listenerTextSize[aria-pressed=true]{background:#174f9a;color:#fff}
-body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card{width:100%;max-width:none;padding:0;background:transparent;border:0;box-shadow:none;border-radius:0;margin:0}
-body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library{padding:14px;background:#fff;border:1px solid #d9e4f3;border-radius:18px;box-shadow:0 3px 12px #17376408}
+body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card{width:100%;max-width:none;padding:16px;background:#fff;border:1px solid #d9e4f5;border-radius:15px;box-shadow:0 14px 36px #0002;margin:0}
+body.app-listener-page #myRadio.card,body.app-listener-page #support.card{border-top:0;border-radius:0 0 15px 15px;padding-top:0}
 body.app-listener-page #myRadio>.radio-page-logo,body.app-listener-page #support>.radio-page-logo,body.app-listener-page #support>h1{display:none}
 body.app-listener-page #myRadio .linked-radio-card{background:transparent;border:0;box-shadow:none;border-radius:0;padding:0;margin:0 0 8px;gap:8px 12px}
 body.app-listener-page #myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline):not(.radio-unknown){font-size:1rem;line-height:1.5;margin:0}
-body.app-listener-page #myRadio .radio-online,body.app-listener-page #myRadio .radio-offline,body.app-listener-page #myRadio .radio-unknown{font-size:.875rem;line-height:1.35;max-width:calc(100% - 124px);justify-self:start;margin:0;border-radius:20px;padding:8px 9px;min-height:40px;font-weight:700}
+body.app-listener-page #myRadio .radio-online,body.app-listener-page #myRadio .radio-offline,body.app-listener-page #myRadio .radio-unknown{font-size:.875rem;line-height:1.35;max-width:calc(100% - 124px);justify-self:start;margin:0;border-radius:20px;padding:8px 9px;min-height:48px;font-weight:700}
 body.app-listener-page #myRadio .radio-unknown{color:#79500c;background:#fff2d8}
-body.app-listener-page #myRadio .linked-radio-card>.radio-unlink{min-height:48px;max-width:116px;font-size:.8125rem;padding:8px;top:8px;right:10px}
+body.app-listener-page #myRadio .linked-radio-card>.radio-unlink{min-height:48px;max-width:116px;font-size:.8125rem;padding:8px;top:0;right:0}
 body.app-listener-page #myRadio .linked-radio-card>.device-code-select{font-size:1rem;min-height:48px}
 body.app-listener-page #myRadio .radio-empty p{font-size:1rem;line-height:1.5;margin:0 0 12px;color:#536782}
 body.app-listener-page #myRadio #connectRadioForm{padding:0;background:transparent;border:0;border-radius:0}
 body.app-listener-page #myRadio #connectRadioForm label{font-size:.9375rem}
 body.app-listener-page #myRadio #connectRadioForm input{height:auto;min-height:48px;font-size:1rem;padding:12px}
-body.app-listener-page #myRadio #connectRadioForm>button{font-size:1rem;min-height:48px}
+body.app-listener-page #myRadio #connectRadioForm>button{font-size:1rem;min-height:48px;background:#0863df;border-radius:7px}
 body.app-listener-page #myRadio #radioConnectStatus{font-size:.9375rem;line-height:1.5}
 .radio-freshness{color:#61738d;font-size:.8125rem;line-height:1.4;margin:8px 0 0}
 .radio-freshness:empty{display:none}
@@ -43,15 +43,15 @@ body.app-listener-page #support .support-slide{background:#fff;flex-basis:88%;pa
 body.app-listener-page #support .support-slide h3{font-size:1rem;line-height:1.4;margin:4px 0 8px}
 body.app-listener-page #support .support-slide details{font-size:.9375rem}
 body.app-listener-page #support .support-slide summary{min-height:48px;padding:12px 0}
-body.app-listener-page #ticketForm{padding:16px;background:#fff;border:1px solid #d9e4f3;border-radius:16px}
+body.app-listener-page #ticketForm{padding:0;background:transparent;border:0;border-radius:0}
 body.app-listener-page #ticketForm h2{font-size:1.125rem;margin:0 0 14px}
 body.app-listener-page #ticketForm label{font-size:.9375rem;margin:12px 0 0}
 body.app-listener-page #ticketForm input,body.app-listener-page #ticketForm select,body.app-listener-page #ticketForm textarea{font-size:1rem;line-height:1.4;min-height:48px;padding:11px 12px;margin-top:6px}
 body.app-listener-page #ticketForm textarea{min-height:120px;height:auto}
-body.app-listener-page #ticketForm>button{min-height:48px;font-size:1rem;margin-top:14px}
+body.app-listener-page #ticketForm>button{min-height:48px;font-size:1rem;margin-top:14px;background:#0863df;border-radius:7px}
 body.app-listener-page #ticketMessage,body.app-listener-page #supportMessage{font-size:.9375rem;line-height:1.5}
-body.app-listener-page footer{max-width:600px;margin:24px auto 0;text-align:center;font-size:.875rem}
-body.app-listener-page footer a{color:#405f86;display:inline-flex;align-items:center;min-height:44px}
+body.app-listener-page footer{max-width:460px;margin:24px auto 0;text-align:center;font-size:.875rem}
+body.app-listener-page footer a{color:#c4dcff;display:inline-flex;align-items:center;min-height:44px}
 nav[aria-label="Main navigation"]>button,nav[aria-label="Main navigation"]>a{font-size:.8125rem;min-height:64px}
 /* Station actions rise from the bottom while preserving the screen underneath. */
 #stationAddPopup{position:fixed;inset:auto 0 0;width:min(560px,100%);max-width:100%;margin:0 auto;max-height:calc(var(--app-visible-height,100dvh) - env(safe-area-inset-top) - 16px);padding:10px 18px calc(20px + env(safe-area-inset-bottom));border-radius:24px 24px 0 0;overscroll-behavior:contain;animation:station-panel-enter .16s ease-out}
@@ -78,6 +78,6 @@ body.app-large-text #stationAddPopup #shared h1{font-size:1.75rem}
 body.app-large-text #stationAddPopup #shareStationBio,body.app-large-text #stationAddPopup #shareStatus,body.app-large-text #stationAddPopup label,body.app-large-text #listenerActionDialog p{font-size:1.125rem}
 body.app-keyboard-open.app-listener-page{padding-bottom:24px}
 body.app-keyboard-open.app-listener-page nav[aria-label="Main navigation"]{display:none}
-@media(max-width:360px){body.app-listener-page{padding-left:12px;padding-right:12px}#listenerAppHeader{gap:8px}#listenerAppHeader>img{width:44px;height:44px}#listenerTextSize{max-width:96px}#listenerAppHeader h1{font-size:1.5rem}}
+@media(max-width:360px){body.app-listener-page{padding-left:12px;padding-right:12px}body.app-listener-page #listenerAppHeader{gap:8px}#listenerTextSize{max-width:96px}#listenerAppHeader h1{font-size:22px}}
 @media(prefers-reduced-motion:reduce){#stationAddPopup{animation:none}}
 @media(forced-colors:active){#listenerTextSize,.linked-radio-card,.station-logo-tile{border:1px solid ButtonText}}
