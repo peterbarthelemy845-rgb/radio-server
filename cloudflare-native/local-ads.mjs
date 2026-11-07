@@ -1,5 +1,6 @@
 import {json,readJson,session,browserWrite,limit,human,randomHex,digest,HttpError} from './security.mjs';
 import {artwork} from './owner-auth.mjs';import {scanCreative} from './moderation.mjs';import {adPixels} from './ad-pixels.mjs';import {authenticate} from './devices.mjs';
+import {decisionReason,ownerNotification,commitOwnerNotification} from './notifications.mjs';
 const RIGHTS='I am authorized to advertise this business and have rights to the submitted text and artwork. I permit screening and display on compatible radios.';
 const VERSION='local-business-submissions-2026-11-03';
 async function admin(env,current,now){return env.ADMIN_TOTP_SECRET&&await env.DB.prepare('SELECT 1 FROM admin_sessions a JOIN admin_mfa_sessions m ON a.session_hash=m.session_hash WHERE a.session_hash=? AND a.expires>? AND m.expires>?').bind(current.token_hash,now,now).first();}
@@ -42,15 +43,21 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
   const rows=await env.DB.prepare(`SELECT a.id,a.station_code,a.business,a.message,a.status,a.contact_email,p.scanner_passed,p.owner_approved,p.end_at,p.phone,(SELECT count(*) FROM ad_impressions i WHERE i.ad_id=a.id) AS reported_displays FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id WHERE a.status!='deleted' AND (?=1 OR a.station_code=?) ORDER BY a.created_at DESC LIMIT 200`).bind(isAdmin&&administrative?1:0,current.owner_station||0).all();return json({ads:rows.results,free_pilot:true});
  }
  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
- await limit(env.DB,'ad-review',current.token_hash,60,900,now);const body=await readJson(request),ad=await env.DB.prepare("SELECT a.*,p.scanner_passed FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id WHERE a.id=? AND a.status!='deleted'").bind(String(body.id||'')).first();
+ await limit(env.DB,'ad-review',current.token_hash,60,900,now);const body=await readJson(request),ad=await env.DB.prepare("SELECT a.*,p.scanner_passed,p.owner_approved,s.contact_email AS owner_contact_email,s.email_verified_at AS owner_verified_at FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code WHERE a.id=? AND a.status!='deleted'").bind(String(body.id||'')).first();
  if(!ad||(!administrative&&ad.station_code!==current.owner_station))throw new HttpError(404,'Ad not found.');
- if(body.action==='delete'){await env.DB.prepare("UPDATE local_ads SET status='deleted' WHERE id=?").bind(ad.id).run();if(administrative)await env.DB.prepare('INSERT INTO admin_audit(id,actor_hash,action,created_at) VALUES (?,?,?,?)').bind(randomHex(16),current.token_hash,'ad-delete:'+ad.id,now).run();return json({status:'ok'});}
- if(administrative&&body.action==='clear'){await env.DB.prepare('UPDATE ad_policy SET scanner_passed=1 WHERE ad_id=?').bind(ad.id).run();await env.DB.prepare('INSERT INTO admin_audit(id,actor_hash,action,created_at) VALUES (?,?,?,?)').bind(randomHex(16),current.token_hash,'ad-safety-clear:'+ad.id,now).run();return json({status:'ok'});}
- if(!administrative&&body.action==='approve'){
-  if(!ad.scanner_passed)throw new HttpError(409,'Administrator review is required first.');
-  await env.DB.batch([env.DB.prepare('UPDATE ad_policy SET owner_approved=1 WHERE ad_id=?').bind(ad.id),env.DB.prepare("UPDATE local_ads SET status='approved' WHERE id=?").bind(ad.id)]);return json({status:'ok'});
- }
- throw new HttpError(400,'Choose an available action.');
+ if(!['delete',administrative?'clear':'approve'].includes(body.action))throw new HttpError(400,'Choose an available action.');
+ if(body.action==='clear'&&ad.scanner_passed===1||body.action==='approve'&&ad.status==='approved'&&ad.owner_approved===1)return json({status:'ok',notification_queued:false});
+ if(body.action==='approve'&&!ad.scanner_passed)throw new HttpError(409,'Administrator review is required first.');
+ const reason=decisionReason(body.reason,body.action==='delete'?'This advertisement is no longer approved for display.':''),notice=ad.owner_verified_at?await ownerNotification(env,{kind:{delete:'ad-removed',clear:'ad-cleared',approve:'ad-approved'}[body.action],stationCode:ad.station_code,recipient:ad.owner_contact_email,event:[ad.id,ad.created_at,ad.business,ad.message,ad.artwork_key,ad.status,ad.scanner_passed,ad.owner_approved],adId:ad.id,reason}):null;
+ const reviewed='a.id=? AND a.station_code=? AND a.business=? AND a.message=? AND a.artwork_key IS ? AND a.contact_email=? AND a.created_at=? AND a.status=? AND p.scanner_passed=? AND p.owner_approved=? AND s.contact_email=? AND s.email_verified_at IS ?',values=[ad.id,ad.station_code,ad.business,ad.message,ad.artwork_key,ad.contact_email,ad.created_at,ad.status,ad.scanner_passed,ad.owner_approved,ad.owner_contact_email,ad.owner_verified_at];
+ const mutation=body.action==='clear'?
+  env.DB.prepare(`UPDATE ad_policy SET scanner_passed=1 WHERE ad_id=? AND EXISTS (SELECT 1 FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code WHERE ${reviewed})`).bind(ad.id,...values):
+  env.DB.prepare(`UPDATE local_ads SET status=? WHERE id=? AND EXISTS (SELECT 1 FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code WHERE ${reviewed})`).bind(body.action==='delete'?'deleted':'approved',ad.id,...values);
+ const after=[];
+ if(body.action==='approve')after.push({sql:'UPDATE ad_policy SET owner_approved=1 WHERE ad_id=? AND OWNER_NOTIFICATION_APPLIED',values:[ad.id]});
+ if(administrative)after.push({sql:'INSERT INTO admin_audit(id,actor_hash,station_code,action,created_at) SELECT ?,?,?,?,? WHERE OWNER_NOTIFICATION_APPLIED',values:[randomHex(16),current.token_hash,ad.station_code,(body.action==='clear'?'ad-safety-clear:':'ad-delete:')+ad.id,now]});
+ if(!await commitOwnerNotification(env,now,mutation,notice,after))throw new HttpError(409,'Advertisement changed. Refresh and review it again.');
+ return json({status:'ok',notification_queued:Boolean(notice)});
 }
 async function radioAds(request,env,now){const url=new URL(request.url),path=url.pathname;
  if(path==='/api/radio/ad/pixels'&&request.method==='GET'){

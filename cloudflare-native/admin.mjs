@@ -1,5 +1,6 @@
 import {json,session,browserWrite,readJson,limit,human,otp,mac,randomHex,encrypt,decrypt,digest,HttpError} from './security.mjs';
 import {consumeTotp} from './totp.mjs';
+import {decisionReason,ownerNotification,commitOwnerNotification} from './notifications.mjs';
 async function revision(env,row){return mac(env,'station-review:'+JSON.stringify(row));}
 export async function adminRoutes(request,env,now,deps={human}){
  const path=new URL(request.url).pathname;if(!path.startsWith('/api/admin/'))return null;
@@ -89,16 +90,18 @@ export async function adminRoutes(request,env,now,deps={human}){
   if(body.revision!==await revision(env,row))throw new HttpError(409,'Station changed. Refresh and review it again.');
   if(body.action==='approve'&&(!row.email_verified_at||row.status!=='pending_review'))throw new HttpError(400,'Only email-verified stations awaiting review can be approved.');
   const status={approve:'published',reject:'suspended',delete:'deleted'}[body.action];
+  const reason=decisionReason(body.reason,body.action==='reject'?'Please review the station details and artwork and submit an update for review.':'');
+  if(row.status===status)return json({status:'ok',notification_queued:false});
+  const notice=row.email_verified_at?await ownerNotification(env,{kind:{approve:'station-approved',reject:'station-needs-changes',delete:'station-removed'}[body.action],stationCode:row.code,recipient:row.contact_email,event:await revision(env,row),reason}):null;
   // Compare every reviewed field in SQL too: edits arriving after the revision
   // check must not be published without having been reviewed.
-  const changed=await env.DB.prepare(`UPDATE stations SET status=?,updated_at=? WHERE code=? AND name=? AND bio=? AND stream_url=? AND contact_email=? AND artwork_key IS ? AND status=? AND updated_at=? RETURNING code`)
-   .bind(status,now,row.code,row.name,row.bio,row.stream_url,row.contact_email,row.artwork_key,row.status,row.updated_at).first();
-  if(!changed)throw new HttpError(409,'Station changed. Refresh and review it again.');
-  await env.DB.batch([
-   env.DB.prepare('INSERT INTO admin_audit(id,actor_hash,station_code,action,created_at) VALUES (?,?,?,?,?)').bind(randomHex(16),current.token_hash,row.code,body.action,now),
-   env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered') AND ?!='published'").bind(row.code,status)
+  const changed=await commitOwnerNotification(env,now,env.DB.prepare(`UPDATE stations SET status=?,updated_at=? WHERE code=? AND name=? AND bio=? AND stream_url=? AND contact_email=? AND artwork_key IS ? AND status=? AND email_verified_at IS ? AND updated_at=?`)
+   .bind(status,Math.max(now,row.updated_at+1),row.code,row.name,row.bio,row.stream_url,row.contact_email,row.artwork_key,row.status,row.email_verified_at,row.updated_at),notice,[
+   {sql:'INSERT INTO admin_audit(id,actor_hash,station_code,action,created_at) SELECT ?,?,?,?,? WHERE OWNER_NOTIFICATION_APPLIED',values:[randomHex(16),current.token_hash,row.code,body.action,now]},
+   {sql:"UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered') AND ?!='published' AND OWNER_NOTIFICATION_APPLIED",values:[row.code,status]}
   ]);
-  return json({status:'ok'});
+  if(!changed)throw new HttpError(409,'Station changed. Refresh and review it again.');
+  return json({status:'ok',notification_queued:Boolean(notice)});
  }
  throw new HttpError(404,'Not found.');
 }

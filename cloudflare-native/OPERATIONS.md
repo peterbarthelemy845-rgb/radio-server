@@ -76,3 +76,15 @@ explicitly requested a fresh directory.
 Apply migrations through 0010_saved_inventory.sql before publishing the new Worker. Radios running the updated sketch send a complete saved_station_codes snapshot on authenticated polls. Missing reports stay unknown; an empty report means no saved directory stations. Phone inventory queries require an active grant. Legacy/manual stations without directory codes are not included. Older encrypted backups without this table remain restorable.
 
 Support tickets atomically queue a plain-text receipt from info@radiolocals.com with the ticket reference, excluding the submitted message and device/security codes. The existing leased mail outbox sends immediately after accepted submissions and retries from the scheduled Worker. Queue acceptance is not delivery confirmation; inspect mail_outbox failures if a user reports no receipt. Per-recipient submissions are limited to three per hour. Retired support passcode routes return 404; Support remains public.
+
+## App, support and moderation improvements (2026-11-07)
+
+Apply migrations through 0011_support_replies.sql before this release. Support replies require the existing administrator email and authenticator proofs plus CSRF on writes. The recipient comes only from the original encrypted support ticket; a client cannot change it. Each bounded reply/status change has an idempotency key and commits with its encrypted thread entry, audit and email queue job. Provider-accepted is not proof that a message was read. Incoming mailbox replies are not synchronized into these threads. Legal complaints retain their separate review workflow.
+
+The admin overview shows aggregate pending station/ad counts, open tickets, recently reporting radios and failed/queued emails. It does not reveal private recipient or message data. Station and ad decisions notify only the verified registered station owner. Reasons are short plain text without links or security details. A repeated unchanged decision or stale revision cannot produce another email. Outbox delivery still has bounded retries.
+
+Backups now include encrypted support correspondence. Restore never requeues sent correspondence. Older snapshots that predate this table preserve existing reply rows, while malformed or incomplete new table data is rejected.
+
+Support includes three original, silent illustrated MP4 guides with burned-in instructions, optional English captions and readable steps. They are explicitly labeled illustrated guides, not physical-radio recordings. Videos use preload=none. Additional admin-managed YouTube tutorials remain available.
+
+Home-screen installation uses manifest.webmanifest and original logo-derived app icons. The service worker caches only a generic offline page and its allowlisted CSS/retry/icon assets. API responses, radio status, private artwork, admin/owner pages and commands are never cached or queued offline. A public offline notice is shown on failed navigation; no status is invented. Install through the browser menu or the Radio page's Add to Home Screen control. Installed iPhone/Android and physical-radio checks remain separate from automated/browser QA.

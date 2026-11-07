@@ -1,5 +1,6 @@
 // Only sanitized public-facing station content is sent to the moderation API.
 // Any missing configuration, incomplete response, or service failure keeps it private.
+import {ownerNotification,commitOwnerNotification} from './notifications.mjs';
 const words=['fuck','fucking','fucker','motherfucker','shit','bullshit','asshole','bitch','cunt','porn','porno','pornography','xxx','blowjob','merde','putain','salope','connard','enculer','getmaman','kokomaman','kalanmaman'];
 export function needsTextReview(text){
   const clean=text.normalize('NFKD').toLowerCase().replace(/[\p{M}\p{Cf}]/gu,'').replace(/[013457@$!]/g,c=>({'0':'o','1':'i','3':'e','4':'a','5':'s','7':'t','@':'a','$':'s','!':'i'}[c]));
@@ -26,13 +27,13 @@ export async function scanCreative(env,text,artworkKey,fetcher=fetch){
     return true;
   }catch{return false;}
 }
-export async function screenStation(env,code,fetcher=fetch){
-  const station=await env.DB.prepare("SELECT code,name,bio,artwork_key,updated_at FROM stations WHERE code=? AND status='pending_review' AND email_verified_at IS NOT NULL").bind(code).first();
+export async function screenStation(env,code,fetcher=fetch,now=Math.floor(Date.now()/1000)){
+  const station=await env.DB.prepare("SELECT code,name,bio,stream_url,contact_email,artwork_key,email_verified_at,updated_at FROM stations WHERE code=? AND status='pending_review' AND email_verified_at IS NOT NULL").bind(code).first();
   if(!station||!await scanCreative(env,station.name+'\n'+station.bio,station.artwork_key,fetcher))return false;
   try{
-    const approved=await env.DB.prepare(`UPDATE stations SET status='published' WHERE code=? AND status='pending_review'
-      AND email_verified_at IS NOT NULL AND name=? AND bio=? AND artwork_key=? AND updated_at=? RETURNING code`)
-      .bind(code,station.name,station.bio,station.artwork_key,station.updated_at).first();
-    return Boolean(approved);
+    const notice=await ownerNotification(env,{kind:'station-approved',stationCode:station.code,recipient:station.contact_email,event:station});
+    return await commitOwnerNotification(env,now,env.DB.prepare(`UPDATE stations SET status='published',updated_at=? WHERE code=? AND status='pending_review'
+      AND email_verified_at IS ? AND name=? AND bio=? AND stream_url=? AND contact_email=? AND artwork_key IS ? AND updated_at=?`)
+      .bind(Math.max(now,station.updated_at+1),code,station.email_verified_at,station.name,station.bio,station.stream_url,station.contact_email,station.artwork_key,station.updated_at),notice);
   }catch{return false;}
 }

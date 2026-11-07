@@ -1,0 +1,77 @@
+[
+  {
+    "id": "wifi",
+    "title": "Connect your radio to Wi-Fi",
+    "label": "Illustrated guide",
+    "src": "/assets/help-wifi.mp4",
+    "poster": "/assets/help-wifi-poster.webp",
+    "captions": "/assets/help-wifi.vtt",
+    "duration": 30,
+    "width": 960,
+    "height": 540,
+    "description": "A silent illustrated guide to Wi-Fi setup using the radio's touchscreen. All instructions are captioned.",
+    "silent": true,
+    "steps": [
+      "On the radio, tap Settings on the home screen.",
+      "Tap Wi-Fi. Wait for your network to appear.",
+      "Choose your network. Scan refreshes the list; Type name lets you enter it.",
+      "Type your Wi-Fi password on the radio, then tap Connect.",
+      "Wait for the home screen. If setup fails, check the password and try again."
+    ],
+    "sources": [
+      "Firmware: waveshare_radio/settings_ui.h \u2014 drawFeaturePage and tapFeaturePage",
+      "Firmware: waveshare_radio/touch_ui.h \u2014 uiDrawWifi, uiDrawKeyboard, uiTap and serviceTouchUi"
+    ]
+  },
+  {
+    "id": "station",
+    "title": "Add a station from the website",
+    "label": "Illustrated guide",
+    "src": "/assets/help-station.mp4",
+    "poster": "/assets/help-station-poster.webp",
+    "captions": "/assets/help-station.vtt",
+    "duration": 33,
+    "width": 960,
+    "height": 540,
+    "description": "A silent illustrated guide to linking a phone with the radio's Device Code and adding a station. Example numbers are not real device credentials.",
+    "silent": true,
+    "steps": [
+      "Keep your radio on and connected to Wi-Fi. Tap a station in Library.",
+      "Enter the Device Code from your radio, then select Add station.",
+      "Check that the confirmation numbers on the phone and radio match.",
+      "On the physical radio, tap Allow. Use Deny for a request you did not start.",
+      "On the website, confirm Add station to send the station to your radio.",
+      "Wait for Station added successfully! Linked phones can choose their radio directly."
+    ],
+    "sources": [
+      "Website: public/index.html \u2014 Library and shared station form",
+      "Website: public/assets/site.js \u2014 openShared and shareForm submit",
+      "Firmware: waveshare_radio/radio_link.h \u2014 drawRadioApprovalPopup and tapRadioApprovalPopup"
+    ]
+  },
+  {
+    "id": "reset",
+    "title": "Reset the Device Code",
+    "label": "Illustrated guide",
+    "src": "/assets/help-reset.mp4",
+    "poster": "/assets/help-reset-poster.webp",
+    "captions": "/assets/help-reset.vtt",
+    "duration": 30,
+    "width": 960,
+    "height": 540,
+    "description": "A silent illustrated guide to resetting the Device Code on the physical radio. Resetting unlinks every phone.",
+    "silent": true,
+    "steps": [
+      "Resetting the Device Code unlinks every phone. Start on the physical radio.",
+      "On the radio's home screen, tap the large Device Code.",
+      "Tap Reset code to change the code and disconnect all linked phones.",
+      "Keep Wi-Fi connected. Wait for the new code; a reset lock lasts 60 seconds.",
+      "Use the new Device Code to reconnect. Match the number and tap Allow on the radio."
+    ],
+    "sources": [
+      "Firmware: waveshare_radio/touch_ui.h \u2014 home Device Code tap target",
+      "Firmware: waveshare_radio/radio_link.h \u2014 requestRadioCodeReset, completeRadioCodeReset and drawRadioLinkPage",
+      "Firmware: waveshare_radio/README.md \u2014 Device Code layout update"
+    ]
+  }
+]

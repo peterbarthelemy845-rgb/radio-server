@@ -1,3 +1,5 @@
+import {supportRoutes} from './admin-support.mjs';
+import {overviewRoutes} from './admin-overview.mjs';
 import {mobileRoutes} from './mobile.mjs';
 import {reportsRoutes,recordListening} from './reports.mjs';
 import {backupRoutes,scheduledBackup,expireBackups} from './backups.mjs';
@@ -33,6 +35,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(adResponse)return adResponse;
   const reportsResponse=await reportsRoutes(request,env,now);if(reportsResponse)return reportsResponse;
   const backupsResponse=await backupRoutes(request,env,now);if(backupsResponse)return backupsResponse;
+  const supportResponse=await supportRoutes(request,env,now);if(supportResponse)return supportResponse;
+  const overviewResponse=await overviewRoutes(request,env,now);if(overviewResponse)return overviewResponse;
   const adminResponse=await adminRoutes(request,env,now);
   if(adminResponse)return adminResponse;
   const communityResponse=await communityRoutes(request,env,now);
@@ -124,15 +128,15 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice'].includes(path)||/^\/(?:station|advertise)\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
-    const target=new URL(request.url);if(!path.startsWith('/assets/'))target.pathname=/^\/radiolavoixdivine\/?$/.test(path)?'/station-player.html':'/index.html';
+  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice','/manifest.webmanifest','/sw.js','/offline.html'].includes(path)||/^\/(?:station|advertise)\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+    const target=new URL(request.url);if(!path.startsWith('/assets/')&&!['/manifest.webmanifest','/sw.js','/offline.html'].includes(path))target.pathname=/^\/radiolavoixdivine\/?$/.test(path)?'/station-player.html':'/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const html=asset.headers.get('Content-Type')?.includes('text/html');
     const response=env.MIGRATION_PREVIEW==='false'&&html?new Response((await asset.text()).replace('<aside class="preview">Test website — your current radio website has not switched yet.</aside>',''),asset):new Response(asset.body,asset);
     response.headers.set('Cache-Control','no-store');
     response.headers.set('X-Content-Type-Options','nosniff');
     response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');
-    response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data: https:; media-src https:; connect-src 'self' https://challenges.cloudflare.com");
+    response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data: https:; media-src 'self' https:; connect-src 'self' https://challenges.cloudflare.com");
     return response;
   }
   return json({message:'This feature has not migrated yet. This is an isolated test backend.',preview:true},404);
