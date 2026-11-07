@@ -24,6 +24,7 @@ main:has(#library:not([hidden])){max-width:1400px}
 /* Shared compact station-owner forms. Keep input text legible on phones. */
 #register.card,#login.card{width:min(460px,100%);padding:16px;border:1px solid #d9e4f5;border-radius:15px;background:#fff;box-shadow:0 14px 36px #0002}
 #register h1,#login h1{font-size:23px;line-height:1.15;margin:0 0 5px;color:#152b50;font-weight:800}
+#login>.signin-logo{display:block;width:112px;height:90px;max-width:100%;max-height:90px;object-fit:contain;margin:0 auto 10px}
 #login h1 small{font-size:14px;color:#617694;font-weight:400;margin-top:6px}
 #register>.legal{border-bottom:1px solid #e2eaf6;padding:8px 0 10px;margin-bottom:10px;font-size:11px}
 #register label,#login label{font-size:12px;color:#233a5b;margin:9px 0 0}
