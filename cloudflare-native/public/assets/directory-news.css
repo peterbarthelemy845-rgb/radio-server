@@ -201,7 +201,7 @@ body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat
 #myRadio>h1{display:flex;align-items:center;gap:9px}#myRadio .my-radio-heading-icon{width:32px;height:32px;flex:none;border-radius:9px}
 
 /* Use each station logo as the tile's main cover image. */
-#library.radio-library #stations>.station{flex:0 0 172px;width:172px;height:184px;max-width:172px;grid-template-columns:minmax(0,1fr) 30px;grid-template-rows:66px 18px 12px 30px;gap:5px 7px;padding:11px}
+#library.radio-library #stations>.station{flex:0 0 172px;width:172px;height:172px;max-width:172px;grid-template-columns:minmax(0,1fr) 30px;grid-template-rows:66px 18px 12px 30px;gap:5px 7px;padding:11px}
 #library.radio-library .station>img{grid-column:1/-1;grid-row:1;justify-self:center;width:66px;height:66px;border-radius:13px;object-fit:contain;background:#edf3fc}
 #library.radio-library .station h2{grid-column:1/-1;grid-row:2;text-align:center;font-size:14px;line-height:18px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;display:block}
 #library.radio-library .station .code{grid-column:1/-1;grid-row:3;text-align:center;font-size:10px;line-height:12px}
