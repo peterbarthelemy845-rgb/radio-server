@@ -1,34 +1,15 @@
 'use strict';
-const recentlyPlayed=new Set();window.addEventListener('radio-locals-ready',async()=>{try{const data=await api('/api/stream-status');for(const code of data.recently_played)recentlyPlayed.add(code);list();}catch{}});
 function shareButton(label,kind,name,url){const button=document.createElement('button');button.className='social '+kind;button.setAttribute('aria-label',label);button.title=label;button.textContent={facebook:'f',whatsapp:'◉',more:'•••'}[kind];if(kind==='whatsapp')button.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 26l1-5a11 11 0 1 1 4 4z" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M12 10q-2 4 5 9l3-1 2 3q-5 5-12-5-3-5 0-7z" fill="currentColor"/></svg>';if(kind==='more')button.innerHTML='<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 7h22v16H14l-6 5v-5H5z" fill="currentColor"/><g fill="#119e47"><circle cx="10" cy="15" r="1.6"/><circle cx="16" cy="15" r="1.6"/><circle cx="22" cy="15" r="1.6"/></g></svg>';button.onclick=async()=>{api('/api/events',{event_id:crypto.randomUUID().replaceAll('-',''),station_code:url.split('/').pop(),channel:kind}).catch(()=>{});if(kind==='facebook'||kind==='whatsapp'){const target=kind==='facebook'?'https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(url):'https://wa.me/?text='+encodeURIComponent(name+' '+url);window.open(target,'_blank','noopener,noreferrer');}else try{if(navigator.share)await navigator.share({title:name,url});else{await navigator.clipboard.writeText(url);button.title='Link copied';}}catch{}};return button;}
 list=function(){
- const listenerMode=new URLSearchParams(location.search).get('app')==='1';
- const query=$('search').value.trim().toLowerCase(),found=stations.filter(s=>(s.name+' '+s.listener_code).toLowerCase().includes(query)).sort((a,b)=>Number(b.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine')-Number(a.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine'));
- $('stations').replaceChildren();$('stationCount').textContent=found.length+' stations found · showing '+found.length;
+ const query=$('search').value.trim().toLowerCase(),found=stations.filter(s=>(s.name+' '+s.listener_code).toLowerCase().includes(query));
+ $('stations').replaceChildren();$('stationCount').textContent='';
  for(const station of found){
-  const card=document.createElement('article');card.className='station restored editorial';card.dataset.actions='1';
-  const image=document.createElement('img');image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt=station.name;image.loading='lazy';
-  const body=document.createElement('div');body.className='station-body';
-  const eyebrow=document.createElement('p');eyebrow.className='station-eyebrow';eyebrow.textContent='INTERNET RADIO';
-  const title=document.createElement('h2');title.textContent=station.name;
-  const health=document.createElement('p');health.className='station-health';health.dataset.code=station.listener_code;health.textContent=recentlyPlayed.has(String(station.listener_code))?'● Recent playback reported':'Stream availability unverified';body.append(health);const code=document.createElement('p');code.className='code';code.textContent='Station code #'+station.listener_code;
-  const shares=document.createElement('div');shares.className='socials';const url=location.origin+'/station/'+station.listener_code;
-  for(const [label,kind] of [['Share on Facebook','facebook'],['Share on WhatsApp','whatsapp'],['More sharing options','more']])shares.append(shareButton(label,kind,station.name,url));
-  const ownStation=!listenerMode&&station.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine';
-  const action=document.createElement(ownStation?'button':'a');action.className='station-primary';
-  if(ownStation){action.textContent=$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';action.onclick=()=>{$('playerPlay').click();};action.dataset.stationPlay='1';}
-  else{action.href='/station/'+station.listener_code+(new URLSearchParams(location.search).get('app')==='1'?'?app=1':'');action.textContent='+ Add to radio';action.setAttribute('aria-label','Add '+station.name+' to your radio');action.onclick=event=>{event.preventDefault();openStationPopup(station.listener_code);};}
-  const share=shareButton('Share station','more',station.name,url);share.className='station-share';share.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4"/></svg>';body.append(title,code,action,share);
-  const about=document.createElement('section');about.className='station-about';about.setAttribute('aria-label','Bio for '+station.name);
-  const summary=document.createElement('h3');summary.textContent='Bio';
-  const bio=document.createElement('p');bio.textContent=(station.bio||'The station owner has not added a bio yet.').slice(0,250);about.append(summary,bio);
-  const advertise=document.createElement('a');advertise.className='station-advertise';advertise.href='/advertise/'+station.listener_code;
-  advertise.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v5h4l10 5V5L7 10zm4 5 2 6h3m8-12v7"/></svg><span>Advertise on this station</span>';
-  card.append(image,body);$('stations').append(card);
+  const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label','Add '+station.name+' to your radio');tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
+  const image=document.createElement('img');image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
+  tile.append(image);tile.onclick=()=>openStationPopup(station.listener_code);$('stations').append(tile);
  }
- if(!found.length)$('stationCount').textContent=query?'No matching stations.':'No published stations yet.';
+ if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=query?'No matching stations.':'No stations yet.';$('stations').append(empty);}
 };
-for(const event of ['playing','pause','waiting','error'])$('playerAudio').addEventListener(event,()=>{for(const button of document.querySelectorAll('[data-station-play]')){button.textContent=event==='waiting'?'Connecting…':$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';}});
 $('search').oninput=list;
 const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search').after(libraryHelp);
 
@@ -54,4 +35,4 @@ for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > 
 const stationPopup=document.createElement('dialog');stationPopup.id='stationAddPopup';stationPopup.setAttribute('aria-label','Add station to your radio');
 const stationPopupClose=document.createElement('button');stationPopupClose.className='station-popup-close';stationPopupClose.textContent='Close';stationPopupClose.onclick=()=>stationPopup.close();stationPopup.append(stationPopupClose);document.body.append(stationPopup);
 stationPopup.addEventListener('close',()=>{$('shared').hidden=true;});
-async function openStationPopup(code){if(shareRunning)return;stationPopup.append($('shared'));$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStatus').textContent='';stationPopup.showModal();try{await openShared(code,true);}catch(e){$('shareStatus').textContent=e.message;}}
+async function openStationPopup(code){if(shareRunning)return;stationPopup.append($('shared'));$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStatus').textContent='';stationPopup.querySelector('.station-popup-share')?.remove();const selected=stations.find(s=>String(s.listener_code)===String(code));if(selected){const share=shareButton('Share station','more',selected.name,location.origin+'/station/'+code);share.className='station-popup-share secondary';share.textContent='Share station';stationPopup.append(share);}stationPopup.showModal();try{await openShared(code,true);}catch(e){$('shareStatus').textContent=e.message;}}
