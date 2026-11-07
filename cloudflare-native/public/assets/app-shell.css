@@ -1,4 +1,4 @@
-/* Listener screens share one surface; owner and administrator forms keep their layout. */
+/* Listener screens use a shared header; radio sections keep their white cards. */
 #listenerAppHeader{display:none}
 body.app-listener-page{color:#172b4d;background:linear-gradient(160deg,#eaf2ff,#f6f8fc 55%);min-height:100dvh;padding:env(safe-area-inset-top) max(16px,env(safe-area-inset-right)) calc(100px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));font-size:1rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 body.app-listener-page input,body.app-listener-page select,body.app-listener-page textarea,body.app-listener-page button{font-family:inherit}
@@ -11,15 +11,16 @@ body.app-listener-page #listenerAppHeader{display:flex;align-items:center;gap:12
 #listenerTextSize{background:#e0eafa;color:#1a4e93;border:1px solid #c6d8f1;min-height:48px;max-width:112px;padding:8px 10px;font-size:.8125rem;line-height:1.25}
 #listenerTextSize[aria-pressed=true]{background:#174f9a;color:#fff}
 body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card{width:100%;max-width:none;padding:0;background:transparent;border:0;box-shadow:none;border-radius:0;margin:0}
+body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library{padding:14px;background:#fff;border:1px solid #d9e4f3;border-radius:18px;box-shadow:0 3px 12px #17376408}
 body.app-listener-page #myRadio>.radio-page-logo,body.app-listener-page #support>.radio-page-logo,body.app-listener-page #support>h1{display:none}
-body.app-listener-page #myRadio .linked-radio-card{background:#fff;border:1px solid #d9e4f3;box-shadow:0 3px 12px #17376408;border-radius:16px;padding:14px;margin:0 0 8px;gap:8px 12px}
+body.app-listener-page #myRadio .linked-radio-card{background:transparent;border:0;box-shadow:none;border-radius:0;padding:0;margin:0 0 8px;gap:8px 12px}
 body.app-listener-page #myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline):not(.radio-unknown){font-size:1rem;line-height:1.5;margin:0}
 body.app-listener-page #myRadio .radio-online,body.app-listener-page #myRadio .radio-offline,body.app-listener-page #myRadio .radio-unknown{font-size:.875rem;line-height:1.35;max-width:calc(100% - 124px);justify-self:start;margin:0;border-radius:20px;padding:8px 9px;min-height:40px;font-weight:700}
 body.app-listener-page #myRadio .radio-unknown{color:#79500c;background:#fff2d8}
 body.app-listener-page #myRadio .linked-radio-card>.radio-unlink{min-height:48px;max-width:116px;font-size:.8125rem;padding:8px;top:8px;right:10px}
 body.app-listener-page #myRadio .linked-radio-card>.device-code-select{font-size:1rem;min-height:48px}
 body.app-listener-page #myRadio .radio-empty p{font-size:1rem;line-height:1.5;margin:0 0 12px;color:#536782}
-body.app-listener-page #myRadio #connectRadioForm{padding:16px;background:#fff;border:1px solid #d9e4f3;border-radius:16px}
+body.app-listener-page #myRadio #connectRadioForm{padding:0;background:transparent;border:0;border-radius:0}
 body.app-listener-page #myRadio #connectRadioForm label{font-size:.9375rem}
 body.app-listener-page #myRadio #connectRadioForm input{height:auto;min-height:48px;font-size:1rem;padding:12px}
 body.app-listener-page #myRadio #connectRadioForm>button{font-size:1rem;min-height:48px}
@@ -28,7 +29,7 @@ body.app-listener-page #myRadio #radioConnectStatus{font-size:.9375rem;line-heig
 .radio-freshness:empty{display:none}
 body.app-listener-page #myRadio #refreshRadios{font-size:.9375rem;min-height:48px}
 body.app-listener-page .home-screen-button{background:transparent;border:0;box-shadow:none;font-size:.875rem;min-height:48px;width:auto;margin:4px 0 0;padding:8px 0;color:#225da5}
-body.app-listener-page #library.radio-library{margin-top:24px}
+body.app-listener-page #library.radio-library{margin-top:16px}
 body.app-listener-page #library.radio-library #search{height:auto;min-height:48px;font-size:1rem;font-weight:400;padding:12px 14px;background:#fff;border-color:#cbd9ee;margin-bottom:12px}
 body.app-listener-page #library.radio-library .station-add-hint{font-size:.875rem;color:#536782;margin-bottom:10px}
 body.app-listener-page #library.radio-library .station-inventory-help{font-size:.875rem;line-height:1.5}
