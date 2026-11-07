@@ -10,8 +10,8 @@ body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:min
 #listenerAppHeader h1{font-size:23px;line-height:1.2;margin:0;color:#152b50}
 #listenerTextSize{background:#e0eafa;color:#1a4e93;border:1px solid #c6d8f1;min-height:48px;max-width:112px;padding:8px 10px;font-size:.8125rem;line-height:1.25}
 #listenerTextSize[aria-pressed=true]{background:#174f9a;color:#fff}
-body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card{width:100%;max-width:none;padding:16px;background:#fff;border:1px solid #d9e4f5;border-radius:15px;box-shadow:0 14px 36px #0002;margin:0}
-body.app-listener-page #myRadio.card,body.app-listener-page #support.card{border-top:0;border-radius:0 0 15px 15px;padding-top:0}
+body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{width:100%;max-width:none;padding:16px;background:#fff;border:1px solid #d9e4f5;border-radius:15px;box-shadow:0 14px 36px #0002;margin:0}
+body.app-listener-page #myRadio.card,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{border-top:0;border-radius:0 0 15px 15px;padding-top:0}
 body.app-listener-page #myRadio>.radio-page-logo,body.app-listener-page #support>.radio-page-logo,body.app-listener-page #support>h1{display:none}
 body.app-listener-page #myRadio .linked-radio-card{background:transparent;border:0;box-shadow:none;border-radius:0;padding:0;margin:0 0 8px;gap:8px 12px}
 body.app-listener-page #myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline):not(.radio-unknown){font-size:1rem;line-height:1.5;margin:0}
@@ -81,3 +81,23 @@ body.app-keyboard-open.app-listener-page nav[aria-label="Main navigation"]{displ
 @media(max-width:360px){body.app-listener-page #listenerAppHeader{gap:8px}#listenerTextSize{max-width:96px}#listenerAppHeader h1{font-size:22px}}
 @media(prefers-reduced-motion:reduce){#stationAddPopup{animation:none}}
 @media(forced-colors:active){#listenerTextSize,.linked-radio-card,.station-logo-tile{border:1px solid ButtonText}}
+
+/* Wi-Fi onboarding opens the existing local radio portal; credentials stay there. */
+#myRadio .radio-wifi-link{display:inline-flex;align-items:center;gap:7px;min-height:48px;margin-top:6px;color:#1d59a0;font-size:.9375rem;font-weight:650;text-decoration:none}
+.radio-wifi-link svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+#wifiSetup .wifi-setup-intro{margin:0 0 14px;color:#536782;font-size:.9375rem;line-height:1.5}
+.wifi-setup-steps{list-style:none;counter-reset:wifi-step;padding:0;margin:0}
+.wifi-setup-steps>li{counter-increment:wifi-step;position:relative;padding:0 0 16px 39px;min-height:34px}
+.wifi-setup-steps>li::before{content:counter(wifi-step);position:absolute;left:0;top:0;width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:#e6f0ff;color:#1557b0;font-size:.875rem;font-weight:750}
+.wifi-setup-steps h2{font-size:1rem;line-height:1.4;margin:0 0 4px;color:#172b4d}
+.wifi-setup-steps p,.wifi-setup-return,.wifi-setup-help p{font-size:.875rem;line-height:1.5;margin:0;color:#536782}
+.wifi-setup-open{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;min-height:60px;padding:10px 12px;background:#0863df;color:#fff;border-radius:7px;text-decoration:none;font-size:1rem;font-weight:700;text-align:center}
+.wifi-setup-open small{font-size:.75rem;font-weight:400;opacity:.9}
+#wifiSetup .wifi-setup-return{margin:10px 0 14px}
+.wifi-setup-help{border-top:1px solid #e2eaf6;padding-top:3px;margin-bottom:10px}
+.wifi-setup-help summary{font-size:.9375rem;min-height:48px;padding:12px 0;font-weight:650;cursor:pointer}
+.wifi-setup-help p{margin-bottom:12px}
+#wifiBackToRadio{display:block;width:100%;min-height:48px;margin:0;font-size:.9375rem}
+.radio-wifi-link:focus-visible,.wifi-setup-open:focus-visible{outline:3px solid #2377ff;outline-offset:3px}
+body.app-large-text .wifi-setup-steps h2{font-size:1.125rem}
+body.app-large-text #wifiSetup p,body.app-large-text .wifi-setup-help summary,body.app-large-text #wifiBackToRadio{font-size:1.0625rem}

@@ -129,7 +129,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/terms','/privacy','/copyright','/counter-notice','/manifest.webmanifest','/sw.js','/offline.html'].includes(path)||/^\/(?:station|advertise)\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/wifi-setup','/terms','/privacy','/copyright','/counter-notice','/manifest.webmanifest','/sw.js','/offline.html'].includes(path)||/^\/(?:station|advertise)\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
     const target=new URL(request.url);if(!path.startsWith('/assets/')&&!['/manifest.webmanifest','/sw.js','/offline.html'].includes(path))target.pathname=/^\/radiolavoixdivine\/?$/.test(path)?'/station-player.html':'/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const html=asset.headers.get('Content-Type')?.includes('text/html');
