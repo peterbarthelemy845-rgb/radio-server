@@ -1,5 +1,5 @@
 import {json,encrypt,decrypt,randomHex,readJson,limit,HttpError} from './security.mjs';import {administrator} from './access.mjs';
-export const BACKUP_TABLES=['stations','radios','radio_pairs','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions'];
+export const BACKUP_TABLES=['stations','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions'];
 const validMedia=key=>/^(?:sanitized\/[a-f0-9]{64}\.png|ad-pixels\/[a-f0-9]{64}\.bin)$/.test(key);
 async function audit(env,actor,action,now){await env.DB.prepare('INSERT INTO admin_audit(id,actor_hash,action,created_at) VALUES (?,?,?,?)').bind(randomHex(16),actor,action,now).run();}
 export async function createBackup(env,now,kind='manual'){
@@ -20,7 +20,11 @@ export async function restoreBackup(env,id,now){
  const run=await env.DB.prepare("SELECT 1 FROM backup_runs WHERE id=? AND state='ready'").bind(id).first();if(!run)throw new HttpError(404,'Backup not found.');const object=await env.MEDIA.get('backups/'+id+'/manifest.enc');if(!object||object.size>12*1024*1024)throw new HttpError(400,'Backup manifest unavailable.');let snapshot;try{snapshot=JSON.parse(await decrypt(env,await object.text()));}catch{throw new HttpError(400,'Backup could not be authenticated.');}
  if(snapshot.version!==1||!snapshot.tables||!Array.isArray(snapshot.media)||snapshot.media.length>100||Object.keys(snapshot.tables).some(t=>!BACKUP_TABLES.includes(t)))throw new HttpError(400,'Unsupported backup.');
  const statements=[];let count=0;
- for(const table of BACKUP_TABLES){const rows=snapshot.tables[table];if(!Array.isArray(rows)||rows.length>1000)throw new HttpError(400,'Invalid backup table.');const schema=(await env.DB.prepare('PRAGMA table_info('+table+')').all()).results,columns=schema.map(c=>c.name),primary=schema.filter(c=>c.pk).map(c=>c.name);for(let row of rows){count++;
+ for(const table of BACKUP_TABLES){
+  // Snapshots made before migration 0010 have no inventory table. Preserve
+  // newer reports during a legacy restore, as with other newer live records.
+  const rows=table==='radio_station_inventory'&&!Object.hasOwn(snapshot.tables,table)?[]:snapshot.tables[table];
+  if(!Array.isArray(rows)||rows.length>1000)throw new HttpError(400,'Invalid backup table.');const schema=(await env.DB.prepare('PRAGMA table_info('+table+')').all()).results,columns=schema.map(c=>c.name),primary=schema.filter(c=>c.pk).map(c=>c.name);for(let row of rows){count++;
   // Snapshots made before migration 0009 cannot recover a display code from its
   // HMAC. Only this newly added nullable column may be absent in older rows.
   if(table==='radio_pairs'&&row&&typeof row==='object'&&!Array.isArray(row)&&columns.includes('code_encrypted')&&!Object.hasOwn(row,'code_encrypted'))row={...row,code_encrypted:null};

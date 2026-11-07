@@ -70,3 +70,9 @@ Finish and physically test the ESP32 firmware on radiolocals.com. Retire obsolet
 Render endpoints/static files and verify any remaining AdSense/sponsor-demo paths
 before disconnecting Render. No old station database import is planned: the owner
 explicitly requested a fresh directory.
+
+
+## Saved station reports and support receipts (2026-11-07)
+Apply migrations through 0010_saved_inventory.sql before publishing the new Worker. Radios running the updated sketch send a complete saved_station_codes snapshot on authenticated polls. Missing reports stay unknown; an empty report means no saved directory stations. Phone inventory queries require an active grant. Legacy/manual stations without directory codes are not included. Older encrypted backups without this table remain restorable.
+
+Support tickets atomically queue a plain-text receipt from info@radiolocals.com with the ticket reference, excluding the submitted message and device/security codes. The existing leased mail outbox sends immediately after accepted submissions and retries from the scheduled Worker. Queue acceptance is not delivery confirmation; inspect mail_outbox failures if a user reports no receipt. Per-recipient submissions are limited to three per hour. Retired support passcode routes return 404; Support remains public.

@@ -1,26 +1,5 @@
-#library>h1{font-size:40px}#stationCount{font-size:13px;color:#bed8f7}#stations{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}.station.restored{display:flex;align-items:center;gap:14px;border:0;border-radius:22px;background:#ffffff1c;padding:14px}.station.restored>img{width:100px;height:145px;object-fit:cover;flex-shrink:0;background:#11265c}.station-body{min-width:0;flex:1}.station h2{margin:0 0 5px;font-weight:900;font-size:22px}.station .code{margin:4px 0 9px;font-size:12px;font-weight:bold}.socials{display:flex;gap:9px}.social{width:44px;height:44px;min-height:44px;border-radius:50%;padding:0;font-size:26px;background:#0866ff}.social.whatsapp{background:#0cbd42}.social.more{background:#119e47;font-size:20px}.bio-small{background:#285277;min-height:30px;font-size:12px;padding:7px 12px;margin-top:8px}.station-advertise{margin-top:9px;font-size:12px}.news-carousel{display:flex;gap:20px;align-items:center;justify-content:center;width:100%;overflow:hidden;min-height:160px;margin:12px 0}.news-card{display:flex;gap:12px;text-decoration:none;color:white;background:#ffffff14;border-radius:18px;padding:10px;flex:0 0 310px;height:145px;opacity:.55;transform:scale(.92)}.news-card.active{opacity:1;transform:none;background:#ffffff22}.news-card img{width:110px;height:125px;border-radius:12px;object-fit:cover}.news-card>span{display:flex;flex-direction:column;justify-content:center;min-width:0}.news-card small{color:#a3d1ff;letter-spacing:2px;font-size:10px;font-weight:bold}.news-card strong{font-size:17px;line-height:1.15;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;margin-top:8px}.radio-home{overflow:hidden}nav{z-index:20}@media(max-width:380px){#stations{grid-template-columns:1fr}.station.restored>img{width:78px}.station h2{font-size:19px}}@media(prefers-reduced-motion:reduce){.news-card{transform:none}}
-.station .station-advertise{display:block;background:#b91c1c;color:white;padding:6px 9px;border-radius:5px;text-decoration:none;font-weight:bold}
-/* Desktop Library follows the original wide, three-card layout. */
-main:has(#library:not([hidden])){max-width:1400px}
-#library>h1{font-size:46px;line-height:1.1;margin:0 0 24px;font-weight:900}
-#library #search{height:54px;border:0;border-radius:18px;background:#ffffff22;color:#fff;font-size:21px;font-weight:800;padding:0 18px;margin:0 0 14px}
-#library #search::placeholder{color:#c5cce0;opacity:1}
-#library details{font-size:13px;color:#c8e0ff;font-weight:700;margin:0 0 16px}
-#library details p{font-weight:400;line-height:1.5}
-#stationCount{margin:0 0 16px;font-size:13px}
-#stations{grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:0}
-.station.restored{padding:12px;gap:12px;min-height:230px;border-radius:22px}
-.station.restored>img{width:100px;height:134px;object-fit:contain;background:linear-gradient(#142963,#050a20)}
-.station.restored h2{font-size:20px;line-height:1.08;margin:0 0 7px}
-.station.restored .code{font-size:11px;margin:0 0 10px}
-.station.restored .socials{gap:8px}
-.station.restored .social{width:40px;height:40px;min-height:40px;font-size:28px}
-.station.restored .bio-small{font-size:11px;min-height:28px;padding:6px 10px;margin-top:8px}
-.station.restored .station-advertise{font-size:12px;line-height:1.25;margin-top:8px;padding:7px 9px}
-@media(min-width:1200px){.station.restored>img{width:112px;height:148px}.station.restored{min-height:230px;padding:16px}.station.restored h2{font-size:23px}}
-@media(max-width:899px){#stations{grid-template-columns:repeat(2,minmax(0,1fr))}.station.restored{min-height:220px}}
-@media(max-width:639px){#stations{grid-template-columns:1fr}.station.restored{min-height:190px}#library>h1{font-size:38px;margin-bottom:22px}}
-.social svg{width:29px;height:29px;display:block;margin:auto}.social.facebook{font-family:Arial,sans-serif;font-weight:900}
+/* Current compact radio, station picker, owner forms and support styles. */
+nav{z-index:20}
 /* Shared compact station-owner forms. Keep input text legible on phones. */
 #register.card,#login.card{width:min(460px,100%);padding:16px;border:1px solid #d9e4f5;border-radius:15px;background:#fff;box-shadow:0 14px 36px #0002}
 #register h1,#login h1{font-size:23px;line-height:1.15;margin:0 0 5px;color:#152b50;font-weight:800}
@@ -51,55 +30,6 @@ nav[aria-label="Main navigation"]>[aria-current="page"]::after{content:"";positi
 nav[aria-label="Main navigation"]>:hover{background:#ffffff08;color:#dceaff}
 nav[aria-label="Main navigation"]>:focus-visible{outline:2px solid #73d7ff;outline-offset:-3px}
 @media(prefers-reduced-motion:reduce){nav[aria-label="Main navigation"]>*{transition:none}}
-/* White editorial station cards, matching the supplied reference. */
-#stations{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;align-items:start}
-.station.restored.editorial{display:grid;grid-template-columns:minmax(110px,36%) minmax(0,1fr);gap:20px;padding:24px;min-height:0;background:linear-gradient(145deg,#fff,#f8faff);color:#111c3d;border:1px solid #ffffffb3;border-radius:28px;box-shadow:0 16px 34px #020a2433;overflow:hidden}
-.station.restored.editorial>img{width:100%;height:auto;aspect-ratio:1/1.04;object-fit:cover;border-radius:20px;align-self:center;background:#e7edf9;box-shadow:0 8px 18px #1d36571c}
-.editorial .station-body{align-self:center}
-.editorial .station-eyebrow{font-size:11px;letter-spacing:2.4px;color:#6c7d9b;font-weight:800;margin:0 0 7px}
-.station.restored.editorial h2{font-size:clamp(22px,2.3vw,34px);line-height:1.06;margin:0 0 9px;overflow-wrap:anywhere;color:#101a39}
-.station.restored.editorial .code{font-size:14px;font-weight:400;color:#536079;margin-bottom:12px}
-.station.restored.editorial .socials{gap:9px}.station.restored.editorial .social{width:40px;height:40px;min-height:40px;color:white}
-.station .station-primary{display:inline-flex;align-items:center;justify-content:center;color:white;text-decoration:none;border-radius:28px;background:linear-gradient(120deg,#3497ff,#3939f3);font-size:16px;line-height:1.25;font-weight:700;min-height:44px;margin-top:15px;padding:12px 20px;box-shadow:0 8px 18px #334ef425}
-.editorial .station-about{grid-column:1/-1;border-top:1px solid #dbe4f1;padding-top:16px;margin:0;color:#142141}
-.editorial .station-about summary{display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer;list-style:none;font-size:20px;font-weight:800;line-height:1.2}
-.editorial .station-about summary::-webkit-details-marker{display:none}.editorial .station-about summary::after{content:'⌄';font-size:25px;line-height:1;transition:transform .15s}.editorial .station-about:not([open]) summary::after{transform:rotate(-90deg)}
-.editorial .station-about p{font-size:15px;line-height:1.5;color:#4c566a;margin:8px 0 0;overflow-wrap:anywhere}
-.station.restored.editorial .station-advertise{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:12px;margin:0;padding:13px 16px;min-height:48px;background:linear-gradient(120deg,#ec4036,#c31e18);color:#fff;font-size:16px;line-height:1.25;text-align:center;border-radius:16px}
-.station-advertise svg{width:25px;height:25px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round;flex-shrink:0}
-.station-about summary:focus-visible{outline:2px solid #2876f0;outline-offset:5px;border-radius:4px}
-@media(max-width:1000px){#stations{grid-template-columns:1fr;max-width:800px;margin-inline:auto}.station.restored.editorial h2{font-size:32px}}
-@media(max-width:480px){.station.restored.editorial{padding:18px;gap:16px;border-radius:23px;grid-template-columns:minmax(96px,34%) minmax(0,1fr)}.station.restored.editorial>img{border-radius:15px}.station.restored.editorial h2{font-size:24px}.editorial .station-eyebrow{font-size:9px;letter-spacing:1.8px}.station.restored.editorial .code{font-size:12px}.station.restored.editorial .socials{gap:7px}.station.restored.editorial .social{width:34px;height:34px;min-height:34px}.editorial .social svg{width:25px;height:25px}.station .station-primary{font-size:13px;padding:10px 12px;margin-top:12px}.editorial .station-about summary{font-size:18px}.station.restored.editorial .station-advertise{font-size:14px}}
-#library .station.editorial .station-about{color:#142141;font-weight:400;margin:0}#library .station.editorial .station-about summary{color:#142141}.station.restored.editorial>img{object-fit:contain}
-
-/* Dense directory layout for a growing station catalog. */
-#stations{grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;max-width:none;margin-inline:0}
-.station.restored.editorial{grid-template-columns:80px minmax(0,1fr);gap:10px 12px;padding:14px;border-radius:18px;box-shadow:0 7px 20px #020a2424}
-.station.restored.editorial>img{width:80px;height:90px;aspect-ratio:auto;border-radius:12px;box-shadow:none}
-.editorial .station-eyebrow{display:none}
-.station.restored.editorial h2{font-size:20px;line-height:1.15;margin:0 0 5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.station.restored.editorial .code{font-size:12px;margin:0 0 8px}
-.station.restored.editorial .socials{gap:8px}.station.restored.editorial .social{width:32px;height:32px;min-height:32px;font-size:23px}.editorial .social svg{width:23px;height:23px}
-.station.editorial .station-primary{min-height:36px;margin-top:9px;padding:8px 12px;font-size:12px;border-radius:20px;box-shadow:none}
-#library .station.editorial .station-about{padding-top:9px;margin:0;border-top:1px solid #e0e7f2}
-#library .station.editorial .station-about summary{font-size:13px;font-weight:700;min-height:28px}
-.editorial .station-about summary::after{font-size:20px}.editorial .station-about p{font-size:13px;line-height:1.45;margin-top:7px}
-.station.restored.editorial .station-advertise{min-height:36px;padding:8px 10px;gap:7px;border-radius:10px;font-size:12px}.editorial .station-advertise svg{width:19px;height:19px}
-@media(max-width:639px){#stations{grid-template-columns:1fr}.station.restored.editorial{grid-template-columns:86px minmax(0,1fr)}.station.restored.editorial>img{width:86px;height:96px}.station.restored.editorial h2{font-size:21px}}
-/* Blue station cards coordinated with the Library background. */
-.station.restored.editorial{background:linear-gradient(145deg,#29396b,#1a254b);color:#f8fbff;border:1px solid #536baa33;box-shadow:0 8px 22px #02091e33}
-.station.restored.editorial h2{color:#fff}
-.station.restored.editorial .code{color:#c3d5f4}
-#library .station.editorial .station-about{color:#f3f7ff;border-top-color:#8094bb40}
-#library .station.editorial .station-about summary{color:#f3f7ff}
-.station.editorial .station-about p{color:#d0dcf2}
-.station.restored.editorial>img{background:#e8eef9}
-.station.editorial .station-primary{background:linear-gradient(120deg,#0bb9f4,#3931f8)}
-
-/* Always-visible, bounded station bios. */
-#library .station.editorial .station-about h3{margin:0 0 6px;color:#f3f7ff;font-size:13px;font-weight:700;line-height:1.3}
-#library .station.editorial .station-about p{margin:0;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;max-height:5.8em;font-size:13px;line-height:1.45;overflow-wrap:anywhere}
-
 #register .cover-upload .cover-preview{width:76px;height:76px;flex-shrink:0;border:0;border-radius:10px}#register .cover-hint{display:block;font-size:11px;color:#64748b;font-weight:400;margin:5px 0 2px}
 
 #register.card{padding:12px}#register label{margin-top:6px}#register .cover-upload{padding-bottom:6px;margin-bottom:4px;gap:10px}#register .cover-upload .cover-preview{width:56px;height:56px}#register .cover-hint{margin:2px 0}#register input:not([type=checkbox]){min-height:36px;padding:6px 9px}#register textarea{height:48px;min-height:48px;padding:6px 9px}#register .small{font-size:10px;margin:5px 0;line-height:1.3}#register .check{padding:6px;margin-top:6px;line-height:1.3}#register form>button{margin-top:8px;min-height:40px;padding:8px}#register>.link{margin-top:8px;min-height:36px;padding:8px}
@@ -108,135 +38,68 @@ nav[aria-label="Main navigation"]>:focus-visible{outline:2px solid #73d7ff;outli
 
 #ticketForm select{min-height:36px;padding:6px 9px;margin-top:3px;font-size:16px}
 
-nav[aria-label="Main navigation"]{grid-template-columns:repeat(4,minmax(0,1fr))}#myRadio article{border-bottom:1px solid #dbe5f4;padding:10px 0}#myRadio h2{font-size:20px}.radio-online{color:#167044;font-weight:700}.radio-offline{color:#ad2929;font-weight:700}#connectRadio{width:100%;margin-top:16px}#myRadio details{margin-top:20px;font-size:14px;line-height:1.6}
-
-body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat(3,minmax(0,1fr))}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
-
-.radio-empty{text-align:center;padding:22px 8px}.radio-empty img{border-radius:20px}.radio-empty h2{font-size:24px!important}.radio-empty p{color:#536782;line-height:1.6}.linked-radio-card{background:#f3f7ff;border:1px solid #dbe5f4;border-radius:18px;padding:18px!important;margin:14px 0}.linked-radio-card h2{font-size:25px!important;margin:0 0 10px}.radio-online,.radio-offline{display:inline-block;border-radius:20px;padding:7px 12px;font-size:14px}.radio-online{background:#e2f6e9}.radio-offline{background:#ffeded}.radio-station-art{display:block;width:96px;height:96px;object-fit:contain;border-radius:16px;margin:12px auto}.radio-change,.support-help{width:100%;min-height:50px;margin-top:12px}.linked-radio-card details{margin-top:15px!important}.listener-app{font-size:17px}.listener-app #myRadio,.listener-app #support{border-radius:20px;padding:18px}.listener-app #stations .station-primary{font-size:16px;min-height:48px;display:flex;align-items:center;justify-content:center}.listener-share{display:block;min-height:44px;background:transparent;color:#a8dcff;font-size:14px;padding:8px 0}.listener-app .station-about p{font-size:15px!important;-webkit-line-clamp:2!important}.listener-app #stationCount{font-size:14px}.listener-app #ticketForm label{font-size:14px}.listener-app #ticketForm input,.listener-app #ticketForm select{min-height:44px}.listener-app #shared form>button{min-height:50px}.listener-app #shareStatus{font-size:18px;line-height:1.5}.listener-app #myRadio>h1{font-size:30px}.listener-app #support>h1{font-size:28px}.listener-app summary{min-height:44px;padding:10px 0;cursor:pointer}
-
-button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #78cfff;outline-offset:4px}.listener-app button,.listener-app select,.listener-app input{min-height:48px}.listener-app .linked-radio-card{overflow-wrap:anywhere}.listener-app .station-body{overflow-wrap:anywhere}.listener-app #shareStatus{color:#a9f0bd}.listener-app #shared #shareStatus{color:#176238}@media(forced-colors:active){button,a{border:1px solid ButtonText}}
-
-#library{max-width:1200px;margin:auto}#library>h1{font-size:32px;margin:8px 0 10px}#library #search{background:#ffffff14;border:1px solid #ffffff24;border-radius:14px;min-height:50px;color:#fff;padding:12px 16px;margin:14px 0}#library #search::placeholder{color:#c4d4ef}#library .station.editorial{background:linear-gradient(145deg,#253963,#172743);border:1px solid #ffffff12;box-shadow:0 8px 22px #0002;border-radius:20px;padding:16px}#library .station.editorial .station-about{border-top:1px solid #ffffff18;padding-top:10px}#library .station-health{font-size:11px;color:#bed5ee;margin:0 0 6px}.linked-radio-card details button{margin-right:8px}#library .station-advertise{min-height:40px}#library .station h2{letter-spacing:-.3px}@media(max-width:639px){#library>h1{font-size:30px}#library .station.editorial{padding:14px}}
-
-/* Compact radio overview on both the website and listener preview. */
-#myRadio.card,.listener-app #myRadio{width:min(440px,100%);padding:14px;border-radius:18px}#myRadio>h1,.listener-app #myRadio>h1{font-size:25px;margin:0 0 10px}#myRadio .linked-radio-card{display:grid;grid-template-columns:64px minmax(0,1fr);gap:8px 12px;padding:12px!important;margin:8px 0;border-radius:14px}#myRadio .linked-radio-card h2{grid-column:2;font-size:21px!important;margin:0;align-self:end}#myRadio .linked-radio-card .radio-online,#myRadio .linked-radio-card .radio-offline{grid-column:2;margin:0;padding:4px 9px;font-size:13px;justify-self:start}#myRadio .radio-station-art{grid-column:1;grid-row:1/3;width:60px;height:60px;margin:0;border-radius:12px;align-self:center}#myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline){grid-column:1/-1;font-size:14px;line-height:1.4;margin:3px 0}#myRadio .linked-radio-card>button{grid-column:1/-1;min-height:44px;margin:0;padding:10px;font-size:14px}#myRadio .linked-radio-card details{grid-column:1/-1;margin:0!important;font-size:13px}#myRadio .linked-radio-card summary{padding:8px 0;min-height:36px}#myRadio #connectRadio{margin-top:10px;min-height:44px;font-size:14px;padding:10px}#myRadio #refreshRadios{margin-top:8px;min-height:44px;font-size:13px;padding:10px}#myRadio>details{margin-top:8px;font-size:13px}#myRadio>details summary{padding:8px 0;min-height:40px}#myRadio #radioConnectStatus:empty{margin:0}
-
-#myRadio .linked-radio-card{position:relative;padding-top:54px!important}#myRadio .linked-radio-card>.radio-unlink{position:absolute;top:6px;right:8px;width:auto;min-height:40px;padding:8px 10px;background:transparent;color:#9b2634;font-size:12px;border:1px solid #e4c9ce;border-radius:9px;margin:0}
-
-/* Browse stations alongside the radio without a separate Library tab. */
-nav #navLibrary[hidden]{display:none!important}
-#library{scroll-margin-top:16px;margin-top:24px}
-#library>h1{font-size:24px;margin-bottom:12px}
-#library #stations{display:flex!important;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 2px 16px;overscroll-behavior-x:contain}
-#library #stations>.station{flex:0 0 320px;max-width:calc(100vw - 48px);scroll-snap-align:start;margin:0}
-#library #search{max-width:100%;box-sizing:border-box}
-
-/* A separate compact Library card below My Radio. */
-#library.radio-library{width:min(440px,100%);max-width:440px;box-sizing:border-box;margin:14px auto 0;padding:14px;background:#fff;color:#142341;border:1px solid #e2e8f2;border-radius:18px;box-shadow:0 8px 24px #07133114}
-#library.radio-library>h1{font-size:21px;margin:0 0 8px;letter-spacing:-.4px}
-#library.radio-library #stationCount{font-size:11px;color:#65748b;margin:6px 0}
-#library.radio-library>details{display:none}
-#library.radio-library #search{width:100%;min-height:38px;margin:0 0 6px;padding:8px 11px;background:#f3f6fb;border:1px solid #e1e7f0;border-radius:11px;color:#172b4d;font-size:14px}
-#library.radio-library #search::placeholder{color:#718099}
-#library.radio-library #stations{gap:10px;padding:4px 0 8px;scrollbar-width:thin;scrollbar-color:#b9c9e4 transparent}
-#library.radio-library #stations>.station{flex:0 0 248px;max-width:calc(100vw - 76px);display:grid;grid-template-columns:48px minmax(0,1fr);gap:8px;padding:10px;border-radius:13px;box-shadow:none}
-#library.radio-library .station>img{width:48px;height:48px;border-radius:9px;object-fit:contain;align-self:start}
-#library.radio-library .station-body{min-width:0}
-#library.radio-library .station h2{font-size:16px;line-height:1.2;margin:0 0 3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-#library.radio-library .station .code{font-size:11px;margin:0 0 6px}
-#library.radio-library .station-eyebrow,#library.radio-library .station-health,#library.radio-library .station-about{display:none}
-#library.radio-library .socials{gap:6px;margin:4px 0 7px}
-#library.radio-library .social{width:28px;height:28px;min-height:28px;padding:4px;font-size:20px}
-#library.radio-library .social svg{width:21px;height:21px}
-#library.radio-library .station-primary{min-height:36px;padding:7px 10px;font-size:12px;line-height:1.3;margin:0;border-radius:10px}
-#library.radio-library .station-advertise{grid-column:1/-1;min-height:32px;margin:0;padding:7px 8px;font-size:11px;border-radius:8px}
-#library.radio-library .station-advertise svg{width:15px;height:15px}
-#library.radio-library .listener-share{min-height:32px;padding:4px 0;font-size:12px}
-nav[aria-label="Main navigation"]{grid-template-columns:repeat(3,minmax(0,1fr))}
-body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat(2,minmax(0,1fr))}
-
-/* Minimal station picker: artwork, name, add action and one share icon. */
-#library.radio-library>h1,#library.radio-library #stationCount{display:none}
-#library.radio-library #stations>.station{flex-basis:270px;grid-template-columns:52px minmax(0,1fr);padding:12px;gap:10px;background:linear-gradient(135deg,#243c67,#172943)}
-#library.radio-library .station>img{width:52px;height:52px;border-radius:11px}
-#library.radio-library .station-body{display:grid;grid-template-columns:minmax(0,1fr) 36px;gap:4px 7px;align-items:center}
-#library.radio-library .station h2,#library.radio-library .station .code{grid-column:1/-1;margin:0}
-#library.radio-library .station .code{margin-bottom:5px;color:#c9d7ee}
-#library.radio-library .station-primary{grid-column:1;display:flex;align-items:center;justify-content:center;min-height:38px;font-size:12px;padding:7px 8px;white-space:normal;text-align:center}
-#library.radio-library .station-share{grid-column:2;display:flex;align-items:center;justify-content:center;width:36px;height:38px;min-height:38px;padding:8px;border-radius:10px;background:#ffffff18;color:#d8efff;border:1px solid #ffffff20;margin:0}
-#library.radio-library .station-share svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-#library.radio-library #search{margin-bottom:8px}
-
-/* Small square station tiles with a short add action. */
-#library.radio-library #stations>.station{flex:0 0 164px;width:164px;height:164px;max-width:164px;box-sizing:border-box;grid-template-columns:44px minmax(0,1fr);grid-template-rows:44px minmax(0,1fr);gap:8px;padding:11px}
-#library.radio-library .station>img{width:44px;height:44px;grid-column:1;grid-row:1}
-#library.radio-library .station-body{display:contents}
-#library.radio-library .station h2{grid-column:2;grid-row:1;align-self:center;font-size:14px;line-height:1.2;-webkit-line-clamp:2}
-#library.radio-library .station .code{grid-column:1/-1;grid-row:2;align-self:start;font-size:10px;margin:0}
-#library.radio-library .station-primary{grid-column:1/-1;grid-row:2;align-self:end;justify-self:start;min-height:30px;padding:6px 9px;font-size:11px;max-width:104px;border-radius:8px}
-#library.radio-library .station-share{grid-column:2;grid-row:2;align-self:end;justify-self:end;width:30px;height:30px;min-height:30px;padding:6px;border-radius:8px}
-#library.radio-library .station-share svg{width:17px;height:17px}
-
-/* Keep code and actions together without a blank middle row. */
-#library.radio-library #stations>.station{height:132px;grid-template-rows:44px 14px 30px;gap:6px 8px}
-#library.radio-library .station .code{grid-row:2;align-self:center}
-#library.radio-library .station-primary,#library.radio-library .station-share{grid-row:3;align-self:center}
-#stationAddPopup{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 40px);box-sizing:border-box;padding:14px;border:0;border-radius:20px;background:white;color:#172b4d;overflow:auto;box-shadow:0 24px 80px #0005}
-#stationAddPopup::backdrop{background:#071329aa;backdrop-filter:blur(3px)}
-#stationAddPopup #shared{width:100%;max-width:none;padding:6px;box-shadow:none;border:0;margin:0;box-sizing:border-box}
-#stationAddPopup .station-popup-close{display:block;margin:0 0 4px auto;min-height:36px;padding:6px 12px;background:#edf2f9;color:#233956;border-radius:9px;font-size:13px}
-#stationAddPopup #shared h1{font-size:23px;margin:8px 0}
-
-/* Compact connection card without the oversized empty-state illustration. */
-#myRadio.card,.listener-app #myRadio{padding:12px}
-#myRadio>h1,.listener-app #myRadio>h1{font-size:22px;margin:0 0 6px}
+/* Compact radio overview. */
+#myRadio.card,.listener-app #myRadio{width:min(440px,100%);padding:12px;border-radius:18px}
+#myRadio .linked-radio-card{display:grid;grid-template-columns:minmax(0,1fr);gap:8px 12px;position:relative;background:#f3f7ff;border:1px solid #dbe5f4;border-radius:14px;padding:12px;margin:8px 0}
+#myRadio .radio-online,#myRadio .radio-offline{grid-column:1/-1;display:inline-block;justify-self:start;font-weight:700;border-radius:20px;max-width:calc(100% - 114px);min-height:32px;padding:6px 9px;margin:0 0 4px;align-self:start;font-size:13px}
+#myRadio .radio-online{background:#e2f6e9;color:#167044}
+#myRadio .radio-offline{background:#ffeded;color:#ad2929}
+#myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline){grid-column:1/-1;font-size:14px;line-height:1.4;margin:3px 0}
+#myRadio .linked-radio-card>button{grid-column:1/-1;min-height:44px;margin:0;padding:10px;font-size:14px}
+#myRadio .linked-radio-card>.radio-unlink{position:absolute;top:6px;right:8px;width:auto;min-height:40px;padding:8px 10px;background:transparent;color:#9b2634;font-size:12px;border:1px solid #e4c9ce;border-radius:9px;margin:0}
+#myRadio .linked-radio-card>.device-code-select{font-size:16px;letter-spacing:.3px;min-height:44px}
+#myRadio .linked-radio-card>.device-code-select[aria-pressed=true]{background:#e0edff;color:#164ca0}
 #myRadio .radio-empty{padding:0;text-align:left}
 #myRadio .radio-empty p{font-size:13px;line-height:1.4;margin:0 0 10px;color:#5b6d86}
 #myRadio #connectRadioForm label{font-size:12px;margin:0}
 #myRadio #connectRadioForm input{height:44px;min-height:44px;margin-top:4px;padding:9px 11px;font-size:16px}
 #myRadio #connectRadioForm>.human:empty{margin:0}
-#myRadio #connectRadioForm>button{min-height:44px;margin-top:8px;padding:10px 12px;font-size:14px}
+#myRadio #connectRadioForm>button,#myRadio #connectRadio{width:100%;min-height:44px;margin-top:8px;padding:10px 12px;font-size:14px}
+#myRadio #refreshRadios{margin-top:8px;min-height:44px;font-size:13px;padding:10px}
 #myRadio #radioConnectStatus{font-size:13px;line-height:1.4;margin:8px 0 0}
 #myRadio #radioConnectStatus:empty{margin:0}
-
-#myRadio>h1{display:flex;align-items:center;gap:9px}#myRadio .my-radio-heading-icon{width:32px;height:32px;flex:none;border-radius:9px}
-
-/* Use each station logo as the tile's main cover image. */
-#library.radio-library #stations>.station{flex:0 0 172px;width:172px;height:172px;max-width:172px;grid-template-columns:minmax(0,1fr) 30px;grid-template-rows:66px 18px 12px 30px;gap:5px 7px;padding:11px}
-#library.radio-library .station>img{grid-column:1/-1;grid-row:1;justify-self:center;width:66px;height:66px;border-radius:13px;object-fit:contain;background:#edf3fc}
-#library.radio-library .station h2{grid-column:1/-1;grid-row:2;text-align:center;font-size:14px;line-height:18px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;display:block}
-#library.radio-library .station .code{grid-column:1/-1;grid-row:3;text-align:center;font-size:10px;line-height:12px}
-#library.radio-library .station-primary{grid-column:1;grid-row:4;width:100%;max-width:none;font-size:11px;padding:6px 7px}
-#library.radio-library .station-share{grid-column:2;grid-row:4}
-
-/* Full-bleed station artwork with compact controls over the image. */
-#library.radio-library #stations>.station{position:relative;isolation:isolate;overflow:hidden;grid-template-rows:minmax(0,1fr) 18px 12px 30px;background:#26395f}
-#library.radio-library .station>img{position:absolute;inset:0;grid-area:auto;width:100%;height:100%;max-width:none;border-radius:0;object-fit:cover;background:#eaf0fa;z-index:-2}
-#library.radio-library #stations>.station::after{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,transparent 25%,#07172a88 55%,#07172af5 100%)}
-#library.radio-library .station h2{color:#fff;text-shadow:0 1px 4px #0009;text-align:left}
-#library.radio-library .station .code{color:#e2edff;text-align:left;text-shadow:0 1px 3px #000b}
-#library.radio-library .station-share{background:#132945cc;border-color:#ffffff40;color:#fff}
-
-/* Logo-only station tiles: no labels, gradients or controls over the artwork. */
-#library.radio-library #stations{gap:10px;margin-top:0;padding:3px 0 7px;align-items:flex-start}
-#library.radio-library .station-logo-tile{display:block;flex:0 0 96px;width:96px;height:96px;min-height:96px;margin:0;padding:0;border:0;border-radius:14px;background:#eaf0fa;overflow:hidden;scroll-snap-align:start;box-shadow:0 2px 6px #162c4d12}
+#myRadio>.radio-page-logo,#support>.radio-page-logo{display:block;width:88px;height:88px;object-fit:contain;margin:0 auto 10px;padding:10px;border:5px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 6px 14px #1675e725}
+/* Logo-only station sliders. Names stay below the artwork. */
+nav #navLibrary[hidden]{display:none!important}
+#library.radio-library{width:min(440px,100%);max-width:440px;box-sizing:border-box;margin:14px auto 0;padding:14px;background:#fff;color:#142341;border:1px solid #e2e8f2;border-radius:18px;box-shadow:0 8px 24px #07133114;scroll-margin-top:16px}
+#library.radio-library>h1,#library.radio-library #stationCount,#library.radio-library>details{display:none}
+#library.radio-library #search{width:100%;height:44px;min-height:44px;max-width:100%;box-sizing:border-box;margin:0 0 8px;padding:8px 11px;background:#f3f6fb;border:1px solid #e1e7f0;border-radius:11px;color:#172b4d;font-size:14px;font-weight:700}
+#library.radio-library #search::placeholder{color:#718099}
+#library.radio-library #stations{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding:3px 0 7px;margin:0;overscroll-behavior-x:contain;align-items:flex-start;scrollbar-width:thin;scrollbar-color:#b9c9e4 transparent}
+#library.radio-library .station-slider-item{flex:0 0 96px;width:96px;min-width:0;scroll-snap-align:start}
+#library.radio-library .station-logo-tile{display:block;width:96px;height:96px;min-height:96px;margin:0;padding:0;border:0;border-radius:14px;background:#eaf0fa;overflow:hidden;box-shadow:0 2px 6px #162c4d12}
 #library.radio-library .station-logo-tile img{display:block;width:100%;height:100%;object-fit:cover;border:0;border-radius:0}
 #library.radio-library .station-logo-tile:focus-visible{outline:3px solid #2377ff;outline-offset:2px}
-#library.radio-library .station-slider-empty{font-size:13px;color:#65748b;margin:8px 0}
-#stationAddPopup .station-popup-share{display:block;margin:10px 6px 0;min-height:40px;padding:8px 12px;font-size:13px}
-
-#library.radio-library .station-slider-item{flex:0 0 96px;width:96px;min-width:0;scroll-snap-align:start}
 #library.radio-library .station-tile-name{margin:6px 0 0;color:#20314f;font-size:12px;font-weight:600;line-height:1.3;text-align:center;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
-
-#myRadio>.radio-page-logo,#support>.radio-page-logo{display:block;width:88px;height:88px;object-fit:contain;margin:0 auto 10px;padding:10px;border:5px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 6px 14px #1675e725}
-
-/* Identify linked radios by their Device Code, without a name or station thumbnail. */
-#myRadio .linked-radio-card{grid-template-columns:minmax(0,1fr);padding:12px!important}
-#myRadio .linked-radio-card h2{grid-column:1/-1;display:flex;flex-direction:column;gap:3px;min-height:46px;padding-right:116px;align-self:start;font-size:13px!important;font-weight:600;color:#536782}
-#myRadio .linked-radio-card .device-code-value{font-size:26px;font-weight:800;line-height:1.1;letter-spacing:1px;color:#142b50;overflow-wrap:anywhere}
-#myRadio .linked-radio-card .radio-online,#myRadio .linked-radio-card .radio-offline{grid-column:1/-1}
-
-/* Keep the Device Code in the existing selector instead of a separate heading. */
-#myRadio .linked-radio-card .radio-online,#myRadio .linked-radio-card .radio-offline{max-width:calc(100% - 114px);min-height:32px;padding:6px 9px;margin:0 0 4px;align-self:start}
-#myRadio .linked-radio-card>.device-code-select{font-size:16px;letter-spacing:.3px;min-height:44px}
-#myRadio .linked-radio-card>.device-code-select[aria-pressed=true]{background:#e0edff;color:#164ca0}
+#library.radio-library .station-slider-empty{font-size:13px;color:#65748b;margin:8px 0}
+/* In-page station add flow. */
+#stationAddPopup{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 40px);box-sizing:border-box;padding:14px;border:0;border-radius:20px;background:white;color:#172b4d;overflow:auto;box-shadow:0 24px 80px #0005}
+#stationAddPopup::backdrop{background:#071329aa;backdrop-filter:blur(3px)}
+#stationAddPopup #shared{width:100%;max-width:none;padding:6px;box-shadow:none;border:0;margin:0;box-sizing:border-box}
+#stationAddPopup .station-popup-close{display:block;margin:0 0 4px auto;min-height:36px;padding:6px 12px;background:#edf2f9;color:#233956;border-radius:9px;font-size:13px}
+#stationAddPopup #shared h1{font-size:23px;margin:8px 0}
+#stationAddPopup .station-popup-share{display:block;margin:10px 6px 0;min-height:40px;padding:8px 12px;font-size:13px}
+/* Listener preview and keyboard access. */
+body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.listener-app{font-size:17px}.listener-app #support{border-radius:20px;padding:18px}.support-help{width:100%;min-height:50px;margin-top:12px}
+.listener-app #ticketForm label{font-size:14px}.listener-app #ticketForm input,.listener-app #ticketForm select{min-height:44px}.listener-app #shared form>button{min-height:50px}.listener-app #shareStatus{font-size:18px;line-height:1.5}.listener-app #shared #shareStatus{color:#176238}.listener-app #support>h1{font-size:28px}.listener-app summary{min-height:44px;padding:10px 0;cursor:pointer}
+.listener-app button,.listener-app select,.listener-app input{min-height:48px}.listener-app .linked-radio-card{overflow-wrap:anywhere}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #78cfff;outline-offset:4px}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+@media(forced-colors:active){button,a{border:1px solid ButtonText}}
+/* BEGIN listener inventory and confirmation improvements */
+#library.radio-library .station-add-hint{font-size:13px;line-height:1.4;color:#536782;margin:0 0 9px}
+#library.radio-library .station-inventory-help{font-size:12px;line-height:1.4;color:#65748b;margin:2px 0 10px}
+#library.radio-library .station-picker-section{margin:10px 0 0;padding:0;border:0;background:transparent;box-shadow:none}
+#library.radio-library .station-picker-section h2{font-size:14px;font-weight:700;color:#20314f;line-height:1.4;margin:0 0 6px}
+#library.radio-library #savedStations{display:flex;gap:10px;margin:0;padding:3px 0 7px;align-items:flex-start;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#b9c9e4 transparent}
+#listenerActionDialog{width:min(400px,calc(100vw - 32px));max-height:calc(100dvh - 40px);box-sizing:border-box;overflow:auto;border:0;border-radius:20px;background:#fff;color:#172b4d;padding:24px;box-shadow:0 24px 80px #0005}
+#listenerActionDialog::backdrop{background:#071329aa;backdrop-filter:blur(3px)}
+#listenerActionDialog h2{margin:0 0 12px;font-size:25px;line-height:1.2;color:#142b50}
+#listenerActionDialog p{font-size:16px;line-height:1.5;margin:0 0 22px;overflow-wrap:anywhere}
+#listenerActionDialog .listener-dialog-actions{display:flex;gap:10px;flex-wrap:wrap}
+#listenerActionDialog button{flex:1 1 120px;min-height:54px;padding:13px 16px;margin:0;font-size:17px;border-radius:12px}
+#listenerActionDialog button[hidden]{display:none}
+#listenerActionDialog .listener-dialog-done{width:100%;font-size:19px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;min-height:58px}
+#listenerActionDialog button:focus-visible{outline:3px solid #2377ff;outline-offset:3px}
+/* END listener inventory and confirmation improvements */

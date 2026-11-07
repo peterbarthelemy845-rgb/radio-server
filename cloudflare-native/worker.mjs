@@ -12,6 +12,7 @@ import {adminRoutes} from './admin.mjs';
 import {communityRoutes} from './community.mjs';
 import {authenticate,deviceRoutes} from './devices.mjs';
 import {adsRoutes} from './local-ads.mjs';
+import {inventoryStatements} from './saved-inventory.mjs';
 async function publicStation(db,code) {
   return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
     'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
@@ -76,7 +77,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(path==='/api/radio/poll' && request.method==='POST') {
     const body=await readJson(request), id=await authenticate(request,env.DB,body);
     await limit(env.DB,'radio-poll',id,12,60,now);
-    const statements=[env.DB.prepare('UPDATE radios SET last_seen=? WHERE id=?').bind(now,id)];
+    const statements=[env.DB.prepare('UPDATE radios SET last_seen=? WHERE id=?').bind(now,id),
+      ...await inventoryStatements(env,id,body,now)];
     const ack=body.ack_id,result=body.ack_status;
     if(typeof ack==='string' && /^[0-9a-f]{32}$/.test(ack) && ['added','failed'].includes(result))
       statements.push(env.DB.prepare(`UPDATE radio_commands SET state=? WHERE id=? AND radio_id=?
@@ -137,7 +139,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
 }
 export async function fetchHandler(request,env,ctx) {
   try{const response=await handle(request,env);
-    if(ctx&&request.method==='POST'&&/^\/api\/(owner|admin)\//.test(new URL(request.url).pathname)&&response.ok)
+    if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|support\/ticket$)/.test(new URL(request.url).pathname)&&response.ok)
       ctx.waitUntil(processMail(env));
     return response;
   }catch(error){

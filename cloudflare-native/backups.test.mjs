@@ -23,3 +23,34 @@ test('legacy pairing compatibility still rejects other missing backup columns',a
   assert.equal(f.sqlite.prepare('SELECT bio FROM stations').get().bio,'Keep live data');
  }
 });
+
+test('inventory snapshots restore reported-empty state and legacy backups preserve newer reports',async()=>{
+ const f=await operationsFixture();
+ f.sqlite.prepare('INSERT INTO radio_station_inventory(radio_id,station_codes_json,reported_at) VALUES (?,?,?)').run('radio-one','[]',f.now);
+ const backup=await createBackup(f.env,f.now),path='backups/'+backup.id+'/manifest.enc';
+ const snapshot=JSON.parse(await decrypt(f.env,await(await f.env.MEDIA.get(path)).text()));
+ assert.equal(snapshot.tables.radio_station_inventory[0].station_codes_json,'[]');
+ f.sqlite.prepare('UPDATE radio_station_inventory SET station_codes_json=?,reported_at=?').run(JSON.stringify([String(f.station)]),f.now+10);
+ await restoreBackup(f.env,backup.id,f.now+20);
+ let row=f.sqlite.prepare('SELECT station_codes_json,reported_at FROM radio_station_inventory').get();
+ assert.equal(row.station_codes_json,'[]');assert.equal(row.reported_at,f.now);
+ delete snapshot.tables.radio_station_inventory;
+ await f.env.MEDIA.put(path,await encrypt(f.env,JSON.stringify(snapshot)));
+ f.sqlite.prepare('UPDATE radio_station_inventory SET station_codes_json=?,reported_at=?').run(JSON.stringify([String(f.station)]),f.now+30);
+ await restoreBackup(f.env,backup.id,f.now+40);
+ row=f.sqlite.prepare('SELECT station_codes_json,reported_at FROM radio_station_inventory').get();
+ assert.equal(row.station_codes_json,JSON.stringify([String(f.station)]));assert.equal(row.reported_at,f.now+30);
+});
+
+test('legacy inventory compatibility rejects a malformed table or missing inventory columns',async()=>{
+ const f=await operationsFixture();
+ f.sqlite.prepare('INSERT INTO radio_station_inventory(radio_id,station_codes_json,reported_at) VALUES (?,?,?)').run('radio-one','[]',f.now);
+ const backup=await createBackup(f.env,f.now),path='backups/'+backup.id+'/manifest.enc';
+ const original=JSON.parse(await decrypt(f.env,await(await f.env.MEDIA.get(path)).text()));
+ for(const invalid of [null,[{radio_id:'radio-one',station_codes_json:'[]'}]]){
+  const snapshot=structuredClone(original);snapshot.tables.radio_station_inventory=invalid;
+  await f.env.MEDIA.put(path,await encrypt(f.env,JSON.stringify(snapshot)));
+  await assert.rejects(restoreBackup(f.env,backup.id,f.now+10),e=>e.status===400);
+  assert.equal(f.sqlite.prepare('SELECT reported_at FROM radio_station_inventory').get().reported_at,f.now);
+ }
+});
