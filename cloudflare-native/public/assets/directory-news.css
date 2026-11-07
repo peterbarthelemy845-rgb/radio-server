@@ -185,3 +185,15 @@ body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat
 #stationAddPopup #shared{width:100%;max-width:none;padding:6px;box-shadow:none;border:0;margin:0;box-sizing:border-box}
 #stationAddPopup .station-popup-close{display:block;margin:0 0 4px auto;min-height:36px;padding:6px 12px;background:#edf2f9;color:#233956;border-radius:9px;font-size:13px}
 #stationAddPopup #shared h1{font-size:23px;margin:8px 0}
+
+/* Compact connection card without the oversized empty-state illustration. */
+#myRadio.card,.listener-app #myRadio{padding:12px}
+#myRadio>h1,.listener-app #myRadio>h1{font-size:22px;margin:0 0 6px}
+#myRadio .radio-empty{padding:0;text-align:left}
+#myRadio .radio-empty p{font-size:13px;line-height:1.4;margin:0 0 10px;color:#5b6d86}
+#myRadio #connectRadioForm label{font-size:12px;margin:0}
+#myRadio #connectRadioForm input{height:44px;min-height:44px;margin-top:4px;padding:9px 11px;font-size:16px}
+#myRadio #connectRadioForm>.human:empty{margin:0}
+#myRadio #connectRadioForm>button{min-height:44px;margin-top:8px;padding:10px 12px;font-size:14px}
+#myRadio #radioConnectStatus{font-size:13px;line-height:1.4;margin:8px 0 0}
+#myRadio #radioConnectStatus:empty{margin:0}
