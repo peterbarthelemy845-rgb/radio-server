@@ -207,3 +207,11 @@ body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat
 #library.radio-library .station .code{grid-column:1/-1;grid-row:3;text-align:center;font-size:10px;line-height:12px}
 #library.radio-library .station-primary{grid-column:1;grid-row:4;width:100%;max-width:none;font-size:11px;padding:6px 7px}
 #library.radio-library .station-share{grid-column:2;grid-row:4}
+
+/* Full-bleed station artwork with compact controls over the image. */
+#library.radio-library #stations>.station{position:relative;isolation:isolate;overflow:hidden;grid-template-rows:minmax(0,1fr) 18px 12px 30px;background:#26395f}
+#library.radio-library .station>img{position:absolute;inset:0;grid-area:auto;width:100%;height:100%;max-width:none;border-radius:0;object-fit:cover;background:#eaf0fa;z-index:-2}
+#library.radio-library #stations>.station::after{content:'';position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,transparent 25%,#07172a88 55%,#07172af5 100%)}
+#library.radio-library .station h2{color:#fff;text-shadow:0 1px 4px #0009;text-align:left}
+#library.radio-library .station .code{color:#e2edff;text-align:left;text-shadow:0 1px 3px #000b}
+#library.radio-library .station-share{background:#132945cc;border-color:#ffffff40;color:#fff}
