@@ -17,7 +17,7 @@ list=function(){
   const ownStation=!listenerMode&&station.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine';
   const action=document.createElement(ownStation?'button':'a');action.className='station-primary';
   if(ownStation){action.textContent=$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';action.onclick=()=>{$('playerPlay').click();};action.dataset.stationPlay='1';}
-  else{action.href='/station/'+station.listener_code+(new URLSearchParams(location.search).get('app')==='1'?'?app=1':'');action.textContent='+ Add to your radio';}
+  else{action.href='/station/'+station.listener_code+(new URLSearchParams(location.search).get('app')==='1'?'?app=1':'');action.textContent='+ Add to radio';action.setAttribute('aria-label','Add '+station.name+' to your radio');}
   const share=shareButton('Share station','more',station.name,url);share.className='station-share';share.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4"/></svg>';body.append(title,code,action,share);
   const about=document.createElement('section');about.className='station-about';about.setAttribute('aria-label','Bio for '+station.name);
   const summary=document.createElement('h3');summary.textContent='Bio';
