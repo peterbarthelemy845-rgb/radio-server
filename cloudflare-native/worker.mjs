@@ -1,3 +1,5 @@
+import {supportStatusRoutes} from './support-status.mjs';
+import {controlRoutes,telemetryStatements,approvalStatements,pollControls,revokeControlStatements} from './radio-controls.mjs';
 import {supportRoutes} from './admin-support.mjs';
 import {overviewRoutes} from './admin-overview.mjs';
 import {mobileRoutes} from './mobile.mjs';
@@ -29,6 +31,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const mobileResponse=await mobileRoutes(request,env,now);if(mobileResponse)return mobileResponse;
   const ownerResponse=await authRoutes(request,env,now);
   if(ownerResponse)return ownerResponse;
+  const controlResponse=await controlRoutes(request,env,now);if(controlResponse)return controlResponse;
   const phoneResponse=await phoneRoutes(request,env,now);
   if(phoneResponse)return phoneResponse;
   const adResponse=await adsRoutes(request,env,now);
@@ -39,6 +42,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const overviewResponse=await overviewRoutes(request,env,now);if(overviewResponse)return overviewResponse;
   const adminResponse=await adminRoutes(request,env,now);
   if(adminResponse)return adminResponse;
+  const supportStatusResponse=await supportStatusRoutes(request,env,now);if(supportStatusResponse)return supportStatusResponse;
   const communityResponse=await communityRoutes(request,env,now);
   if(communityResponse)return communityResponse;
   const deviceResponse=await deviceRoutes(request,env,now);
@@ -82,7 +86,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     const body=await readJson(request), id=await authenticate(request,env.DB,body);
     await limit(env.DB,'radio-poll',id,12,60,now);
     const statements=[env.DB.prepare('UPDATE radios SET last_seen=? WHERE id=?').bind(now,id),
-      ...await inventoryStatements(env,id,body,now)];
+      ...await inventoryStatements(env,id,body,now),...telemetryStatements(env,id,body,now)];
     const ack=body.ack_id,result=body.ack_status;
     if(typeof ack==='string' && /^[0-9a-f]{32}$/.test(ack) && ['added','failed'].includes(result))
       statements.push(env.DB.prepare(`UPDATE radio_commands SET state=? WHERE id=? AND radio_id=?
@@ -91,12 +95,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     const claim=body.pair_claim_id,decision=body.pair_decision;
     let decisionAck='',claimResult='';
     if(typeof claim==='string'&&/^[0-9a-f]{32}$/.test(claim)&&['approve','deny'].includes(decision)){
-      statements.push(env.DB.prepare(`UPDATE pair_claims SET state=CASE WHEN expires<=? THEN 'expired'
-        WHEN ?='approve' THEN 'approved' ELSE 'denied' END
-        WHERE id=? AND radio_id=? AND state='waiting'`).bind(now,decision,claim,id));
-      statements.push(env.DB.prepare(`INSERT INTO phone_radios(session_hash,radio_id,expires)
-        SELECT session_hash,radio_id,? FROM pair_claims WHERE id=? AND radio_id=? AND state='approved' AND expires>?
-        ON CONFLICT(session_hash,radio_id) DO NOTHING`).bind(now+2592000,claim,id,now));
+      statements.push(...approvalStatements(env,id,claim,decision,body,now));
       decisionAck=claim;
     }
     statements.push(env.DB.prepare(`UPDATE radio_commands SET state='expired' WHERE radio_id=?
@@ -104,8 +103,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     await env.DB.batch(statements);
     await recordListening(env,id,body.playing_station_code,now);
     if(decisionAck)claimResult=(await env.DB.prepare('SELECT state FROM pair_claims WHERE id=? AND radio_id=?').bind(claim,id).first())?.state||'';
-    const pair=await env.DB.prepare(`SELECT id,confirmation_code FROM pair_claims
-      WHERE radio_id=? AND state='waiting' AND expires>? ORDER BY created_at DESC LIMIT 1`).bind(id,now).first();
+    const pair=await env.DB.prepare(`SELECT c.id,c.confirmation_code,EXISTS(SELECT 1 FROM radio_control_claims sc WHERE sc.claim_id=c.id) AS control_scope FROM pair_claims c
+      WHERE c.radio_id=? AND c.state='waiting' AND c.expires>? ORDER BY c.created_at DESC LIMIT 1`).bind(id,now).first();
     // Lease and choose in one statement; duplicate polls cannot claim the same command concurrently.
     const command=await env.DB.prepare(`UPDATE radio_commands SET state='delivered',lease=? WHERE id=(
       SELECT c.id FROM radio_commands c JOIN stations s ON s.code=c.station_code
@@ -113,14 +112,16 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
       AND s.status='published' ORDER BY c.created_at LIMIT 1)
       RETURNING id,station_code,expires`).bind(now+60,id,now,now).first();
     const linked=Boolean(await env.DB.prepare('SELECT 1 FROM phone_radios WHERE radio_id=? AND expires>?').bind(id,now).first());
-    return json({linked,command_id:command?.id||'',station_code:command?String(command.station_code):'',
+    const control=await pollControls(env,id,body,now);
+    return json({...control,linked,command_id:command?.id||'',station_code:command?String(command.station_code):'',
       command_expires_in:command?Math.max(0,command.expires-now):0,pair_claim_id:pair?.id||'',
-      pair_check:pair?.confirmation_code||'',claim_decision_ack:decisionAck,claim_result:claimResult});
+      pair_check:pair?.confirmation_code||'',pair_scope:pair?.control_scope?'control':'add',claim_decision_ack:decisionAck,claim_result:claimResult});
   }
   if(path==='/api/radio/link/reset'&&request.method==='POST'){
     const body=await readJson(request),id=await authenticate(request,env.DB,body);
     await limit(env.DB,'radio-reset',id,20,3600,now);
     await env.DB.batch([
+      ...revokeControlStatements(env,id),
       env.DB.prepare('DELETE FROM phone_radios WHERE radio_id=?').bind(id),
       env.DB.prepare('DELETE FROM radio_pairs WHERE radio_id=?').bind(id),
       env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE radio_id=? AND state IN ('waiting','approved')").bind(id),
@@ -143,7 +144,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
 }
 export async function fetchHandler(request,env,ctx) {
   try{const response=await handle(request,env);
-    if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|support\/ticket$)/.test(new URL(request.url).pathname)&&response.ok)
+    if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|support\/(?:ticket|status\/request)$)/.test(new URL(request.url).pathname)&&response.ok)
       ctx.waitUntil(processMail(env));
     return response;
   }catch(error){
@@ -153,12 +154,19 @@ export async function fetchHandler(request,env,ctx) {
 }
 export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM support_ticket_grants WHERE expires<=?').bind(now),
+    env.DB.prepare('DELETE FROM radio_control_claims WHERE claim_id IN (SELECT id FROM pair_claims WHERE expires<?)').bind(now-7*86400),
+    env.DB.prepare('DELETE FROM support_status_verifications WHERE expires<=?').bind(now),
     env.DB.prepare("UPDATE mail_outbox SET state='failed',encrypted_payload='',lease=0 WHERE expires<=? AND state!='sent'").bind(now),
     env.DB.prepare("UPDATE email_verifications SET code_hash='' WHERE expires<=? OR consumed_at IS NOT NULL").bind(now),
     env.DB.prepare('DELETE FROM rate_limits WHERE expires<?').bind(now),
     env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE state='waiting' AND expires<=?").bind(now),
     env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE state IN ('pending','delivered') AND expires<=?").bind(now),
+    env.DB.prepare('DELETE FROM radio_control_grants WHERE expires<=?').bind(now),
     env.DB.prepare('DELETE FROM phone_radios WHERE expires<=?').bind(now),
+    env.DB.prepare("UPDATE radio_control_commands SET state='expired' WHERE expires<=? AND state IN ('pending','delivered')").bind(now),
+    env.DB.prepare('DELETE FROM radio_control_commands WHERE expires<?').bind(now-7*86400),
+    env.DB.prepare('DELETE FROM radio_telemetry WHERE reported_at<?').bind(now-86400),
     env.DB.prepare('DELETE FROM share_events WHERE created_at<?').bind(now-93*86400),
     env.DB.prepare('DELETE FROM ad_receipts WHERE expires<?').bind(now-86400),
     env.DB.prepare('DELETE FROM listening_sessions WHERE last_seen<?').bind(now-86400),

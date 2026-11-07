@@ -32,7 +32,7 @@ export async function restoreBackup(env,id,now){
  // Check every saved media object before touching the live database.
  for(const key of snapshot.media){if(!validMedia(key)||!await env.MEDIA.head('backups/'+id+'/media/'+key))throw new HttpError(400,'Backup media is incomplete.');}
  for(const key of snapshot.media){const media=await env.MEDIA.get('backups/'+id+'/media/'+key);await env.MEDIA.put(key,media.body,{httpMetadata:media.httpMetadata,customMetadata:media.customMetadata});}
- statements.push(env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL'),env.DB.prepare('DELETE FROM phone_radios'),env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE state IN ('waiting','approved')"),env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE state IN ('pending','delivered')"),env.DB.prepare('DELETE FROM listening_sessions'));
+ statements.push(env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL'),env.DB.prepare('DELETE FROM support_ticket_grants'),env.DB.prepare('DELETE FROM support_status_verifications'),env.DB.prepare('DELETE FROM radio_control_commands'),env.DB.prepare('DELETE FROM radio_control_grants'),env.DB.prepare('DELETE FROM radio_telemetry'),env.DB.prepare('DELETE FROM phone_radios'),env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE state IN ('waiting','approved')"),env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE state IN ('pending','delivered')"),env.DB.prepare('DELETE FROM listening_sessions'));
  await env.DB.batch(statements);return {records:count};
 }
 export async function backupRoutes(request,env,now){const url=new URL(request.url),path=url.pathname;if(path!=='/api/admin/backups')return null;const current=await administrator(request,env,now);

@@ -1,0 +1,9 @@
+.app-header-tools{display:flex;gap:6px;align-items:center;flex-shrink:0}
+#appLanguage{width:80px;min-height:48px;padding:8px 5px;margin:0;font-size:.875rem;border-color:#c6d8f1;border-radius:9px;background:#f6f9ff;color:#174a8b}
+body.app-listener-page #listenerTextSize{width:44px;min-width:44px;min-height:48px;max-width:44px;font-size:0;padding:6px}
+body.app-listener-page #listenerTextSize::after{content:'Aa';font-size:1.125rem;font-weight:750}
+.app-header-language-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.app-update-banner{max-width:600px;margin:0 auto 12px;border:1px solid #bcd5f7;border-radius:14px;background:#edf5ff;color:#143d70;padding:14px;font-size:.9375rem}
+.app-update-banner p{line-height:1.5;margin:8px 0}.app-update-banner>div{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.app-update-banner button{font-size:.9375rem;min-height:48px;flex:1 1 130px}.app-update-banner .secondary{margin:0}
+#supportTicketStatus{margin:18px 0}
+@media(max-width:360px){body.app-listener-page #listenerAppHeader{gap:8px}#appLanguage{width:74px}.app-header-tools{gap:4px}#listenerAppHeader p{font-size:.75rem}}

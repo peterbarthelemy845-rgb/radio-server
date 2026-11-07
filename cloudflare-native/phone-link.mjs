@@ -1,7 +1,8 @@
+import {controlInfo,revokeControlStatements} from './radio-controls.mjs';
 import {json,digest,mac,encrypt,decrypt,randomHex,HttpError,limit,readJson,session,browserWrite,otp,human} from './security.mjs';
 import {savedInventory} from './saved-inventory.mjs';
 
-// Phone grants permit station additions only. Device secrets never reach browsers.
+// Base phone grants permit station additions only. Controls require a separate physical approval. Device secrets never reach browsers.
 export async function phoneRoutes(request,env,now,deps={human}) {
   const path=new URL(request.url).pathname;
   if(!path.startsWith('/api/phone/'))return null;
@@ -16,7 +17,8 @@ export async function phoneRoutes(request,env,now,deps={human}) {
         const code=await decrypt(env,r.code_encrypted);
         if(/^(?:[0-9]{4,8}|[A-Z0-9]{8})$/.test(code)&&await mac(env,'device-code:'+code)===r.code_hash)device_code=code;
       }catch{} // Legacy or unauthenticated stored values never become a displayed code.
-      return {id:r.id,name:r.name,last_seen:r.last_seen,current_station:r.current_station,online:r.last_seen>now-120,device_code};
+      const info=await controlInfo(env,current.token_hash,r.id,now);
+      return {id:r.id,name:r.name,last_seen:r.last_seen,current_station:r.current_station,online:r.last_seen>now-120,device_code,...(info||{})};
     }));
     const response=json({radios});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);
@@ -36,11 +38,11 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   const current=await browserWrite(request,env,now),body=await readJson(request);
   const ip=request.headers.get('CF-Connecting-IP')||'unknown';
   if(path==='/api/phone/unlink'){
-    await env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').bind(current.token_hash,String(body.radio_id||'')).run();
+    const id=String(body.radio_id||'');await env.DB.batch([...revokeControlStatements(env,id,current.token_hash),env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').bind(current.token_hash,id)]);
     return json({status:'ok'});
   }
   if(path==='/api/phone/logout'){
-    await env.DB.batch([env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').bind(now,current.token_hash)]);return json({status:'ok'});
+    await env.DB.batch([env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND state IN ('waiting','approved')").bind(current.token_hash),env.DB.prepare('DELETE FROM radio_control_grants WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').bind(now,current.token_hash)]);return json({status:'ok'});
   }
   if(path==='/api/phone/claim'){
     await limit(env.DB,'claim-ip',ip,5,900,now);

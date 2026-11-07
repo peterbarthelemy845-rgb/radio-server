@@ -4,7 +4,8 @@ const radioCardViews=new Map(),radioFreshness=document.createElement('p');radioF
 function checkedRadioTime(){return radioLastChecked?new Date(radioLastChecked).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';}
 function showRadioFreshness(available){radioFreshness.hidden=false;radioFreshness.textContent=radioLastChecked?(available?'Checked ':'Last checked ')+checkedRadioTime():available?'Status checked.':'Status has not been checked.';}
 function updateRadioCardStatus(available){for(const view of radioCardViews.values()){const {status,station,radio}=view;status.textContent=available?(radio.online?'Online':'Radio offline. Check power and Wi-Fi.'):'Status unavailable';status.className=available?(radio.online?'radio-online':'radio-offline'):'radio-unknown';station.textContent='Current station: '+(available?(radio.online?(radio.current_station||'Not reported yet'):'Unavailable while offline'):'Unavailable until status is checked');}}
-function markRadioStatusUnavailable(text){updateRadioCardStatus(false);showRadioFreshness(false);$('refreshRadios').hidden=false;if(text)$('radioConnectStatus').textContent=text;}
+function publishRadioStatus(radios){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{radios,checked_at:Date.now()}}));}
+function markRadioStatusUnavailable(text){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{unavailable:true}}));updateRadioCardStatus(false);showRadioFreshness(false);$('refreshRadios').hidden=false;if(text)$('radioConnectStatus').textContent=text;}
 async function loadMyRadios(silent=false){
  if(silent&&$('connectRadioForm').querySelector('button').disabled)return;
  if(radioLoading){if(!silent)radioReloadRequested=true;return;}radioLoading=true;
@@ -21,7 +22,7 @@ async function loadMyRadios(silent=false){
   const selectionHint=result.radios.length>1&&!selected?'Choose a Device code for station additions.':'';
   const snapshot=JSON.stringify([result.radios.map(r=>[r.id,r.device_code,r.online,r.current_station]),selected]);
   radioLastChecked=Date.now();showRadioFreshness(true);$('refreshRadios').hidden=true;$('radioConnectStatus').textContent=selectionHint;
-  if(snapshot===radioViewSnapshot){updateRadioCardStatus(true);return;}
+  if(snapshot===radioViewSnapshot){for(const radio of result.radios){const view=radioCardViews.get(String(radio.id));if(view)view.radio=radio;}updateRadioCardStatus(true);publishRadioStatus(result.radios);return;}
   radioViewSnapshot=snapshot;$('linkedRadios').replaceChildren();radioCardViews.clear();$('connectRadio').hidden=true;$('connectRadioForm').hidden=result.radios.length>0;
   if(!result.radios.length){const empty=document.createElement('div');empty.className='radio-empty';empty.innerHTML='<p>Enter your Device Code, then approve on the radio.</p>';$('linkedRadios').append(empty);}
   for(const radio of result.radios){
@@ -32,7 +33,7 @@ async function loadMyRadios(silent=false){
    const choose=document.createElement('button');choose.type='button';choose.className='secondary device-code-select';choose.textContent=deviceLabel;choose.setAttribute('aria-pressed',String(selected===radioId));choose.setAttribute('aria-label',deviceLabel+(selected===radioId?', selected':', select radio'));choose.title=selected===radioId?'Selected radio':'Select this radio';choose.onclick=()=>{rememberSelectedRadio(radioId);loadMyRadios();};
    card.append(status,station,choose,unlink);$('linkedRadios').append(card);
   }
-  updateRadioCardStatus(true);
+  updateRadioCardStatus(true);publishRadioStatus(result.radios);
  }catch(e){if(!$('myRadio').hidden&&!document.hidden&&generation===radioViewGeneration)markRadioStatusUnavailable(e.status===401?'Your phone connection expired. Refresh this page, then choose Connect my radio.':navigator.onLine?e.message+' Tap Try again.':'No internet. Check your connection and tap Try again.');}
  finally{$('linkedRadios').setAttribute('aria-busy','false');radioLoading=false;if(radioReloadRequested||generation!==radioViewGeneration){radioReloadRequested=false;if(!$('myRadio').hidden&&!document.hidden)loadMyRadios(true);}}
 }

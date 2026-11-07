@@ -10,7 +10,7 @@ export async function communityRoutes(request,env,now,deps={human}){
   return json({unlocked:true,public:true,videos:(await env.DB.prepare('SELECT id,topic,title,description,video_id FROM help_videos ORDER BY topic,id LIMIT 50').all()).results});
  }
  if(path==='/api/support'||request.method!=='POST')throw new HttpError(405,'Method not allowed.');
- await browserWrite(request,env,now);
+ const current=await browserWrite(request,env,now);
  const body=await readJson(request,30000),ip=request.headers.get('CF-Connecting-IP')||'unknown';
  if(path==='/api/support/ticket'){
   await limit(env.DB,'ticket-ip',ip,5,3600,now);await limit(env.DB,'ticket-global','all',100,3600,now);
@@ -26,6 +26,7 @@ export async function communityRoutes(request,env,now,deps={human}){
   // The ticket reference also identifies its one outbox job.
   await env.DB.batch([
    env.DB.prepare('INSERT INTO legal_requests(id,kind,encrypted_payload,created_at) VALUES (?,?,?,?)').bind(id,'support',await encrypt(env,JSON.stringify(payload)),now),
+   env.DB.prepare('INSERT INTO support_ticket_grants(session_hash,ticket_id,expires) VALUES (?,?,?)').bind(current.token_hash,id,now+1800),
    env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) VALUES (?,?,?,?,?,?)').bind('support-receipt:'+id,payload.email,'Radio Locals support ticket received - '+id,await encrypt(env,JSON.stringify(receipt)),now,now+86400)
   ]);
   return json({status:'ok',reference:id,receipt_queued:true,message:'Your support ticket was submitted successfully. A confirmation email has been queued. Keep your reference in case the email does not arrive.'});

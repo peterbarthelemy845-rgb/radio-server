@@ -19,3 +19,9 @@ Installed standalone launches and ?app=1 use the listener menu (Radio and Suppor
 Status shows the last completed check. A failed/background-stale check replaces old Online status with Status unavailable; unchanged successful refreshes restore existing nodes without flashing. Browser-offline events invalidate green status immediately. Checked timestamps refer to the website check, not direct confirmation of audio playback.
 
 Larger text is a reversible, local display preference only. Listener controls target at least 48px, browser zoom remains enabled, safe-area padding and reduced-motion preferences are respected, and the visible keyboard viewport constrains bottom panels. The bottom menu hides while the keyboard needs space. Automated state/navigation tests and narrow desktop-browser layouts do not replace installed iPhone/Android keyboard and hardware Back testing.
+
+## Listener features (2026-11-07)
+
+English/Kreyòl UI and caption tracks are local; station names/bios/support messages are never machine-translated. Radio controls and software details are in a compact Radio controls bottom panel. Version 2026.11.07.1 adds saved-station selection, volume and mute, reported software/state and an explicit phone-control approval on the physical radio. Existing add-only grants remain unchanged. The website has no audio player for these actions. Legacy/offline radios show update instructions and disabled controls.
+
+Private support-ticket status works through short browser grants or an emailed one-time code. App update notices wait for unfinished forms and active actions. Native secure-storage/app-link wiring and installed physical iPhone/Android/radio checks are still pending. The source ZIP is ready for a normal Arduino upload after compile validation; the website cannot update the ESP32 automatically.

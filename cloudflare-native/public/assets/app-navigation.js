@@ -2,7 +2,7 @@
 // Listener navigation stays inside this document. Drafts and scroll positions
 // remain in memory; no device codes, ticket text or credentials enter history.
 const appPagePositions=new Map(),appDisplayMode=matchMedia('(display-mode: standalone)');
-let appCurrentPage=appVisiblePage(),appRestoring=false,appNavigationGeneration=0,appPanelOrigin=null,appSupportPromise=null;
+let appCurrentPage=appVisiblePage(),appRestoring=false,appNavigationGeneration=0,appPanelOrigin=null,appSupportPromise=null,appControlOrigin=null,appLastControlId=null;
 function appVisiblePage(){return ['myRadio','support','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'].find(id=>$(id)&&!$(id).hidden)||'myRadio';}
 function appListenerMode(){return new URLSearchParams(location.search).get('app')==='1'||appDisplayMode.matches||navigator.standalone===true;}
 function appRememberPosition(id=appCurrentPage){
@@ -68,16 +68,27 @@ stationPopup.addEventListener('close',()=>{
  if(!appRestoring&&history.state?.radioLocalsApp?.panel==='station'){history.back();return;}
  const origin=appPanelOrigin;appPanelOrigin=null;if(origin)appRestorePosition(origin.page,origin.focus);
 });
+window.addEventListener('radio-controls-opened',event=>{
+ appRememberPosition();appLastControlId=event.detail?.radioId;appControlOrigin={page:appCurrentPage,focus:event.detail?.trigger};
+ if(!appRestoring){appReplaceHistory(appHistoryValue());history.pushState({radioLocalsApp:appHistoryValue(appCurrentPage,'controls')},'',location.href);}
+});
+window.addEventListener('radio-controls-closed',()=>{
+ if(!appRestoring&&history.state?.radioLocalsApp?.panel==='controls'){history.back();return;}
+ const origin=appControlOrigin;appControlOrigin=null;if(origin)appRestorePosition(origin.page,origin.focus);
+});
 window.addEventListener('popstate',event=>{
  const next=event.state?.radioLocalsApp;
+ if(window.radioControlsDialog?.open&&window.radioControlsBusy&&next?.panel!=='controls'){history.go(1);window.closeRadioControls();return;}
  if(stationPopup.open&&shareRunning&&next?.panel!=='station'){history.go(1);$('shareStatus').textContent='Please wait for the current request to finish before closing.';return;}
  if(!next)return;
  appRestoring=true;
  try{
-  const origin=appPanelOrigin;
+  const origin=appPanelOrigin||appControlOrigin;
+  if(window.radioControlsDialog?.open&&next.panel!=='controls')window.closeRadioControls();
   if(stationPopup.open&&next.panel!=='station')stationPopup.close();
   appShowPage(next.page,{focus:origin?.focus});
   if(next.panel==='station'&&!stationPopup.open)openStationPopup(next.code);
+  if(next.panel==='controls'&&!window.radioControlsDialog?.open&&appLastControlId&&typeof openRadioControls==='function')openRadioControls(appLastControlId);
  }finally{appRestoring=false;}
 });
 // Window capture runs before the legacy form-leaving guard. Radio and Support
@@ -87,7 +98,7 @@ window.addEventListener('click',event=>{
  if(!target||!['myRadio','support'].includes(appCurrentPage)||event.button>0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
  const support=target.tagName==='A'&&new URL(target.href,location.origin).pathname==='/support';
  const radio=['navRadio','navLibrary'].includes(target.id);if(!support&&!radio)return;
- event.preventDefault();event.stopImmediatePropagation();if(shareRunning)return;
+ event.preventDefault();event.stopImmediatePropagation();if(shareRunning||window.radioControlsBusy)return;
  const next=support?'support':'myRadio';if(next===appCurrentPage){if(next==='myRadio')loadMyRadios(true);return;}
  appShowPage(next,{push:true,focus:support?$('listenerAppTitle'):$('navRadio')});
 },true);
