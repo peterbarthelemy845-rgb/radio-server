@@ -11,3 +11,11 @@ Visible Radio refreshes every 10 seconds and pauses when hidden/backgrounded. Fa
 Pending validation: FlutterFlow project connection, native secure-storage/challenge wiring, universal/app-link registration, installed iPhone/Android tests (small screens, accessibility font sizes, keyboard, offline/resume, physical radio pairing, station acknowledgement). Browser layout tests do not replace physical-device tests. No audio playback belongs in the listener app.
 
 Home-screen web app: /manifest.webmanifest uses /#radio, standalone display, blue branding and regular/maskable icons. /sw.js provides a public offline notice without caching authenticated data or offline commands. The Radio page offers installation instructions and the browser's native installation prompt where available. This is a browser-installed PWA, not a Google Play or Apple App Store submission.
+
+## Listener app layout (2026-11-07)
+
+Installed standalone launches and ?app=1 use the listener menu (Radio and Support). Direct station-owner/admin pages retain their existing authentication and navigation. Radio and Support share a compact header and one background surface. Station details use an accessible modal bottom panel with Back/Close handling. Radio/Support navigation keeps search, horizontal/document scroll and support drafts in memory; drafts and device codes are never written to URL history or browser storage. Leaving the document with an unsent support draft still warns.
+
+Status shows the last completed check. A failed/background-stale check replaces old Online status with Status unavailable; unchanged successful refreshes restore existing nodes without flashing. Browser-offline events invalidate green status immediately. Checked timestamps refer to the website check, not direct confirmation of audio playback.
+
+Larger text is a reversible, local display preference only. Listener controls target at least 48px, browser zoom remains enabled, safe-area padding and reduced-motion preferences are respected, and the visible keyboard viewport constrains bottom panels. The bottom menu hides while the keyboard needs space. Automated state/navigation tests and narrow desktop-browser layouts do not replace installed iPhone/Android keyboard and hardware Back testing.
