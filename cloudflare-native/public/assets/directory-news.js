@@ -6,7 +6,7 @@ list=function(){
  for(const station of found){
   const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label','Add '+station.name+' to your radio');tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
   const image=document.createElement('img');image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
-  tile.append(image);tile.onclick=()=>openStationPopup(station.listener_code);$('stations').append(tile);
+  tile.append(image);tile.onclick=()=>openStationPopup(station.listener_code);const item=document.createElement('div');item.className='station-slider-item';const name=document.createElement('p');name.className='station-tile-name';name.textContent=station.name;item.append(tile,name);$('stations').append(item);
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=query?'No matching stations.':'No stations yet.';$('stations').append(empty);}
 };
