@@ -17,7 +17,7 @@ list=function(){
   const ownStation=!listenerMode&&station.name.toLowerCase().replace(/[^a-z]/g,'')==='lavoixdivine';
   const action=document.createElement(ownStation?'button':'a');action.className='station-primary';
   if(ownStation){action.textContent=$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';action.onclick=()=>{$('playerPlay').click();};action.dataset.stationPlay='1';}
-  else{action.href='/station/'+station.listener_code+(new URLSearchParams(location.search).get('app')==='1'?'?app=1':'');action.textContent='+ Add to radio';action.setAttribute('aria-label','Add '+station.name+' to your radio');}
+  else{action.href='/station/'+station.listener_code+(new URLSearchParams(location.search).get('app')==='1'?'?app=1':'');action.textContent='+ Add to radio';action.setAttribute('aria-label','Add '+station.name+' to your radio');action.onclick=event=>{event.preventDefault();openStationPopup(station.listener_code);};}
   const share=shareButton('Share station','more',station.name,url);share.className='station-share';share.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4"/></svg>';body.append(title,code,action,share);
   const about=document.createElement('section');about.className='station-about';about.setAttribute('aria-label','Bio for '+station.name);
   const summary=document.createElement('h3');summary.textContent='Bio';
@@ -50,3 +50,8 @@ new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attr
 // One consistent outline icon family above the persistent menu labels.
 const menuIconPaths={navRadio:'<rect x="4" y="7" width="16" height="13" rx="3"/><path d="m7 7 10-4M8 11h8"/><circle cx="9" cy="16" r="2"/><path d="M15 15h2m-2 3h2"/>',navLibrary:'<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/><path d="m17 5 4 14-3 1-4-14z"/>',navAdd:'<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8m-4-4h8"/>',support:'<path d="M4 13v-1a8 8 0 0 1 16 0v1"/><rect x="3" y="11" width="4" height="7" rx="2"/><rect x="17" y="11" width="4" height="7" rx="2"/><path d="M19 18c0 2-2 3-5 3h-2"/>'};
 for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){const label=tab.textContent,icon=menuIconPaths[tab.id||'support'];tab.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">'+icon+'</svg>';const text=document.createElement('span');text.textContent=label;tab.append(text);}
+
+const stationPopup=document.createElement('dialog');stationPopup.id='stationAddPopup';stationPopup.setAttribute('aria-label','Add station to your radio');
+const stationPopupClose=document.createElement('button');stationPopupClose.className='station-popup-close';stationPopupClose.textContent='Close';stationPopupClose.onclick=()=>stationPopup.close();stationPopup.append(stationPopupClose);document.body.append(stationPopup);
+stationPopup.addEventListener('close',()=>{$('shared').hidden=true;});
+async function openStationPopup(code){if(shareRunning)return;stationPopup.append($('shared'));$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStatus').textContent='';stationPopup.showModal();try{await openShared(code,true);}catch(e){$('shareStatus').textContent=e.message;}}

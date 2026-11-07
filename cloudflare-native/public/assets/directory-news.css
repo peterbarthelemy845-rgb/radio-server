@@ -175,3 +175,13 @@ body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat
 #library.radio-library .station-primary{grid-column:1/-1;grid-row:2;align-self:end;justify-self:start;min-height:30px;padding:6px 9px;font-size:11px;max-width:104px;border-radius:8px}
 #library.radio-library .station-share{grid-column:2;grid-row:2;align-self:end;justify-self:end;width:30px;height:30px;min-height:30px;padding:6px;border-radius:8px}
 #library.radio-library .station-share svg{width:17px;height:17px}
+
+/* Keep code and actions together without a blank middle row. */
+#library.radio-library #stations>.station{height:132px;grid-template-rows:44px 14px 30px;gap:6px 8px}
+#library.radio-library .station .code{grid-row:2;align-self:center}
+#library.radio-library .station-primary,#library.radio-library .station-share{grid-row:3;align-self:center}
+#stationAddPopup{width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 40px);box-sizing:border-box;padding:14px;border:0;border-radius:20px;background:white;color:#172b4d;overflow:auto;box-shadow:0 24px 80px #0005}
+#stationAddPopup::backdrop{background:#071329aa;backdrop-filter:blur(3px)}
+#stationAddPopup #shared{width:100%;max-width:none;padding:6px;box-shadow:none;border:0;margin:0;box-sizing:border-box}
+#stationAddPopup .station-popup-close{display:block;margin:0 0 4px auto;min-height:36px;padding:6px 12px;background:#edf2f9;color:#233956;border-radius:9px;font-size:13px}
+#stationAddPopup #shared h1{font-size:23px;margin:8px 0}
