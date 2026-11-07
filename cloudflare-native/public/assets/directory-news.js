@@ -18,13 +18,13 @@ list=function(){
   const action=document.createElement(ownStation?'button':'a');action.className='station-primary';
   if(ownStation){action.textContent=$('playerAudio').paused?'▶ Play Live':'Ⅱ Pause';action.onclick=()=>{$('playerPlay').click();};action.dataset.stationPlay='1';}
   else{action.href='/station/'+station.listener_code+(new URLSearchParams(location.search).get('app')==='1'?'?app=1':'');action.textContent='+ Add to your radio';}
-  if(listenerMode){const share=shareButton('Share station','more',station.name,url);share.className='listener-share';share.textContent='Share';body.append(title,code,action,share);}else body.append(eyebrow,title,code,shares,action);
+  const share=shareButton('Share station','more',station.name,url);share.className='station-share';share.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4"/></svg>';body.append(title,code,action,share);
   const about=document.createElement('section');about.className='station-about';about.setAttribute('aria-label','Bio for '+station.name);
   const summary=document.createElement('h3');summary.textContent='Bio';
   const bio=document.createElement('p');bio.textContent=(station.bio||'The station owner has not added a bio yet.').slice(0,250);about.append(summary,bio);
   const advertise=document.createElement('a');advertise.className='station-advertise';advertise.href='/advertise/'+station.listener_code;
   advertise.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10v5h4l10 5V5L7 10zm4 5 2 6h3m8-12v7"/></svg><span>Advertise on this station</span>';
-  card.append(image,body,about);if(!listenerMode)card.append(advertise);$('stations').append(card);
+  card.append(image,body);$('stations').append(card);
  }
  if(!found.length)$('stationCount').textContent=query?'No matching stations.':'No published stations yet.';
 };

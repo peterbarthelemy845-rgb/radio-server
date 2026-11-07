@@ -153,3 +153,15 @@ nav #navLibrary[hidden]{display:none!important}
 #library.radio-library .listener-share{min-height:32px;padding:4px 0;font-size:12px}
 nav[aria-label="Main navigation"]{grid-template-columns:repeat(3,minmax(0,1fr))}
 body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+/* Minimal station picker: artwork, name, add action and one share icon. */
+#library.radio-library>h1,#library.radio-library #stationCount{display:none}
+#library.radio-library #stations>.station{flex-basis:270px;grid-template-columns:52px minmax(0,1fr);padding:12px;gap:10px;background:linear-gradient(135deg,#243c67,#172943)}
+#library.radio-library .station>img{width:52px;height:52px;border-radius:11px}
+#library.radio-library .station-body{display:grid;grid-template-columns:minmax(0,1fr) 36px;gap:4px 7px;align-items:center}
+#library.radio-library .station h2,#library.radio-library .station .code{grid-column:1/-1;margin:0}
+#library.radio-library .station .code{margin-bottom:5px;color:#c9d7ee}
+#library.radio-library .station-primary{grid-column:1;display:flex;align-items:center;justify-content:center;min-height:38px;font-size:12px;padding:7px 8px;white-space:normal;text-align:center}
+#library.radio-library .station-share{grid-column:2;display:flex;align-items:center;justify-content:center;width:36px;height:38px;min-height:38px;padding:8px;border-radius:10px;background:#ffffff18;color:#d8efff;border:1px solid #ffffff20;margin:0}
+#library.radio-library .station-share svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#library.radio-library #search{margin-bottom:8px}
