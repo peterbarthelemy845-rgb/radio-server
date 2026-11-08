@@ -2,7 +2,7 @@ import {totpAt} from './totp.mjs';
 import {test} from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';
 import {adminRoutes} from './admin.mjs';import {authRoutes} from './owner-auth.mjs';import {decrypt} from './security.mjs';
 const now=1800000000,host='https://native.example';
-async function fixture(){const sqlite=new DatabaseSync(':memory:');for(const file of ['0001_core.sql','0002_admin.sql','0003_admin_mfa.sql','0004_admin_steps.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+file,import.meta.url),'utf8'));
+async function fixture(){const sqlite=new DatabaseSync(':memory:');for(const file of ['0001_core.sql','0002_admin.sql','0003_admin_mfa.sql','0004_admin_steps.sql','0005_community.sql','0018_notification_operations.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+file,import.meta.url),'utf8'));
  const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},execute(){return sqlite.prepare(sql).run(...args);},async run(){return q.execute();}};return q;},async batch(qs){sqlite.exec('BEGIN');try{const rows=[];for(const q of qs)rows.push(q.execute());sqlite.exec('COMMIT');return rows;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
  const env={DB,ADMIN_EMAIL:'admin@example.com',ADMIN_TOTP_SECRET:'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',DATA_ENCRYPTION_KEY:'a'.repeat(64)};
  sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,email_verified_at,created_at,updated_at) VALUES ('Test','https://example.com/live','owner@example.com','pending_review',?,?,?)").run(now,now,now);

@@ -31,7 +31,7 @@ function fixture(){
   __human:async(container,action)=>{humans.push({container,action});return await humanResult;},__fileData:async file=>{files.push(file);return file?{name:file.name,base64:'c2FtcGxl'}:undefined;},
   __editor:async()=>{editorCalls++;if(editorResult instanceof Error)throw editorResult;return await editorResult;},__logo:async file=>{logoFiles.push(file);return await logoResult;}
  });
- vm.runInContext(source,context);vm.runInContext("state={csrf:'test-csrf',agreement_version:'test-terms',turnstile_site_key:'test-site-key'};api=__api;human=__human;fileData=__fileData;editor=__editor;window.validateRegistrationLogo=__logo;",context);
+ vm.runInContext(source,context);vm.runInContext("const actualEditor=editor;state={csrf:'test-csrf',agreement_version:'test-terms',turnstile_site_key:'test-site-key'};api=__api;human=__human;fileData=__fileData;editor=__editor;window.validateRegistrationLogo=__logo;",context);
  async function submit(target){return target.onsubmit({preventDefault(){},target});}
  return {nodes,document,registration,login,verifyForm,calls,humans,files,logoFiles,context,submit,answers,verify(result={}){context.result={verification_id:'challenge-a',verification_email:'o***@example.com',...result};vm.runInContext('verify(result)',context);},id(){return vm.runInContext('verificationId',context);},human(value){humanResult=value;},editor(value){editorResult=value;},editorCalls:()=>editorCalls,logo(value){logoResult=value;},event:type=>new UiEvent(type),busy(target,on,fields=false){context.target=target;context.on=on;context.fields=fields;vm.runInContext('busy(target,on,fields)',context);}};
 }
@@ -83,4 +83,22 @@ test('verification and resend share one lock, preventing double requests and acc
 
 test('an older resend response cannot replace a newer challenge or its controls',async()=>{
  const f=fixture(),pending=deferred();f.verify();f.answers.push(pending.promise);const first=f.nodes.get('resend').onclick();await until(()=>f.calls.length===1);assert.equal(f.calls[0].body.verification_id,'challenge-a');f.verify({verification_id:'challenge-b'});pending.resolve({verification_id:'stale-resend'});await first;assert.equal(f.id(),'challenge-b');assert.equal(f.nodes.get('verifyMessage').textContent,'');assert.equal(f.nodes.get('resend').disabled,false);assert.equal(f.nodes.get('verification').open,true);
+});
+test('a late Add Station session response cannot reopen its route after leaving',async()=>{
+ const f=fixture(),pending=deferred();f.answers.push(pending.promise);const opening=f.nodes.get('navAdd').onclick();await until(()=>f.calls.length===1);vm.runInContext("page('myRadio')",f.context);pending.resolve({csrf:'fresh',owner_station:'13'});await opening;assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('login').hidden,true);assert.equal(f.editorCalls(),0);
+});
+test('an editor response cannot overwrite another page or its draft after navigation',async()=>{
+ const f=fixture(),pending=deferred();f.context.showOwnerCover=()=>{};vm.runInContext('editor=actualEditor',f.context);f.answers.push({csrf:'fresh',owner_station:'13'},pending.promise);const opening=f.nodes.get('navAdd').onclick();await until(()=>f.calls.length===2);vm.runInContext("page('myRadio')",f.context);pending.resolve({station:{code:'13',name:'Old owner station',status:'published',bio:'Old bio',stream_url:'https://old.example/live'}});await opening;assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('editor').hidden,true);assert.equal(f.document.getElementById('ownerName').textContent,'');assert.equal(f.nodes.get('editForm').elements.bio.value,'');
+});
+test('a late owner session read cannot restore ownership after logout',async()=>{
+ const f=fixture(),pending=deferred();f.answers.push(pending.promise,{});const opening=f.nodes.get('navAdd').onclick();await until(()=>f.calls.length===1);await f.document.getElementById('logout').onclick();pending.resolve({csrf:'old',owner_station:'13'});await opening;assert.equal(vm.runInContext('state.owner_station',f.context),null);assert.equal(f.nodes.get('login').hidden,false);assert.equal(f.editorCalls(),0);
+});
+test('a stale owner-route error cannot overwrite a different page message',async()=>{
+ const f=fixture(),pending=deferred();f.answers.push(pending.promise);const opening=f.nodes.get('navAdd').onclick();await until(()=>f.calls.length===1);vm.runInContext("page('myRadio')",f.context);pending.reject(Error('Old sign-in error'));await opening;assert.equal(f.nodes.get('message').textContent,'');
+});
+test('an old session read cannot replace a newly verified station owner',async()=>{
+ const f=fixture(),pending=deferred();f.answers.push(pending.promise);const opening=f.nodes.get('navAdd').onclick();await until(()=>f.calls.length===1);vm.runInContext("page('login')",f.context);f.verify();f.answers.push({registration_completed:false,station_code:'14',message:'Signed in.'});await f.submit(f.verifyForm);pending.resolve({csrf:'old',owner_station:'13'});await opening;assert.equal(vm.runInContext('state.owner_station',f.context),'14');
+});
+test('a station save finishing after navigation does not open an editor or change that page message',async()=>{
+ const f=fixture(),pending=deferred(),form=f.nodes.get('editForm');f.answers.push(pending.promise);vm.runInContext("page('editor')",f.context);const saving=f.submit(form);await until(()=>f.calls.length===1);vm.runInContext("page('myRadio')",f.context);pending.resolve({message:'Saved.'});await saving;assert.equal(f.editorCalls(),0);assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('message').textContent,'');
 });

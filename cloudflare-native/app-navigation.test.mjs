@@ -72,3 +72,9 @@ test('direct Wi-Fi setup keeps its route and header without a Radio fallback or 
 test('support drafts and Wi-Fi return history survive switching among listener pages',async()=>{
  const f=fixture({app:true});f.nodes.get('ticketForm').elements.name.value='Draft owner';f.nodes.get('ticketForm').dataset.dirty='1';f.click(f.wifiLink);f.click(f.supportLink);assert.equal(f.nodes.get('support').hidden,false);assert.equal(f.supportLoads(),1);f.history.back();await f.settle();assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.equal(f.history.state.radioLocalsApp.from,'myRadio');assert.equal(f.nodes.get('ticketForm').elements.name.value,'Draft owner');f.click(f.nodes.get('wifiBackToRadio'));await f.settle();assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.entries.length,3);assert.equal(f.history.state.radioLocalsApp.page,'myRadio');
 });
+test('a same-page Radio click cancels pending owner routing and restores the Radio URL',()=>{
+ const f=fixture();vm.runInContext("let navigationCalls=0;const trackedPage=page;page=function(id){navigationCalls++;return trackedPage(id);};history.replaceState(history.state,'','/#add-station');",f.context);f.window.scrollY=140;f.click(f.nodes.get('navRadio'));assert.equal(vm.runInContext('navigationCalls',f.context),1);assert.equal(f.entries.at(-1).url,'https://radio.example/#radio');assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.window.scrollY,140);
+});
+test('opening a station waits until an active radio pairing is finished',async()=>{
+ const f=fixture();f.nodes.set('radioConnectStatus',{textContent:''});f.context.radioPairingBusy=true;await vm.runInContext("openStationPopup('13')",f.context);assert.equal(!!f.stationPopup.open,false);assert.equal(f.entries.length,1);assert.match(f.nodes.get('radioConnectStatus').textContent,/Finish connecting/);
+});

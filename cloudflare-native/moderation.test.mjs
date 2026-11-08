@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';
 import {screenStation,needsTextReview} from './moderation.mjs';import {decrypt} from './security.mjs';
 const now=1800000000;
-function fixture(){const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8'));
+function fixture(){const sqlite=new DatabaseSync(':memory:');for(const name of ['0001_core.sql','0005_community.sql','0018_notification_operations.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
  const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(qs){sqlite.exec('BEGIN');try{const rows=[];for(const q of qs)rows.push(await q.run());sqlite.exec('COMMIT');return rows;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
  sqlite.prepare("INSERT INTO stations(name,bio,stream_url,contact_email,artwork_key,status,email_verified_at,created_at,updated_at) VALUES ('Community Radio','Local music and news','https://private.example/stream?private=1','owner@example.com','safe.png','pending_review',?,?,?)").run(now,now,now);
  const env={OPENAI_API_KEY:'private-test',DATA_ENCRYPTION_KEY:'a'.repeat(64),DB,MEDIA:{async get(){return {size:12,customMetadata:{sanitizer_version:'1'},async arrayBuffer(){return new Uint8Array(12).buffer;}};}}};

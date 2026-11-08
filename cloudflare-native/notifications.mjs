@@ -1,4 +1,4 @@
-import {digest,encrypt,HttpError} from './security.mjs';
+import {digest,encrypt,randomHex,HttpError} from './security.mjs';
 
 // Subjects and message templates are application-owned. Reviewed content, stream
 // URLs, artwork paths, sign-in codes and advertiser contact details stay out of mail.
@@ -24,18 +24,18 @@ export async function ownerNotification(env,{kind,stationCode,recipient,event,ad
  const explanation=decisionReason(reason),text=`${message[1]}\n\nStation code: ${stationCode}${adId?'\nAdvertisement reference: '+adId:''}${explanation?'\n\nReason: '+explanation:''}\n\nUse the Radio Locals website to sign in. Never share your sign-in code.`;
  return {id:'owner-notice:'+await digest(JSON.stringify([kind,stationCode,event])),recipient,subject:message[0],encrypted_payload:await encrypt(env,JSON.stringify({text}))};
 }
-// D1 batch is transactional. changes() links the outbox insertion to the exact
-// optimistic update immediately before it. Following writes additionally match
-// this attempt's random ciphertext, so stale/retried actions cannot add an audit
-// entry, change a second table, or enqueue another message.
+// A private operation marker gates every side effect of the optimistic update.
+// Mail deduplication is independent: an old retained notice must not suppress
+// policy/audit/command changes after a restore repeats a legitimate decision.
 export async function commitOwnerNotification(env,now,mutation,notice,after=[]){
- const guard=notice?'EXISTS (SELECT 1 FROM mail_outbox WHERE id=? AND encrypted_payload=?)':'changes()>0';
+ const operation=randomHex(16),guard='EXISTS (SELECT 1 FROM notification_operations WHERE id=?)';
  const results=await env.DB.batch([
   mutation,
-  ...(notice?[env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE changes()>0 ON CONFLICT(id) DO NOTHING`).bind(notice.id,notice.recipient,notice.subject,notice.encrypted_payload,now,now+7*86400)]:[]),
-  // Unverified contacts receive no mail. In that path follow-up statements form
-  // a changes() chain (the audit insert precedes any optional command cleanup).
-  ...after.map(({sql,values=[]})=>env.DB.prepare(sql.replaceAll('OWNER_NOTIFICATION_APPLIED',guard)).bind(...values,...(notice?[notice.id,notice.encrypted_payload]:[])))
+  env.DB.prepare('INSERT INTO notification_operations(id) SELECT ? WHERE changes()>0').bind(operation),
+  ...(notice?[env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE ${guard} ON CONFLICT(id) DO NOTHING`).bind(notice.id,notice.recipient,notice.subject,notice.encrypted_payload,now,now+7*86400,operation)]:[]),
+  ...after.map(({sql,values=[]})=>env.DB.prepare(sql.replaceAll('OWNER_NOTIFICATION_APPLIED',guard)).bind(...values,operation)),
+  env.DB.prepare('DELETE FROM notification_operations WHERE id=?').bind(operation)
  ]);
+ if(notice)notice.queued=Number(results[2]?.meta?.changes??results[2]?.changes??0)>0;
  return Number(results[0]?.meta?.changes??results[0]?.changes??0)>0;
 }

@@ -59,6 +59,7 @@ function appCloseStationPanel(){
 const appOriginalOpenStation=openStationPopup;
 openStationPopup=async function(code){
  if(shareRunning||stationPopup.open)return;
+ if(typeof radioPairingBusy!=='undefined'&&radioPairingBusy){$('radioConnectStatus').textContent='Finish connecting your radio before adding a station.';return;}
  appRememberPosition();appPanelOrigin={page:appCurrentPage,focus:document.activeElement};
  const opened=appOriginalOpenStation(code);
  if(stationPopup.open&&!appRestoring){appReplaceHistory(appHistoryValue());history.pushState({radioLocalsApp:appHistoryValue(appCurrentPage,'station',String(code))},'',location.href);}
@@ -67,7 +68,7 @@ openStationPopup=async function(code){
 stationPopupClose.onclick=appCloseStationPanel;
 stationPopup.addEventListener('cancel',event=>{event.preventDefault();appCloseStationPanel();});
 stationPopup.addEventListener('close',()=>{
- ++sharedOpenGeneration;
+ if(typeof invalidateSharedView==='function')invalidateSharedView();else ++sharedOpenGeneration;
  if(!appRestoring&&history.state?.radioLocalsApp?.panel==='station'){history.back();return;}
  const origin=appPanelOrigin;appPanelOrigin=null;if(origin)appRestorePosition(origin.page,origin.focus);
 });
@@ -103,7 +104,7 @@ window.addEventListener('click',event=>{
  const wifi=target.id==='openWifiSetup',backToRadio=target.id==='wifiBackToRadio';
  const radio=['navRadio','navLibrary'].includes(target.id)||backToRadio;if(!support&&!radio&&!wifi)return;
  event.preventDefault();event.stopImmediatePropagation();if(shareRunning||window.radioControlsBusy)return;
- const next=wifi?'wifiSetup':support?'support':'myRadio';if(next===appCurrentPage){if(next==='myRadio')loadMyRadios(true);return;}
+ const next=wifi?'wifiSetup':support?'support':'myRadio';if(next===appCurrentPage){if(next==='myRadio')appShowPage(next,{replace:true});return;}
  if(backToRadio&&history.state?.radioLocalsApp?.from==='myRadio'){history.back();return;}
  appShowPage(next,{push:!backToRadio,replace:backToRadio,focus:next==='myRadio'?$('navRadio'):$('listenerAppTitle')});
 },true);

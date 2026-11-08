@@ -141,3 +141,14 @@ Encrypted backup snapshots now preflight JSON-escaped byte counts and aggregate 
 
 
 Listening credit uses a half-open reported interval and splits positive fragments across the correct UTC dates/months. An arrival exactly at midnight cannot create a zero-second active-radio record in the new month. Replayed, stale and out-of-order reports retain the existing continuity/qualification guards. Physical firmware currently delays its first playing_station_code report before the server's own 60-second qualification; this separate device timing behavior is not changed by the website release.
+
+
+## Pairing cancellation and independent decision writes (2026-11-08, release 2026.11.08.7)
+
+Apply 0018_notification_operations.sql before deployment. A private operation marker now gates policy, audit and queued-command effects independently of email deduplication. The marker is inserted only after a successful optimistic mutation and deleted within the same atomic batch, so it is not persistent user data or part of snapshots. Repeating a legitimate decision after restoring old records cannot leave approval policy unset merely because an old pending/sent/failed notification exists. Existing notifications remain deduplicated; notification_queued reflects whether a new job was actually inserted.
+
+The administrator Support and Legal lists filter by request kind before limiting rows. Stable created_at/id cursors expose older records in pages of 200. The UI provides Load more and ignores stale category responses.
+
+Phone claim insertion and reuse recheck the exact current Device Code and the initiating session in SQL. An in-flight request using a reset code cannot create a new approval prompt after the reset. Optional controls pairing also rechecks the existing phone grant and live session. Radio pairing and shared-add forms reject overlapping submissions and ignore late results after navigation; owner/editor and direct station-link loads cannot redirect a user who has already left the view.
+
+Advertisement submissions retain early per-IP limits and a shared 60-attempt/minute abuse bound. Their separate 60/day processing allowance is charged only after bot and field validation, so failed bot requests cannot consume the daily allowance. A radio's thirty-minute display window and ad receipt commit together, with approval/schedule rechecked in the window write. Receipt storage failures leave the radio eligible to retry.

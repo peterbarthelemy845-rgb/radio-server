@@ -10,7 +10,7 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
  if(path.startsWith('/api/radio/'))return radioAds(request,env,now);
  const current=request.method==='GET'?await session(request,env,now):await browserWrite(request,env,now);
  if(path==='/api/ads/submit'&&request.method==='POST'){
-  const ip=request.headers.get('CF-Connecting-IP')||'unknown';await limit(env.DB,'ad-submit-ip',ip,5,86400,now);await limit(env.DB,'ad-submit-global','all',60,86400,now);
+  const ip=request.headers.get('CF-Connecting-IP')||'unknown';await limit(env.DB,'ad-submit-ip',ip,5,86400,now);await limit(env.DB,'ad-submit-attempt-global','all',60,60,now);
   const body=await readJson(request,4300000);await deps.human(request,env,body.turnstile_token,'advertise-submit',now);
   const code=Number(body.station_code);if(!await env.DB.prepare("SELECT 1 FROM stations WHERE code=? AND status='published'").bind(code).first())throw new HttpError(404,'Station not found.');
   for(const [field,max] of [['business',32],['message',42],['email',254]])if(typeof body[field]!=='string'||!body[field].trim()||body[field].length>max||/[\x00-\x1f]/.test(body[field]))throw new HttpError(400,'Check the business name, message, phone and email.');
@@ -19,6 +19,9 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
   if(typeof body.phone!=='string'||body.phone.length>32||/[\x00-\x1f]/.test(body.phone))throw new HttpError(400,'Check the phone number.');
   const parseDate=value=>{if(!value)return null;if(!/^20\d{2}-\d{2}-\d{2}$/.test(value))throw new HttpError(400,'Check advertisement dates.');const stamp=Date.parse(value+'T00:00:00Z')/1000;if(!Number.isFinite(stamp)||new Date(stamp*1000).toISOString().slice(0,10)!==value)throw new HttpError(400,'Check advertisement dates.');return stamp;};
   const startAt=parseDate(body.start_date)||now,endDate=parseDate(body.end_date),endAt=endDate?endDate+86400:startAt+30*86400;if(startAt<now-86400||startAt>now+365*86400||endAt<=startAt||endAt>startAt+90*86400)throw new HttpError(400,'Choose an ad period of up to 90 days.');
+  // Keep an early short abuse window, but reserve the day-long processing
+  // allowance for validated submissions that passed the bot check.
+  await limit(env.DB,'ad-submit-authorized','all',60,86400,now);
   const key=await deps.artwork(env,body.artwork),object=await env.MEDIA.get('sanitized/'+key);let pixels;
   try{const resized=(await env.IMAGES.input(object.body).transform({width:256,height:76,fit:'cover'}).output({format:'image/png',anim:false})).response();if(!resized.ok)throw Error();pixels=await deps.adPixels(await resized.arrayBuffer());}catch{await env.MEDIA.delete?.('sanitized/'+key);throw new HttpError(400,'The sponsor image could not be prepared. Try another image.');}
   const pixelsKey=randomHex()+'.bin';await env.MEDIA.put('ad-pixels/'+pixelsKey,pixels,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{pixel_version:'1'}});
@@ -57,7 +60,7 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
  if(body.action==='approve')after.push({sql:'UPDATE ad_policy SET owner_approved=1 WHERE ad_id=? AND OWNER_NOTIFICATION_APPLIED',values:[ad.id]});
  if(administrative)after.push({sql:'INSERT INTO admin_audit(id,actor_hash,station_code,action,created_at) SELECT ?,?,?,?,? WHERE OWNER_NOTIFICATION_APPLIED',values:[randomHex(16),current.token_hash,ad.station_code,(body.action==='clear'?'ad-safety-clear:':'ad-delete:')+ad.id,now]});
  if(!await commitOwnerNotification(env,now,mutation,notice,after))throw new HttpError(409,'Advertisement changed. Refresh and review it again.');
- return json({status:'ok',notification_queued:Boolean(notice)});
+ return json({status:'ok',notification_queued:Boolean(notice?.queued)});
 }
 async function radioAds(request,env,now){const url=new URL(request.url),path=url.pathname;
  if(path==='/api/radio/ad/pixels'&&request.method==='GET'){
@@ -72,7 +75,16 @@ async function radioAds(request,env,now){const url=new URL(request.url),path=url
  }
  const code=String(body.station_code||'');if(!/^\d{2,6}$/.test(code))return json({ad:null});
  const ad=await env.DB.prepare(`SELECT a.id,a.business,a.message,p.phone FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code WHERE a.station_code=? AND a.status='approved' AND p.owner_approved=1 AND p.scanner_passed=1 AND p.start_at<=? AND p.end_at>? AND s.status='published' ORDER BY (SELECT count(*) FROM ad_impressions i WHERE i.ad_id=a.id),a.created_at LIMIT 1`).bind(Number(code),now,now).first();if(!ad)return json({ad:null});
- const window=await env.DB.prepare(`INSERT INTO ad_device_windows VALUES (?,?) ON CONFLICT(radio_id) DO UPDATE SET next_at=excluded.next_at WHERE ad_device_windows.next_at<=? RETURNING radio_id`).bind(id,now+1800,now).first();if(!window)return json({ad:null});
- const receipt=randomHex(16),token=randomHex();await env.DB.prepare('INSERT INTO ad_receipts VALUES (?,?,?,?,?,?)').bind(receipt,id,ad.id,await digest(token),now+60,now).run();
+ const receipt=randomHex(16),token=randomHex();
+ // The display window and its receipt are one transaction. A storage failure
+ // must not suppress advertising for thirty minutes without delivering an ad.
+ await env.DB.batch([
+  env.DB.prepare(`INSERT INTO ad_device_windows(radio_id,next_at) SELECT ?,? WHERE EXISTS
+   (SELECT 1 FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code
+    WHERE a.id=? AND a.status='approved' AND p.owner_approved=1 AND p.scanner_passed=1 AND p.start_at<=? AND p.end_at>? AND s.status='published')
+   ON CONFLICT(radio_id) DO UPDATE SET next_at=excluded.next_at WHERE ad_device_windows.next_at<=?`).bind(id,now+1800,ad.id,now,now,now),
+  env.DB.prepare('INSERT INTO ad_receipts SELECT ?,?,?,?,?,? WHERE changes()>0').bind(receipt,id,ad.id,await digest(token),now+60,now)
+ ]);
+ if(!await env.DB.prepare('SELECT 1 FROM ad_receipts WHERE id=? AND radio_id=?').bind(receipt,id).first())return json({ad:null});
  return json({ad:{brand:ad.business,message:ad.message,phone:ad.phone,receipt,pixels_path:'/api/radio/ad/pixels?token='+token,width:256,height:76,expires_in:60}});
 }

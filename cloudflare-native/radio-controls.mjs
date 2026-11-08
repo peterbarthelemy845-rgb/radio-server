@@ -58,10 +58,12 @@ export async function controlRoutes(request,env,now){
   await env.DB.batch([
    env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE radio_id=? AND state='waiting' AND expires<=?").bind(id,now),
    env.DB.prepare(`INSERT INTO pair_claims(id,radio_id,session_hash,confirmation_code,state,expires,created_at)
-    SELECT ?,?,?,?,'waiting',?,? WHERE EXISTS(SELECT 1 FROM phone_radios WHERE session_hash=? AND radio_id=? AND expires>?) ON CONFLICT DO NOTHING`).bind(claim,id,current.token_hash,check,now+180,now,current.token_hash,id,now),
+    SELECT ?,?,?,?,'waiting',?,? WHERE EXISTS(SELECT 1 FROM phone_radios p JOIN sessions s ON s.token_hash=p.session_hash
+     WHERE p.session_hash=? AND p.radio_id=? AND p.expires>? AND s.expires>?) ON CONFLICT DO NOTHING`).bind(claim,id,current.token_hash,check,now+180,now,current.token_hash,id,now,now),
    env.DB.prepare('INSERT INTO radio_control_claims(claim_id) SELECT id FROM pair_claims WHERE id=? ON CONFLICT DO NOTHING').bind(claim)
   ]);
-  const row=await env.DB.prepare(`SELECT c.id,c.confirmation_code,c.session_hash,sc.claim_id FROM pair_claims c LEFT JOIN radio_control_claims sc ON sc.claim_id=c.id WHERE c.radio_id=? AND c.state='waiting' AND c.expires>?`).bind(id,now).first();
+  const row=await env.DB.prepare(`SELECT c.id,c.confirmation_code,c.session_hash,sc.claim_id FROM pair_claims c LEFT JOIN radio_control_claims sc ON sc.claim_id=c.id
+   WHERE c.radio_id=? AND c.state='waiting' AND c.expires>? AND EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=? AND s.expires>?)`).bind(id,now,current.token_hash,now).first();
   if(!row||row.session_hash!==current.token_hash||!row.claim_id)throw new HttpError(409,'Another request is waiting on this radio. Try again shortly.');
   return json({claim_id:row.id,confirmation_code:row.confirmation_code,scope:'control',expires_in:180});
  }

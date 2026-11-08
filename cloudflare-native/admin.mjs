@@ -63,8 +63,15 @@ export async function adminRoutes(request,env,now,deps={human}){
   return json({enrollment_token:token,expires_in:600});
  }
  if(path==='/api/admin/legal'&&request.method==='GET'){
-  const rows=await env.DB.prepare('SELECT * FROM legal_requests ORDER BY created_at DESC LIMIT 200').all();
-  return json({requests:await Promise.all(rows.results.map(async row=>({id:row.id,kind:row.kind,state:row.state,created_at:row.created_at,payload:JSON.parse(await decrypt(env,row.encrypted_payload))})))});
+  const url=new URL(request.url),kind=url.searchParams.get('kind')||'all',cursor=url.searchParams.get('cursor');
+  if(!['all','support','legal'].includes(kind))throw new HttpError(400,'Choose a request type.');
+  let before=null,beforeId='';if(cursor!==null){if(!/^\d{1,16}:[a-f0-9]{32}$/.test(cursor))throw new HttpError(400,'Invalid request page.');const [stamp,id]=cursor.split(':');before=Number(stamp);beforeId=id;if(!Number.isSafeInteger(before))throw new HttpError(400,'Invalid request page.');}
+  const rows=(await env.DB.prepare(`SELECT * FROM legal_requests
+   WHERE (?='all' OR (?='support' AND kind='support') OR (?='legal' AND kind!='support'))
+    AND (? IS NULL OR created_at<? OR (created_at=? AND id<?))
+   ORDER BY created_at DESC,id DESC LIMIT 201`).bind(kind,kind,kind,before,before,before,beforeId).all()).results;
+  const more=rows.length>200,page=rows.slice(0,200),last=page.at(-1);
+  return json({requests:await Promise.all(page.map(async row=>({id:row.id,kind:row.kind,state:row.state,created_at:row.created_at,payload:JSON.parse(await decrypt(env,row.encrypted_payload))}))),has_more:more,next_cursor:more?last.created_at+':'+last.id:null});
  }
  if(path==='/api/admin/legal'&&request.method==='POST'){
   const body=await readJson(request);if(!['review','closed'].includes(body.state)||typeof body.notes!=='string'||body.notes.length>4000)throw new HttpError(400,'Check the request state and notes.');
@@ -110,7 +117,7 @@ export async function adminRoutes(request,env,now,deps={human}){
    {sql:"UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered') AND ?!='published' AND OWNER_NOTIFICATION_APPLIED",values:[row.code,status]}
   ]);
   if(!changed)throw new HttpError(409,'Station changed. Refresh and review it again.');
-  return json({status:'ok',notification_queued:Boolean(notice)});
+  return json({status:'ok',notification_queued:Boolean(notice?.queued)});
  }
  throw new HttpError(404,'Not found.');
 }

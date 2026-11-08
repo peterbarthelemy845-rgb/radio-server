@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';
 import {adsRoutes} from './local-ads.mjs';import {authRoutes} from './owner-auth.mjs';import {digest,decrypt} from './security.mjs';
 const now=1800000000,host='https://native.example',radio='a'.repeat(32),secret='b'.repeat(64);
-async function fixture(safe=true){const sqlite=new DatabaseSync(':memory:');for(const file of ['0001_core.sql','0002_admin.sql','0003_admin_mfa.sql','0007_local_ads.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+file,import.meta.url),'utf8'));
+async function fixture(safe=true){const sqlite=new DatabaseSync(':memory:');for(const file of ['0001_core.sql','0002_admin.sql','0003_admin_mfa.sql','0005_community.sql','0007_local_ads.sql','0018_notification_operations.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+file,import.meta.url),'utf8'));
  const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(qs){sqlite.exec('BEGIN');try{const rows=[];for(const q of qs)rows.push(await q.run());sqlite.exec('COMMIT');return rows;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
  const objects=new Map();const env={DB,ADMIN_TOTP_SECRET:'configured',DATA_ENCRYPTION_KEY:'a'.repeat(64),MEDIA:{async get(key){if(key.startsWith('sanitized/'))return {body:new Blob([new Uint8Array(12)]).stream(),customMetadata:{sanitizer_version:'1'}};return objects.get(key)||null;},async put(key,data,options){objects.set(key,{body:data,size:data.byteLength,customMetadata:options.customMetadata});}},IMAGES:{input(){return {transform(){return {async output(){return {response:()=>new Response(new Uint8Array(12))};}};}};}}};
  sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,email_verified_at,created_at,updated_at) VALUES ('Test','https://example.com/live','owner@example.com','published',?,?,?)").run(now,now,now);sqlite.prepare('INSERT INTO radios VALUES (?,?,?,?,?)').run(radio,await digest(secret),'Radio',now,now);
@@ -10,7 +10,7 @@ async function fixture(safe=true){const sqlite=new DatabaseSync(':memory:');for(
  async function post(path,body={},at=now,credential=secret){return adsRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'X-CSRF-Token':state.csrf,Authorization:'Bearer '+credential,'Content-Type':'application/json'},body:JSON.stringify(body)}),env,at,deps);}
  const data={station_code:'10',business:'Test shop',message:'Welcome',phone:'555-0100',email:'business@example.com',rights_confirmed:true,artwork:{}};
  function asOwner(){sqlite.prepare('UPDATE sessions SET owner_station=10,owner_expires=?').run(now+900);}
- return {env,sqlite,post,data,asOwner,sessionHash,cookie};}
+ return {env,sqlite,post,data,asOwner,sessionHash,cookie,state,deps};}
 test('safe ad still requires owner approval; receipts are bound, deduplicated and frequency limited',async()=>{const f=await fixture();await f.post('/api/ads/submit',f.data);const id=f.sqlite.prepare('SELECT id FROM local_ads').get().id;assert.equal((await(await f.post('/api/radio/ad',{radio_id:radio,station_code:'10'})).json()).ad,null);await assert.rejects(f.post('/api/owner/ads',{id,action:'approve'}),e=>e.status===403);f.asOwner();await f.post('/api/owner/ads',{id,action:'approve'});const ad=(await(await f.post('/api/radio/ad',{radio_id:radio,station_code:'10'})).json()).ad;assert.ok(ad.receipt);assert.equal((await(await f.post('/api/radio/ad',{radio_id:radio,station_code:'10'})).json()).ad,null);
  const imageRequest=token=>new Request(host+ad.pixels_path,{headers:{Authorization:'Bearer '+token}});await assert.rejects(adsRoutes(imageRequest('d'.repeat(64)),f.env,now),e=>e.status===401);const image=await adsRoutes(imageRequest(secret),f.env,now);assert.equal((await image.arrayBuffer()).byteLength,38912);await assert.rejects(adsRoutes(imageRequest(secret),f.env,now+61),e=>e.status===404);
  await f.post('/api/radio/ad/displayed',{radio_id:radio,receipt:ad.receipt});await f.post('/api/radio/ad/displayed',{radio_id:radio,receipt:ad.receipt});assert.equal(f.sqlite.prepare('SELECT count(*) n FROM ad_impressions').get().n,1);await f.post('/api/owner/ads',{id,action:'delete'});assert.equal(f.sqlite.prepare("SELECT count(*) n FROM local_ads WHERE status!='deleted'").get().n,0);
@@ -28,3 +28,30 @@ test('concurrent ad or owner-contact changes cannot approve or queue stale notif
  for(const change of ["UPDATE local_ads SET status='deleted'","UPDATE stations SET contact_email='changed@example.com'","UPDATE ad_policy SET scanner_passed=0"]){const f=await fixture();await f.post('/api/ads/submit',f.data);f.asOwner();const id=f.sqlite.prepare('SELECT id FROM local_ads').get().id,batch=f.env.DB.batch;f.env.DB.batch=async qs=>{f.sqlite.exec(change);return batch(qs);};await assert.rejects(f.post('/api/owner/ads',{id,action:'approve'}),e=>e.status===409);assert.equal(f.sqlite.prepare('SELECT owner_approved FROM ad_policy').get().owner_approved,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);}
 });
 test('ad decisions skip mail to a contact that has not verified the station email',async()=>{const f=await fixture();await f.post('/api/ads/submit',f.data);f.asOwner();f.sqlite.exec('UPDATE stations SET email_verified_at=NULL');const id=f.sqlite.prepare('SELECT id FROM local_ads').get().id;assert.equal((await(await f.post('/api/owner/ads',{id,action:'approve'})).json()).notification_queued,false);assert.equal(f.sqlite.prepare('SELECT status FROM local_ads').get().status,'approved');assert.equal(f.sqlite.prepare('SELECT owner_approved FROM ad_policy').get().owner_approved,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);});
+
+
+test('failed bot checks cannot consume the day-long advertising allowance',async()=>{
+ const f=await fixture();let checks=0;
+ for(let index=0;index<60;index++){
+  await assert.rejects(adsRoutes(new Request(host+'/api/ads/submit',{method:'POST',headers:{Origin:host,Cookie:f.cookie,'X-CSRF-Token':f.state.csrf,'CF-Connecting-IP':'203.0.113.'+(1+Math.floor(index/5)),'Content-Type':'application/json'},body:JSON.stringify(f.data)}),f.env,now,{...f.deps,human:async()=>{checks++;throw Object.assign(Error('Failed bot check'),{status:400});}}),e=>e.status===400);
+ }
+ assert.equal(checks,60);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM local_ads').get().n,0);
+ const accepted=await f.post('/api/ads/submit',f.data,now+61);assert.equal(accepted.status,200);
+});
+
+test('advertising attempts remain short-window limited before bot checks',async()=>{
+ const f=await fixture();let checks=0;
+ const attempt=index=>adsRoutes(new Request(host+'/api/ads/submit',{method:'POST',headers:{Origin:host,Cookie:f.cookie,'X-CSRF-Token':f.state.csrf,'CF-Connecting-IP':'198.51.100.'+(1+Math.floor(index/5)),'Content-Type':'application/json'},body:JSON.stringify(f.data)}),f.env,now,{...f.deps,human:async()=>{checks++;throw Object.assign(Error('Failed bot check'),{status:400});}});
+ for(let index=0;index<60;index++)await assert.rejects(attempt(index),e=>e.status===400);
+ await assert.rejects(attempt(60),e=>e.status===429);assert.equal(checks,60);
+});
+
+
+test('ad receipt failure does not consume the radios thirty-minute display window',async()=>{
+ const f=await fixture();await f.post('/api/ads/submit',f.data);f.asOwner();const id=f.sqlite.prepare('SELECT id FROM local_ads').get().id;await f.post('/api/owner/ads',{id,action:'approve'});
+ f.sqlite.exec("CREATE TRIGGER fail_receipt BEFORE INSERT ON ad_receipts BEGIN SELECT RAISE(ABORT, 'Receipt storage unavailable'); END;");
+ await assert.rejects(f.post('/api/radio/ad',{radio_id:radio,station_code:'10'}),/Receipt storage unavailable/);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM ad_device_windows').get().n,0);
+ f.sqlite.exec('DROP TRIGGER fail_receipt');
+ const result=await(await f.post('/api/radio/ad',{radio_id:radio,station_code:'10'})).json();assert.ok(result.ad?.receipt);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM ad_receipts').get().n,1);
+});

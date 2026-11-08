@@ -96,6 +96,49 @@ test('another browser cannot replace a pending pairing request or inspect it',as
   const again=await (await one.post('claim',{device_code:'1234'})).json();
   assert.equal(again.claim_id,claim.claim_id);
 });
+
+test('a Device Code reset, replacement or expiry between lookup and insertion cannot create a stale pairing request',async()=>{
+  for(const change of ['reset','replace','expire']){
+    const f=await fixture(),phone=await f.browser(),prepare=f.env.DB.prepare.bind(f.env.DB);let raced=false;
+    f.env.DB.prepare=sql=>{
+      const query=prepare(sql);
+      if(sql.startsWith('INSERT INTO pair_claims(')){
+        const run=query.run.bind(query);query.run=async()=>{
+          raced=true;
+          if(change==='reset')await handle(new Request(host+'/api/radio/link/reset',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify({radio_id:radio})}),f.env,now);
+          else if(change==='replace')f.sqlite.prepare('UPDATE radio_pairs SET code_hash=? WHERE radio_id=?').run(await mac(f.env,'device-code:5678'),radio);
+          else f.sqlite.prepare('UPDATE radio_pairs SET expires=? WHERE radio_id=?').run(now,radio);
+          return run();
+        };
+      }
+      return query;
+    };
+    await assert.rejects(phone.post('claim',{device_code:'1234'}),e=>e.status===400);
+    assert.equal(raced,true,change);assert.equal(f.sqlite.prepare("SELECT count(*) n FROM pair_claims WHERE state='waiting'").get().n,0,change);
+    const polled=await(await f.poll({})).json();assert.equal(polled.pair_claim_id,'');assert.equal(polled.linked,false);
+  }
+});
+
+test('an expired or logged-out initiating session cannot insert a pairing request after its earlier authorization check',async()=>{
+  for(const change of ['expire','logout']){
+    const f=await fixture(),phone=await f.browser(),prepare=f.env.DB.prepare.bind(f.env.DB);let raced=false;
+    f.env.DB.prepare=sql=>{
+      const query=prepare(sql);
+      if(sql.startsWith('INSERT INTO pair_claims(')){
+        const run=query.run.bind(query);query.run=async()=>{
+          raced=true;
+          if(change==='logout')await phone.post('logout',{});
+          else f.sqlite.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').run(now,phone.hash);
+          return run();
+        };
+      }
+      return query;
+    };
+    await assert.rejects(phone.post('claim',{device_code:'1234'}),e=>e.status===401);
+    assert.equal(raced,true,change);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM pair_claims').get().n,0,change);
+    assert.equal((await(await f.poll({})).json()).pair_claim_id,'');
+  }
+});
 test('denied and expired claims never grant station control; repeated guesses are limited',async()=>{
   const f=await fixture(),phone=await f.browser();
   const claim=await (await phone.post('claim',{device_code:'1234'})).json();

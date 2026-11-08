@@ -42,6 +42,26 @@ test('control writes enforce browser CSRF, grant scope and own command status',a
  const another=await operationsFixture();await assert.rejects(controlRoutes(another.request('/api/phone/control/status',{command_id:command.command_id}),f.env,f.now),e=>e.status===401||e.status===403||e.status===404);
  await assert.rejects(f.post('',{...payload,radio_id:other}),e=>e.status===403);
 });
+
+test('a reset or session expiry before the atomic control-claim write cannot queue a stale approval request',async()=>{
+ for(const change of ['reset','session-expiry']){
+  const f=await fixture();await f.poll(f.telemetry);
+  const batch=f.env.DB.batch.bind(f.env.DB);let raced=false;
+  f.env.DB.batch=async statements=>{
+   if(!raced){
+    raced=true;
+    if(change==='reset')await handle(new Request(origin+'/api/radio/link/reset',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify({radio_id:radio})}),f.env,f.now);
+    else f.sqlite.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').run(f.now,f.hash);
+   }
+   return batch(statements);
+  };
+  await assert.rejects(f.post('/authorize',{radio_id:radio}),e=>e.status===409);
+  assert.equal(raced,true,change);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM pair_claims').get().n,0,change);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_control_claims').get().n,0,change);
+  const polled=await f.poll(f.telemetry);assert.equal(polled.pair_claim_id,'');assert.equal(polled.control_command_id,'');
+ }
+});
 test('commands are absolute, bounded, deduplicated, leased and acknowledged only by their radio',async()=>{
  const f=await fixture();await f.approve();const body={radio_id:radio,action:'set_volume',value:65,request_id:'request-'+ 'b'.repeat(20)};
  const first=await f.post('',body),retry=await f.post('',body);assert.equal(first.command_id,retry.command_id);assert.equal(retry.duplicate,true);

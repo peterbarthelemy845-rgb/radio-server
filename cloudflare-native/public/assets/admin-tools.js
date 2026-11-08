@@ -2,9 +2,9 @@
 const adminTools=document.createElement('section');adminTools.hidden=true;adminTools.className='admin-support-tools';
 adminTools.innerHTML='<hr><h2>Support and requests</h2><div class="support-tool-buttons"><button id="loadLegal" class="secondary">Support tickets</button><button id="loadRequests" class="secondary">Legal & other requests</button><button id="loadVideos" class="secondary">Manage support videos</button></div><div id="toolRecords"></div><form id="videoForm" hidden><h3>Add support video</h3><label>Topic<select name="topic"><option value="setup">Getting started</option><option value="wifi">Wi-Fi</option><option value="stations">Stations</option><option value="troubleshooting">Troubleshooting</option></select></label><label>Title<input name="title" maxlength="100" required></label><label>Description<textarea name="description" maxlength="500"></textarea></label><label>YouTube video ID<input name="video_id" pattern="[-A-Za-z0-9_]{11}" maxlength="11" required placeholder="11-character video ID"></label><button>Add video</button></form><p id="toolsMessage" role="status"></p>';
 document.getElementById('admin').append(adminTools);
-let adminToolView=0;const supportSubmissions=new Map();
+let adminToolView=0,adminRequestCursor='',adminRequestSupport=null,adminRequestsLoading=false;const supportSubmissions=new Map();
 adminTools.hidden=$('adminStations').hidden;
-new MutationObserver(()=>{adminTools.hidden=$('adminStations').hidden;if(adminTools.hidden){adminToolView++;supportSubmissions.clear();$('toolRecords').replaceChildren();$('videoForm').hidden=true;$('toolsMessage').textContent='';}}).observe($('adminStations'),{attributes:true,attributeFilter:['hidden']});
+new MutationObserver(()=>{adminTools.hidden=$('adminStations').hidden;if(adminTools.hidden){adminToolView++;adminRequestCursor='';adminRequestSupport=null;adminRequestsLoading=false;supportSubmissions.clear();$('toolRecords').replaceChildren();$('videoForm').hidden=true;$('toolsMessage').textContent='';}}).observe($('adminStations'),{attributes:true,attributeFilter:['hidden']});
 const supportStateLabel=value=>({new:'Open',review:'In review',closed:'Closed'}[value]||value);
 const supportTime=value=>new Date(value*1000).toLocaleString();
 function supportText(tag,value,className){const element=document.createElement(tag);element.textContent=value;if(className)element.className=className;return element;}
@@ -60,12 +60,16 @@ function renderSupportTicket(thread,view,draft='',notice=''){
  if(thread.history.length){const details=document.createElement('details');details.append(supportText('summary','Status history'));for(const action of thread.history)details.append(supportText('p',supportTime(action.created_at)+' · '+supportStateLabel(action.action)+(action.notes?' · '+action.notes:''),'support-meta'));box.append(details);}
  $('toolRecords').replaceChildren(box);
 }
-async function loadAdminRequests(supportOnly){
- const view=++adminToolView;$('videoForm').hidden=true;$('toolsMessage').textContent='Loading requests…';
+async function loadAdminRequests(supportOnly,more=false){
+ if(more&&(adminRequestsLoading||!adminRequestCursor||adminRequestSupport!==supportOnly))return;
+ const view=more?adminToolView:++adminToolView,cursor=more?adminRequestCursor:'';
+ if(!more){adminRequestCursor='';adminRequestSupport=supportOnly;}
+ const previousMore=$('adminRequestsMore');if(previousMore)previousMore.disabled=true;
+ adminRequestsLoading=true;$('videoForm').hidden=true;$('toolsMessage').textContent='Loading requests…';
  try{
-  const result=await api('/api/admin/legal');if(!supportViewActive(view))return;$('toolRecords').replaceChildren();
-  $('toolRecords').append(supportText('h3',supportOnly?'Support tickets':'Legal & other requests'));
-  const records=result.requests.filter(record=>(record.kind==='support')===supportOnly);
+  const result=await api('/api/admin/legal?kind='+(supportOnly?'support':'legal')+(cursor?'&cursor='+encodeURIComponent(cursor):''));if(!supportViewActive(view))return;
+  if(!more){$('toolRecords').replaceChildren();$('toolRecords').append(supportText('h3',supportOnly?'Support tickets':'Legal & other requests'));}else previousMore?.remove();
+  const records=result.requests;
   for(const record of records){
    const box=document.createElement('article');box.className='support-ticket-summary';
    box.append(supportText('h4',(supportOnly?(record.payload.subject||'Support ticket'):record.kind)+' · '+supportStateLabel(record.state)),supportText('p','Reference: '+record.id+' · '+supportTime(record.created_at),'support-meta'));
@@ -78,8 +82,12 @@ async function loadAdminRequests(supportOnly){
    }
    $('toolRecords').append(box);
   }
-  if(!records.length)$('toolRecords').append(supportText('p',supportOnly?'No support tickets.':'No legal or other requests.'));$('toolsMessage').textContent='';
+  if(!records.length&&!more)$('toolRecords').append(supportText('p',supportOnly?'No support tickets.':'No legal or other requests.'));
+  adminRequestCursor=result.has_more?result.next_cursor||'':'';
+  if(adminRequestCursor){const button=supportText('button',supportOnly?'Load more tickets':'Load more requests','secondary');button.id='adminRequestsMore';button.type='button';button.onclick=()=>loadAdminRequests(supportOnly,true);$('toolRecords').append(button);}
+  $('toolsMessage').textContent='';
  }catch(error){if(supportViewActive(view))$('toolsMessage').textContent=error.message;}
+ finally{if(supportViewActive(view))adminRequestsLoading=false;if(previousMore)previousMore.disabled=false;}
 }
 $('loadLegal').onclick=()=>loadAdminRequests(true);
 $('loadRequests').onclick=()=>loadAdminRequests(false);

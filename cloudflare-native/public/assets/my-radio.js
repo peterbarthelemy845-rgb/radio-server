@@ -1,5 +1,7 @@
 'use strict';
-let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0;
+let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0,radioPairingBusy=false,radioPairingGeneration=0;
+function cancelRadioPairing(){radioPairingGeneration++;if(radioPairingBusy){radioPairingBusy=false;busy($('connectRadioForm'),false);}}
+function currentRadioPairing(generation){return generation===radioPairingGeneration&&!$('myRadio').hidden;}
 const radioCardViews=new Map(),radioFreshness=document.createElement('p');radioFreshness.id='radioFreshness';radioFreshness.className='radio-freshness';radioFreshness.hidden=true;radioFreshness.setAttribute('aria-live','off');$('radioConnectStatus').before(radioFreshness);
 function checkedRadioTime(){return radioLastChecked?new Date(radioLastChecked).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';}
 function showRadioFreshness(available){radioFreshness.hidden=false;radioFreshness.textContent=radioLastChecked?(available?'Checked ':'Last checked ')+checkedRadioTime():available?'Status checked.':'Status has not been checked.';}
@@ -39,11 +41,22 @@ async function loadMyRadios(silent=false){
 }
 $('navRadio').onclick=()=>{history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();};$('refreshRadios').onclick=()=>loadMyRadios();
 $('connectRadio').onclick=()=>{$('connectRadioForm').hidden=false;$('radioConnectStatus').textContent='Use the current Device Code. If it was reset, the old code will not work. Approve the request on your radio.';$('connectRadioForm').elements.device_code.focus();};
-$('connectRadioForm').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{const deviceCode=form.elements.device_code.value;const turnstile_token=await human(form,'radio-link');const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token});$('radioConnectStatus').textContent=claim.confirmation_code+' — Match this number and tap Allow on your radio.';const deadline=Date.now()+180000;let approved=false;while(Date.now()<deadline){await delay();const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(result.state==='approved'){if(result.radio_id)rememberSelectedRadio(result.radio_id);approved=true;break;}if(result.state!=='waiting')throw Error('Connection was not approved. Please try again.');}if(!approved)throw Error('Connection timed out. Please try again.');form.reset();form.hidden=true;await loadMyRadios();$('radioConnectStatus').textContent='Radio connected successfully.';await listenerActionDialog('Radio connected','Device code '+deviceCode+' is now linked to this phone.');}catch(e){$('radioConnectStatus').textContent=e.message;}finally{busy(form,false);}};
+$('connectRadioForm').onsubmit=async event=>{
+ event.preventDefault();const form=event.target;if(radioPairingBusy)return;const generation=++radioPairingGeneration,deviceCode=form.elements.device_code.value;radioPairingBusy=true;busy(form,true,true);
+ try{
+  const turnstile_token=await human(form,'radio-link');if(!currentRadioPairing(generation))return;
+  const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token});if(!currentRadioPairing(generation))return;
+  $('radioConnectStatus').textContent=claim.confirmation_code+' — Match this number and tap Allow on your radio.';const deadline=Date.now()+180000;let approved=false;
+  while(Date.now()<deadline){await delay();if(!currentRadioPairing(generation))return;const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(!currentRadioPairing(generation))return;if(result.state==='approved'){if(result.radio_id)rememberSelectedRadio(result.radio_id);approved=true;break;}if(result.state!=='waiting')throw Error('Connection was not approved. Please try again.');}
+  if(!approved)throw Error('Connection timed out. Please try again.');form.reset();form.hidden=true;await loadMyRadios();if(!currentRadioPairing(generation))return;$('radioConnectStatus').textContent='Radio connected successfully.';if(!document.hidden)await listenerActionDialog('Radio connected','Device code '+deviceCode+' is now linked to this phone.');
+ }catch(e){if(currentRadioPairing(generation))$('radioConnectStatus').textContent=e.message;}
+ finally{if(generation===radioPairingGeneration){radioPairingBusy=false;busy(form,false);}}
+};
 window.addEventListener('radio-locals-ready',()=>{if(!$('myRadio').hidden){if(location.hash==='#library')history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();scheduleRadioRefresh();}});
 
 let radioRefreshTimer;function scheduleRadioRefresh(){clearTimeout(radioRefreshTimer);if(document.hidden||$('myRadio').hidden)return;radioRefreshTimer=setTimeout(async()=>{if(!document.hidden&&!$('myRadio').hidden&&!$('connectRadioForm').querySelector('button').disabled)await loadMyRadios(true);scheduleRadioRefresh();},10000);}
 function radioVisibilityChanged(){
+ if($('myRadio').hidden)cancelRadioPairing();
  if(document.hidden||$('myRadio').hidden)radioViewGeneration++;
  else{if(radioLastChecked&&Date.now()-radioLastChecked>30000)markRadioStatusUnavailable('Checking radio status…');loadMyRadios(true);}
  scheduleRadioRefresh();

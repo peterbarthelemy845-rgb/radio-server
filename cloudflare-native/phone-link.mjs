@@ -65,12 +65,21 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     // An existing request is returned only to its initiating browser. Concurrent
     // requests cannot replace a number already shown for physical approval.
     const id=randomHex(16),check=otp().slice(0,4);
+    // Reset/logout may complete after the lookup above. The write itself must
+    // still see the same usable Device Code and a live initiating session.
     await env.DB.prepare(`INSERT INTO pair_claims(id,radio_id,session_hash,confirmation_code,state,expires,created_at)
-      VALUES (?,?,?,?,'waiting',?,?) ON CONFLICT DO NOTHING`)
-      .bind(id,pair.radio_id,current.token_hash,check,now+180,now).run();
+      SELECT ?,?,?,?,'waiting',?,? WHERE EXISTS(SELECT 1 FROM radio_pairs WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?))
+      AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires>?) ON CONFLICT DO NOTHING`)
+      .bind(id,pair.radio_id,current.token_hash,check,now+180,now,pair.radio_id,codeHash,now,current.token_hash,now).run();
     const claim=await env.DB.prepare(`SELECT id,confirmation_code,session_hash FROM pair_claims
-      WHERE radio_id=? AND state='waiting' AND expires>?`).bind(pair.radio_id,now).first();
-    if(!claim||claim.session_hash!==current.token_hash)throw new HttpError(409,'Another request is waiting on this radio. Try again shortly.');
+      WHERE radio_id=? AND state='waiting' AND expires>?
+      AND EXISTS(SELECT 1 FROM radio_pairs WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?))
+      AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires>?)`).bind(pair.radio_id,now,pair.radio_id,codeHash,now,current.token_hash,now).first();
+    if(!claim){
+      if(!await env.DB.prepare('SELECT 1 FROM sessions WHERE token_hash=? AND expires>?').bind(current.token_hash,now).first())throw new HttpError(401,'Please reload this page.');
+      throw new HttpError(400,'Check the current device code on your radio and try again.');
+    }
+    if(claim.session_hash!==current.token_hash)throw new HttpError(409,'Another request is waiting on this radio. Try again shortly.');
     // Backfill older radios only after a valid, rate-limited pairing request.
     await env.DB.prepare('UPDATE radio_pairs SET code_encrypted=? WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?)')
       .bind(await encrypt(env,code),pair.radio_id,codeHash,now).run();
