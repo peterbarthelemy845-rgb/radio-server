@@ -1,13 +1,30 @@
 import {json,session,browserWrite,readJson,limit,HttpError} from './security.mjs';import {administrator} from './access.mjs';
 export async function recordListening(env,id,code,now){
- if(!/^\d{2,6}$/.test(String(code||''))||!await env.DB.prepare("SELECT 1 FROM stations WHERE code=? AND status='published'").bind(Number(code)).first()){await env.DB.prepare('DELETE FROM listening_sessions WHERE radio_id=?').bind(id).run();return;}
- const day=new Date(now*1000).toISOString().slice(0,10),month=day.slice(0,7),station=Number(code);
- await env.DB.batch([
+ if(!/^\d{2,6}$/.test(String(code||''))||!await env.DB.prepare("SELECT 1 FROM stations WHERE code=? AND status='published'").bind(Number(code)).first()){await env.DB.prepare('DELETE FROM listening_sessions WHERE radio_id=? AND last_seen<=?').bind(id,now).run();return;}
+ const boundary=Math.floor(now/86400)*86400,station=Number(code);
+ const statements=[
   env.DB.prepare(`INSERT INTO listening_sessions(radio_id,station_code,started,last_seen) VALUES (?,?,?,?) ON CONFLICT(radio_id) DO UPDATE SET credit=CASE WHEN station_code=excluded.station_code AND last_seen>=?-90 AND ?-started>=60 THEN CASE WHEN qualified=0 THEN ?-started ELSE ?-last_seen END ELSE 0 END,qualified=CASE WHEN station_code=excluded.station_code AND last_seen>=?-90 THEN qualified ELSE 0 END,started=CASE WHEN station_code=excluded.station_code AND last_seen>=?-90 THEN started ELSE ? END,station_code=excluded.station_code,last_seen=? WHERE listening_sessions.last_seen<?`).bind(id,station,now,now,now,now,now,now,now,now,now,now,now),
-  env.DB.prepare(`INSERT INTO monthly_activity(month,station_code,radio_id,first_seen,last_seen) SELECT ?,station_code,radio_id,?,? FROM listening_sessions WHERE radio_id=? AND last_seen=? AND credit>0 ON CONFLICT(month,station_code,radio_id) DO UPDATE SET last_seen=excluded.last_seen`).bind(month,now,now,id,now),
-  env.DB.prepare(`INSERT INTO listening_daily(day,station_code,reported_seconds) SELECT ?,station_code,credit FROM listening_sessions WHERE radio_id=? AND last_seen=? AND credit>0 ON CONFLICT(day,station_code) DO UPDATE SET reported_seconds=reported_seconds+excluded.reported_seconds`).bind(day,id,now),
-  env.DB.prepare('UPDATE listening_sessions SET qualified=CASE WHEN credit>0 THEN 1 ELSE qualified END,credit=0 WHERE radio_id=? AND last_seen=?').bind(id,now)
- ]);
+ ];
+ // Credit belongs to the interval before this report, not its arrival date.
+ // Qualification plus the 90-second continuity bound limits normal credit to
+ // under 150 seconds, so it can intersect at most these two UTC dates.
+ for(const start of [boundary-86400,boundary]){
+  const day=new Date(start*1000).toISOString().slice(0,10),month=day.slice(0,7);
+  const interval=`WITH interval AS (SELECT station_code,radio_id,MAX(last_seen-credit,?) AS start_at,MIN(last_seen,?) AS end_at
+   FROM listening_sessions WHERE radio_id=? AND last_seen=? AND credit>0)`;
+  statements.push(
+   env.DB.prepare(`${interval} INSERT INTO monthly_activity(month,station_code,radio_id,first_seen,last_seen)
+    SELECT ?,station_code,radio_id,start_at,end_at FROM interval WHERE end_at>start_at
+    ON CONFLICT(month,station_code,radio_id) DO UPDATE SET first_seen=MIN(monthly_activity.first_seen,excluded.first_seen),last_seen=MAX(monthly_activity.last_seen,excluded.last_seen)`)
+    .bind(start,start+86400,id,now,month),
+   env.DB.prepare(`${interval} INSERT INTO listening_daily(day,station_code,reported_seconds)
+    SELECT ?,station_code,end_at-start_at FROM interval WHERE end_at>start_at
+    ON CONFLICT(day,station_code) DO UPDATE SET reported_seconds=reported_seconds+excluded.reported_seconds`)
+    .bind(start,start+86400,id,now,day)
+  );
+ }
+ statements.push(env.DB.prepare('UPDATE listening_sessions SET qualified=CASE WHEN credit>0 THEN 1 ELSE qualified END,credit=0 WHERE radio_id=? AND last_seen=?').bind(id,now));
+ await env.DB.batch(statements);
 }
 export async function reportsRoutes(request,env,now){const path=new URL(request.url).pathname;if(!['/api/events','/api/owner/reports','/api/admin/reports'].includes(path))return null;
  if(path==='/api/events'){

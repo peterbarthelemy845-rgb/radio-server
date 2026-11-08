@@ -1,14 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import {fetchHandler,digest,handle,cleanup} from './worker.mjs';
 const schema=readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8');
 function database(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(schema);sqlite.exec(readFileSync(new URL('./migrations/0005_community.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0007_local_ads.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0009_device_code.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0010_saved_inventory.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0012_radio_controls.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0013_support_ticket_access.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('./migrations/0014_registration_requests.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('./migrations/0015_station_command_origin.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('./migrations/0016_current_station_presence.sql',import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');for(const file of readdirSync(new URL('./migrations/',import.meta.url)).filter(name=>name.endsWith('.sql')).sort())sqlite.exec(readFileSync(new URL('./migrations/'+file,import.meta.url),'utf8'));
   return {sqlite,prepare(sql){
     let args=[];
     const query={bind(...values){args=values;return query;},

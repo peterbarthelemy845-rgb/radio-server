@@ -7,8 +7,17 @@ export async function deviceRoutes(request,env,now){const path=new URL(request.u
  const body=await readJson(request),{id,secret}=credentials(request,body),hash=await digest(secret);
  await limit(env.DB,'device-start-ip',request.headers.get('CF-Connecting-IP')||'unknown',60,3600,now);
  if(path==='/api/radio/enroll'){
+  await limit(env.DB,'device-enroll-attempt-global','all',60,60,now);
   const token=String(body.enrollment_token||'');if(!/^[a-f0-9]{64}$/.test(token))throw new HttpError(403,'A factory enrollment token is required.');
-  await limit(env.DB,'device-enroll-global','all',200,86400,now);const tokenHash=await digest(token);
+  const tokenHash=await digest(token),permission=await env.DB.prepare('SELECT expires,consumed_at,radio_id FROM device_enrollments WHERE token_hash=?').bind(tokenHash).first();
+  // Bogus public requests may hit the short abuse window, but cannot consume
+  // the factory's day-long enrollment allowance. A retry does not enroll again.
+  if(permission&&permission.consumed_at!==null){
+   if(permission.radio_id!==id)throw new HttpError(403,'Enrollment token is invalid or already used.');
+   await authenticate(request,env.DB,body);return json({status:'ok'});
+  }
+  if(!permission||permission.expires<=now)throw new HttpError(403,'Enrollment token is invalid or already used.');
+  await limit(env.DB,'device-enroll-authorized','all',200,86400,now);
   // Enrollment is administrative, single-use and short-lived. Arbitrary visitors
   // cannot fill the device registry by choosing a public ID and secret.
   await env.DB.batch([

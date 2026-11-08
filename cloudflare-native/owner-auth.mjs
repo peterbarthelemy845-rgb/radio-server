@@ -246,14 +246,18 @@ export async function authRoutes(request,env,now,deps={human}){
   }
   if(path==='/api/owner/station'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
-    const station=await env.DB.prepare("SELECT code,artwork_key FROM stations WHERE code=? AND status NOT IN ('deleted','suspended')")
+    const station=await env.DB.prepare("SELECT code,artwork_key,stream_url,bio,status,updated_at FROM stations WHERE code=? AND status NOT IN ('deleted','suspended')")
       .bind(current.owner_station).first();
     if(!station)throw new HttpError(403,'Station cannot be edited.');
     const url=streamUrl(body.stream_url),bio=String(body.bio||'').trim();
     if(bio.length>250)throw new HttpError(400,'Bio must be 250 characters or fewer.');
     const key=body.artwork?await artwork(env,body.artwork):station.artwork_key;
-    await env.DB.prepare("UPDATE stations SET stream_url=?,bio=?,artwork_key=?,status='pending_review',updated_at=? WHERE code=?")
-      .bind(url,bio,key,now,station.code).run();
+    // Image processing can outlive an administrator decision or a newer edit.
+    // Compare the selected revision in the write so neither can be overwritten.
+    const changed=await env.DB.prepare(`UPDATE stations SET stream_url=?,bio=?,artwork_key=?,status='pending_review',updated_at=?
+      WHERE code=? AND status=? AND updated_at=? AND stream_url=? AND bio=? AND artwork_key IS ? RETURNING code`)
+      .bind(url,bio,key,Math.max(now,station.updated_at+1),station.code,station.status,station.updated_at,station.stream_url,station.bio,station.artwork_key).first();
+    if(!changed)throw new HttpError(409,'Station changed while saving. Reload the station editor and try again.');
     const approved=await screenStation(env,station.code);
     return json({status:'ok',message:approved?'Changes saved successfully.':'Changes saved for safety review.'});
   }

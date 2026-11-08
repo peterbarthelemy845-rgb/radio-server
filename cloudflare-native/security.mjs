@@ -4,7 +4,21 @@ export const json=(value,status=200)=>new Response(JSON.stringify(value),{status
   'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',
   'Referrer-Policy':'strict-origin-when-cross-origin','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}});
 export async function digest(value){return hex(await crypto.subtle.digest('SHA-256',encoder.encode(value)));}
-export function hex(bytes){return Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');}
+const hexDigits=Array.from({length:256},(_,value)=>value.toString(16).padStart(2,'0'));
+export function hex(bytes){
+  const data=new Uint8Array(bytes),pieces=[];
+  // Keep conversion scratch space bounded for encrypted backup manifests.
+  for(let start=0;start<data.length;start+=8192){const end=Math.min(start+8192,data.length),part=new Array(end-start);
+    for(let index=start;index<end;index++)part[index-start]=hexDigits[data[index]];
+    pieces.push(part.join(''));}
+  return pieces.join('');
+}
+function fromHex(value){
+  if(typeof value!=='string'||value.length%2||!/^[a-f0-9]*$/i.test(value))throw new Error('Invalid encrypted value.');
+  const bytes=new Uint8Array(value.length/2);
+  for(let index=0;index<bytes.length;index++)bytes[index]=parseInt(value.slice(index*2,index*2+2),16);
+  return bytes;
+}
 export function randomHex(size=32){return hex(crypto.getRandomValues(new Uint8Array(size)));}
 function keyBytes(env){
   if(!/^[a-f0-9]{64}$/.test(env.DATA_ENCRYPTION_KEY||''))throw new HttpError(503,'Secure configuration is not ready.');
@@ -16,9 +30,8 @@ export async function encrypt(env,value){const iv=crypto.getRandomValues(new Uin
   const key=await crypto.subtle.importKey('raw',keyBytes(env),'AES-GCM',false,['encrypt']);
   return hex(iv)+':'+hex(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,encoder.encode(value)));}
 export async function decrypt(env,value){const [ivHex,dataHex]=value.split(':');
-  const parse=s=>Uint8Array.from(s.match(/../g)||[],x=>parseInt(x,16));
   const key=await crypto.subtle.importKey('raw',keyBytes(env),'AES-GCM',false,['decrypt']);
-  return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:parse(ivHex)},key,parse(dataHex)));}
+  return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:fromHex(ivHex)},key,fromHex(dataHex)));}
 export function otp(){const ceiling=Math.floor(0x100000000/1000000)*1000000;let n;
   do{n=crypto.getRandomValues(new Uint32Array(1))[0];}while(n>=ceiling);return String(n%1000000).padStart(6,'0');}
 export async function limit(db,scope,identity,maximum,seconds,now){
@@ -29,6 +42,7 @@ export async function limit(db,scope,identity,maximum,seconds,now){
     .bind(key,now+seconds,now,now).first();
   if(row.count>maximum)throw new HttpError(429,'Too many attempts. Please try again later.');
 }
+export const limitSessionCreation=(db,now)=>limit(db,'session-create-global','all',600,60,now);
 export async function readJson(request,maximum=4096){
   if(!request.headers.get('content-type')?.startsWith('application/json'))throw new HttpError(415,'JSON required.');
   if(Number(request.headers.get('content-length'))>maximum)throw new HttpError(413,'Request too large.');
@@ -46,7 +60,7 @@ export async function session(request,env,now,create=false){
   if(hash)row=await env.DB.prepare('SELECT * FROM sessions WHERE token_hash=? AND expires>?').bind(hash,now).first();
   if(row&&((bearer&&row.csrf_hash!=='mobile-only')||(!bearer&&row.csrf_hash==='mobile-only')))row=null;
   let setCookie;
-  if(!row && create){token=randomHex();hash=await digest(token);const csrf=await mac(env,'csrf:'+token);
+  if(!row && create){await limitSessionCreation(env.DB,now);token=randomHex();hash=await digest(token);const csrf=await mac(env,'csrf:'+token);
     await env.DB.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)')
       .bind(hash,await digest(csrf),now,now+2592000).run();
     row={token_hash:hash,csrf_hash:await digest(csrf),expires:now+2592000};

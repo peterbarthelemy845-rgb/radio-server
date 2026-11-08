@@ -50,3 +50,33 @@ test('occupied short-code pools expand without overwriting any existing radio’
  const reused=await(await f.post('link/start',{stable_pair_code:created.pair_code})).json();
  assert.equal(reused.pair_code,created.pair_code);
 });
+
+test('invalid enrollment attempts cannot consume the authorized daily factory allowance',async()=>{
+ const f=await fixture();
+ const request=(value,ip)=>new Request('https://native.example/api/radio/enroll',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json','CF-Connecting-IP':ip},body:JSON.stringify({radio_id:id,enrollment_token:value})});
+ for(let i=0;i<200;i++)await assert.rejects(deviceRoutes(request('f'.repeat(64),'192.0.2.'+(1+Math.floor(i/50))),f.env,now+61*Math.floor(i/50)),e=>e.status===403);
+ const key='device-enroll-authorized:'+await digest('all');
+ assert.equal(f.sqlite.prepare('SELECT count FROM rate_limits WHERE key=?').get(key),undefined);
+ assert.equal((await deviceRoutes(request(token,'198.51.100.1'),f.env,now+244)).status,200);
+ assert.equal(f.sqlite.prepare('SELECT count FROM rate_limits WHERE key=?').get(key).count,1);
+ await deviceRoutes(request(token,'198.51.100.1'),f.env,now+245);
+ assert.equal(f.sqlite.prepare('SELECT count FROM rate_limits WHERE key=?').get(key).count,1,'idempotent retries do not spend another enrollment');
+});
+
+test('early global and per-IP enrollment abuse limits still reject invalid request storms',async()=>{
+ const f=await fixture();
+ const request=(ip)=>new Request('https://native.example/api/radio/enroll',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json','CF-Connecting-IP':ip},body:JSON.stringify({radio_id:id,enrollment_token:'f'.repeat(64)})});
+ for(let i=0;i<60;i++)await assert.rejects(deviceRoutes(request('192.0.2.'+i),f.env,now),e=>e.status===403);
+ await assert.rejects(deviceRoutes(request('198.51.100.1'),f.env,now),e=>e.status===429);
+ const g=await fixture();
+ for(let i=0;i<60;i++)await assert.rejects(deviceRoutes(request('203.0.113.1'),g.env,now+61*Math.floor(i/30)),e=>e.status===403);
+ await assert.rejects(deviceRoutes(request('203.0.113.1'),g.env,now+122),e=>e.status===429);
+});
+
+test('authorized daily enrollment allowance still limits usable factory tokens without consuming them',async()=>{
+ const f=await fixture(),key='device-enroll-authorized:'+await digest('all');
+ f.sqlite.prepare('INSERT INTO rate_limits(key,count,expires) VALUES (?,200,?)').run(key,now+86400);
+ await assert.rejects(f.post('enroll',{enrollment_token:token}),e=>e.status===429);
+ assert.equal(f.sqlite.prepare('SELECT consumed_at FROM device_enrollments').get().consumed_at,null);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radios').get().n,0);
+});

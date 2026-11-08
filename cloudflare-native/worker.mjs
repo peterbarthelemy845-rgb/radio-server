@@ -8,7 +8,7 @@ import {reportsRoutes,recordListening} from './reports.mjs';
 import {backupRoutes,scheduledBackup,expireBackups} from './backups.mjs';
 import {newsResponse} from './news.mjs';
 // Independent Cloudflare foundation. No Render origin, proxy, or local disk.
-// Only the routes explicitly implemented here are available in this staging build.
+// Only the routes explicitly implemented here are available.
 import {json,digest,randomHex,HttpError,limit,readJson} from './security.mjs';
 export {digest,randomHex,HttpError,limit} from './security.mjs';
 import {authRoutes,processMail} from './owner-auth.mjs';
@@ -18,6 +18,7 @@ import {communityRoutes} from './community.mjs';
 import {authenticate,deviceRoutes} from './devices.mjs';
 import {adsRoutes} from './local-ads.mjs';
 import {inventoryStatements} from './saved-inventory.mjs';
+import {sessionCleanupStatements} from './session-maintenance.mjs';
 async function publicStation(db,code) {
   return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
     'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
@@ -52,10 +53,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(path==='/health' && request.method==='GET') {
     await env.DB.prepare('SELECT 1 AS healthy').first();
     if(env.MEDIA)await env.MEDIA.head('health-probe-does-not-exist');
-    return json({status:'ok',backend:'cloudflare-native',preview:true,
-      private_media_configured:Boolean(env.MEDIA),
-      implemented:['public-directory','station-code-lookup','authenticated-radio-poll','radio-unlink'],
-      cutover_ready:false});
+    return json({status:'ok',backend:'cloudflare-native',preview:env.MIGRATION_PREVIEW!=='false',
+      private_media_configured:Boolean(env.MEDIA)});
   }
   const artwork=path.match(/^\/artwork\/([a-f0-9]{64}\.png)$/);
   if(artwork && request.method==='GET') {
@@ -145,7 +144,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data: https:; media-src 'self' https:; connect-src 'self' https://challenges.cloudflare.com");
     return response;
   }
-  return json({message:'This feature has not migrated yet. This is an isolated test backend.',preview:true},404);
+  return json({message:'Page or feature not found.'},404);
 }
 export async function fetchHandler(request,env,ctx) {
   try{const response=await handle(request,env);
@@ -159,21 +158,14 @@ export async function fetchHandler(request,env,ctx) {
 }
 export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
   await env.DB.batch([
-    env.DB.prepare('DELETE FROM registration_requests WHERE expires<=?').bind(now),
-    env.DB.prepare('DELETE FROM support_ticket_grants WHERE expires<=?').bind(now),
-    env.DB.prepare('DELETE FROM radio_control_claims WHERE claim_id IN (SELECT id FROM pair_claims WHERE expires<?)').bind(now-7*86400),
-    env.DB.prepare('DELETE FROM support_status_verifications WHERE expires<=?').bind(now),
     env.DB.prepare("UPDATE mail_outbox SET state='failed',encrypted_payload='',lease=0 WHERE expires<=? AND state!='sent'").bind(now),
-    env.DB.prepare("UPDATE email_verifications SET code_hash='' WHERE expires<=? OR consumed_at IS NOT NULL").bind(now),
     env.DB.prepare('DELETE FROM rate_limits WHERE expires<?').bind(now),
     env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE state='waiting' AND expires<=?").bind(now),
     env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE state IN ('pending','delivered') AND expires<=?").bind(now),
     env.DB.prepare(`UPDATE radio_commands SET state='failed' WHERE state IN ('pending','delivered')
       AND NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=radio_commands.radio_id AND p.session_hash=radio_commands.session_hash AND p.expires>?)`).bind(now),
-    env.DB.prepare('DELETE FROM radio_control_grants WHERE expires<=?').bind(now),
-    env.DB.prepare('DELETE FROM phone_radios WHERE expires<=?').bind(now),
     env.DB.prepare("UPDATE radio_control_commands SET state='expired' WHERE expires<=? AND state IN ('pending','delivered')").bind(now),
-    env.DB.prepare('DELETE FROM radio_control_commands WHERE expires<?').bind(now-7*86400),
+    ...sessionCleanupStatements(env,now),
     env.DB.prepare('DELETE FROM radio_telemetry WHERE reported_at<?').bind(now-86400),
     env.DB.prepare('DELETE FROM share_events WHERE created_at<?').bind(now-93*86400),
     env.DB.prepare('DELETE FROM ad_receipts WHERE expires<?').bind(now-86400),

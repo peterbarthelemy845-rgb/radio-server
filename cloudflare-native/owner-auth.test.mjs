@@ -243,3 +243,25 @@ test('verified owner sees private current cover art even pending review; other s
  const other=await authRoutes(new Request(host+'/api/session'),f.env,now);const cookie=other.headers.get('set-cookie').split(';')[0];await assert.rejects(authRoutes(new Request(host+'/api/owner/artwork',{headers:{Cookie:cookie}}),f.env,now),e=>e.status===401);
  await assert.rejects(authRoutes(ownerRequest('/api/owner/artwork'),f.env,now+1800),e=>e.status===401);
 });
+
+
+test('an artwork edit cannot undo a station suspension or removal while image processing is in flight',async()=>{
+ for(const status of ['suspended','deleted']){
+  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+  const station=f.sqlite.prepare('SELECT code,bio,stream_url,artwork_key FROM stations').get();
+  f.env.IMAGES.info=async()=>{f.sqlite.prepare('UPDATE stations SET status=?,updated_at=? WHERE code=?').run(status,now+1,station.code);return {width:1,height:1};};
+  await assert.rejects(f.post('/api/owner/station',{stream_url:'https://example.com/changed',bio:'A racing edit',artwork:f.registration.artwork}),e=>e.status===409);
+  const saved=f.sqlite.prepare('SELECT status,bio,stream_url,artwork_key FROM stations').get();
+  assert.equal(saved.status,status);assert.equal(saved.bio,station.bio);assert.equal(saved.stream_url,station.stream_url);assert.equal(saved.artwork_key,station.artwork_key);
+ }
+});
+
+test('concurrent owner edits do not overwrite a newer saved revision within the same second',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+ let release,started;const waiting=new Promise(resolve=>{release=resolve;}),processing=new Promise(resolve=>{started=resolve;});
+ f.env.IMAGES.info=async()=>{started();await waiting;return {width:1,height:1};};
+ const first=f.post('/api/owner/station',{stream_url:'https://example.com/older',bio:'Older artwork request',artwork:f.registration.artwork});await processing;
+ const newer=await f.post('/api/owner/station',{stream_url:'https://example.com/newer',bio:'Newest request'});assert.equal(newer.status,200);
+ release();await assert.rejects(first,e=>e.status===409);
+ const saved=f.sqlite.prepare('SELECT stream_url,bio FROM stations').get();assert.equal(saved.stream_url,'https://example.com/newer');assert.equal(saved.bio,'Newest request');
+});
