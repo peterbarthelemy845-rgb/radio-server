@@ -2,6 +2,7 @@
 // Translations are bundled locally. Station names, bios, messages and form values
 // are user content and are never sent to a translation service or rewritten.
 const appEnglish={
+ 'auth.createTab':'Create your station','auth.account':'Station account',
  'radio':'Radio','support':'Support','larger':'Larger text','standard':'Standard text','language':'Language',
  'device':'Device Code','connect':'Connect my radio','unlink':'Unlink radio','online':'Online','unavailable':'Status unavailable',
  'connectHint':'Enter your Device Code, then approve on the radio.','codePlaceholder':'Code on your radio screen',
@@ -25,6 +26,7 @@ const appEnglish={
  'supportStatus.title':'My support ticket','supportStatus.intro':'View your ticket status and replies. Verify your email when using another browser.','supportStatus.reference':'Ticket reference','supportStatus.email':'Email used for this ticket','supportStatus.sendCode':'Email me a private code','supportStatus.verifyTitle':'Verify your email','supportStatus.verifyHelp':'If the email and ticket reference match, a private code will arrive shortly. Enter the 6-digit code here. It expires in 15 minutes.','supportStatus.emailCode':'6-digit email code','supportStatus.verifyButton':'Verify and open ticket','supportStatus.cancel':'Cancel','supportStatus.open':'Open','supportStatus.review':'In review','supportStatus.closed':'Closed','supportStatus.loading':'Checking ticket status…','supportStatus.original':'Your message','supportStatus.replies':'Support replies','supportStatus.noReplies':'No reply yet. Your ticket status will update here.','supportStatus.checked':'Checked','supportStatus.refresh':'Refresh status','supportStatus.closePrivate':'Close private ticket'
 };
 const appCreole={
+ 'auth.createTab':'Kreye estasyon ou','auth.account':'Kont estasyon',
  'radio':'Radyo','support':'Sipò','larger':'Pi gwo tèks','standard':'Tèks nòmal','language':'Lang',
  'device':'Kòd aparèy','connect':'Konekte radyo mwen','unlink':'Dekonekte radyo a','online':'Konekte','unavailable':'Estati a pa disponib',
  'connectHint':'Antre kòd aparèy ki sou radyo a, epi apwouve sou radyo a.','codePlaceholder':'Kòd ki sou ekran radyo a',

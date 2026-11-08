@@ -29,9 +29,7 @@ window.addEventListener('radio-locals-ready',list);
 window.addEventListener('radio-selection-changed',list);
 window.addEventListener('radio-inventory-changed',event=>{if(event.detail.radioId===readSelectedRadio())list();});
 
-// Match registration and sign-in to the compact white owner card.
-$('register').append($('openLogin'));$('login').append($('openRegister'));
-$('login').querySelector('h1').innerHTML='Sign in<small>Edit your station</small>';
+// Owner account navigation stays beside Sign in, above both forms.
 const coverInput=$('registerForm').elements.artwork,coverPreview=$('registrationLogoPreview'),coverHint=$('registrationLogoHint'),coverRemove=$('removeRegistrationLogo');
 let coverPreviewUrl,coverGeneration=0,coverCurrentResult;
 const coverInspections=new WeakMap();
