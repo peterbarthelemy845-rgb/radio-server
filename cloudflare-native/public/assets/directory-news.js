@@ -32,12 +32,12 @@ window.addEventListener('radio-inventory-changed',event=>{if(event.detail.radioI
 // Match registration and sign-in to the compact white owner card.
 $('register').append($('openLogin'));$('login').append($('openRegister'));
 $('login').querySelector('h1').innerHTML='Sign in<small>Edit your station</small>';
-const coverInput=$('registerForm').elements.artwork,coverLabel=coverInput.closest('label');
-const coverRow=document.createElement('div');coverRow.className='cover-upload';
-const coverPreview=document.createElement('img');coverPreview.className='cover-preview';coverPreview.alt='No logo uploaded yet';coverPreview.src='/assets/logo-placeholder.svg';
-const coverHint=document.createElement('span');coverHint.className='cover-hint';coverHint.textContent='No logo uploaded yet';coverInput.before(coverHint);coverRow.append(coverPreview,coverLabel);$('registerForm').prepend(coverRow);
+const coverInput=$('registerForm').elements.artwork,coverPreview=$('registrationLogoPreview'),coverHint=$('registrationLogoHint'),coverRemove=$('removeRegistrationLogo');
 let coverPreviewUrl;
-coverInput.addEventListener('change',()=>{if(coverPreviewUrl)URL.revokeObjectURL(coverPreviewUrl);const file=coverInput.files[0];if(file){coverPreviewUrl=URL.createObjectURL(file);coverPreview.src=coverPreviewUrl;coverPreview.alt='Station cover preview';coverHint.textContent='Selected logo';}else{coverPreview.src='/assets/logo-placeholder.svg';coverPreview.alt='No logo uploaded yet';coverHint.textContent='No logo uploaded yet';}});
+function updateRegistrationLogo(){if(coverPreviewUrl){URL.revokeObjectURL(coverPreviewUrl);coverPreviewUrl=null;}const file=coverInput.files[0];if(file){coverPreviewUrl=URL.createObjectURL(file);coverPreview.src=coverPreviewUrl;coverPreview.alt='Station cover preview';}else{coverPreview.src='/assets/logo-placeholder.svg';coverPreview.alt='No logo uploaded yet';}coverRemove.disabled=!file;}
+coverInput.addEventListener('change',updateRegistrationLogo);
+coverRemove.onclick=()=>{coverInput.value='';updateRegistrationLogo();$('registerForm').dataset.dirty='1';coverInput.dispatchEvent(new Event('input',{bubbles:true}));};
+$('registerForm').addEventListener('reset',()=>queueMicrotask(updateRegistrationLogo));
 
 function highlightMenu(){const active=(!$('myRadio').hidden||!$('wifiSetup').hidden)?'navRadio':!$('library').hidden?'navLibrary':!$('support').hidden?'support':'navAdd';for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){if(tab.id===active||(active==='support'&&tab.getAttribute('href')==='/support'))tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');}}
 new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attributes:true,attributeFilter:['hidden'],subtree:true});highlightMenu();

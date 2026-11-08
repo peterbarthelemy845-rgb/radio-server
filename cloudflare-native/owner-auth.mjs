@@ -1,20 +1,11 @@
+import {publicStreamUrl} from './public-stream-url.mjs';
 import {HttpError,json,digest,randomHex,mac,otp,encrypt,decrypt,limit,readJson,session,browserWrite,human} from './security.mjs';
 import {screenStation} from './moderation.mjs';
 const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
 const emailPattern=/^[^\s@\r\n]{1,64}@[^\s@\r\n]+\.[^\s@\r\n]+$/;
 const mask=email=>email[0]+'***@'+email.split('@')[1];
-export function streamUrl(value){
-  if(typeof value!=='string'||value.length>2048)throw new HttpError(400,'Enter a valid stream URL.');
-  let url;try{url=new URL(value);}catch{throw new HttpError(400,'Enter a valid stream URL.');}
-  const host=url.hostname.toLowerCase();
-  // No server-side fetch is performed. Local addresses and credentials are still
-  // rejected so station codes cannot be used as an easy local-network shortcut.
-  if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.hash||
-    !host.includes('.')||host==='localhost'||host.endsWith('.local')||host.endsWith('.localhost')||
-    host.startsWith('[')||/^\d+(\.\d+){3}$/.test(host))throw new HttpError(400,'Use a public stream hostname.');
-  return url.href;
-}
+export function streamUrl(value){return publicStreamUrl(value);}
 export async function artwork(env,file){
   if(!env.IMAGES||!env.MEDIA)throw new HttpError(503,'Artwork processing is not ready.');
   if(!file||typeof file.base64!=='string'||file.base64.length>4194304||typeof file.name!=='string')

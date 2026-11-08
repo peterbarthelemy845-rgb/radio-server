@@ -1,0 +1,47 @@
+/* Compact owner registration, using the same white card and radio branding. */
+#register.station-register{padding:16px;border-radius:15px;position:relative;overflow:hidden}
+#register.station-register::before{content:'';position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(100deg,#17c5f3,#0566e5,#2746cf)}
+#register .registration-heading{text-align:center;padding:0 0 10px;margin-bottom:8px;border-bottom:1px solid #e2eaf6}
+#register .register-brand-logo{display:block;width:80px;height:80px;object-fit:contain;margin:0 auto 8px;padding:10px;border:5px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 6px 14px #1675e725}
+#register .registration-heading h1{font-size:22px;margin:0 0 5px;line-height:1.2}
+#register .registration-heading p{font-size:12px;line-height:1.4;color:#617694;margin:0}
+#register .cover-upload{display:flex;gap:10px;align-items:center;padding:0 0 10px;margin:0 0 8px;border-bottom:1px solid #e2eaf6}
+#register .cover-upload .cover-preview{width:64px;height:64px;object-fit:contain;flex:0 0 64px;background:#eef5ff;border-radius:10px}
+#register .cover-upload-fields{min-width:0;flex:1}
+#register .cover-upload label{margin:0;font-size:12px}
+#register .cover-hint{display:block;margin:3px 0 6px;color:#617694;font-size:10px;line-height:1.35}
+#register .cover-actions{display:flex;align-items:center;gap:6px;min-width:0}
+#register .cover-actions input{min-width:0;flex:1;width:100%;padding:0;border:0;margin:0;font-size:10px;background:transparent;min-height:34px}
+#register .cover-actions input::file-selector-button{padding:8px;margin-right:5px;font-size:11px}
+#register .cover-actions button{min-height:34px;flex-shrink:0;padding:7px 9px;margin:0;font-size:11px;border-radius:7px}
+#register label{font-size:12px;margin-top:8px;color:#233a5b}
+#register input:not([type=checkbox]):not([type=file]),#register select,#register textarea{min-height:40px;padding:8px 10px;margin-top:4px;font-size:16px;line-height:1.25;border:1px solid #d2e0f2;background:#fbfcff;border-radius:7px}
+#register .stream-connection{border:0;min-width:0;padding:0;margin:10px 0 0}
+#register .stream-connection legend{padding:0;margin:0 0 5px;font-size:12px;font-weight:700;color:#233a5b}
+#register .connection-methods{display:grid;grid-template-columns:1fr 1fr;padding:3px;gap:4px;border:1px solid #d2e0f2;border-radius:9px;background:#f0f5fe}
+#register .connection-methods button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:34px;background:transparent;color:#4b6483;font-size:12px;border-radius:6px;padding:7px 5px}
+#register .connection-methods button[aria-pressed=true]{background:#0863df;color:white;box-shadow:0 2px 5px #0863df20}
+#register .connection-methods small{font-size:9px;font-weight:400;opacity:.85}
+#register .stream-address-fields{margin-top:8px;padding:10px;border:1px solid #dce7f6;border-radius:9px;background:#f7faff}
+#register .stream-address-fields>label:first-child{margin-top:0}
+#register .stream-port-protocol,#register .registration-details{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+#register .stream-port-protocol>label,#register .registration-details>label{min-width:0}
+#register .generated-stream{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 8px;align-items:center;margin-top:10px;font-size:11px;color:#617694}
+#register .generated-stream>span{grid-column:1/-1}
+#register .generated-stream output{overflow-wrap:anywhere;line-height:1.4;color:#233a5b;min-width:0}
+#register #copyGeneratedStream{min-height:34px;padding:7px 9px;margin:0;font-size:11px}
+#register .stream-test-row{display:flex;align-items:center;gap:9px;margin-top:8px}
+#register #testStream{min-height:36px;margin:0;padding:8px 12px;font-size:12px;background:#e6effd;color:#1553a5}
+#register .stream-test-row>span{font-size:10px;line-height:1.4;color:#617694}
+#register #streamTestStatus{font-size:12px;line-height:1.45;margin:8px 0 0;overflow-wrap:anywhere}
+#register #streamTestStatus:empty,#register .human:empty{margin:0}
+#register #streamTestStatus[data-state=success]{color:#177347}
+#register #streamTestStatus[data-state=invalid],#register #streamTestStatus[data-state=error]{color:#a22832}
+#register #streamTestStatus[data-state=unconfirmed]{color:#795215}
+#register .registration-details textarea{min-height:54px;height:54px}
+#register .check{margin-top:10px;padding:8px;background:#f0f6ff;font-size:11px;line-height:1.45;border-radius:7px}
+#register .check input{margin:0;width:20px;height:20px;min-height:20px}
+#register .check a{color:#1258b7}
+#register #registerForm>button[type=submit]{min-height:42px;font-size:14px;padding:10px;margin-top:10px;background:#0863df;border-radius:7px}
+#register>#openLogin{min-height:36px;margin-top:8px;padding:8px;font-size:12px}
+@media(max-width:420px){#register .registration-details{grid-template-columns:minmax(0,1fr);gap:0}#register .registration-heading h1{font-size:21px}#register .cover-actions{flex-wrap:wrap}#register .cover-actions input{flex-basis:160px}#register .cover-actions button{min-height:32px;padding:6px 8px}}

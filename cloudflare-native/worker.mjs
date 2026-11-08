@@ -1,3 +1,4 @@
+import {streamCheckRoutes} from './stream-check.mjs';
 import {supportStatusRoutes} from './support-status.mjs';
 import {controlRoutes,telemetryStatements,approvalStatements,pollControls,revokeControlStatements} from './radio-controls.mjs';
 import {supportRoutes} from './admin-support.mjs';
@@ -29,6 +30,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   }
   if(path==='/api/haitian-times'&&request.method==='GET')return newsResponse(request);
   const mobileResponse=await mobileRoutes(request,env,now);if(mobileResponse)return mobileResponse;
+  const streamCheckResponse=await streamCheckRoutes(request,env,now);if(streamCheckResponse)return streamCheckResponse;
   const ownerResponse=await authRoutes(request,env,now);
   if(ownerResponse)return ownerResponse;
   const controlResponse=await controlRoutes(request,env,now);if(controlResponse)return controlResponse;

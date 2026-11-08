@@ -100,3 +100,11 @@ Support ticket status is limited to browser-bound 30-minute grants. New submissi
 English/Haitian Creole interface strings and guide captions are bundled locally. No translation API receives user content. Station names, bios and private messages remain unchanged. The selected language is a nonsensitive local preference; legal source pages and existing email templates remain English.
 
 For every future UI release, bump APP_RELEASE in public/assets/app-update.js and the matching public/assets/app-release.json version together. Old open pages check periodically and on resume. A notice never forces a reload; unfinished forms, dialogs and active radio requests disable Refresh until the work is finished. Only public search/scroll can cross a deliberate safe refresh. This postpones an update rather than storing private form drafts.
+
+## Station registration and optional stream checking
+
+The compact registration card defaults to Stream URL. Its Advanced IP / Port builder only composes the canonical stream_url field; public IPv4 and public hostnames can be saved, while private, loopback, reserved and credential-bearing addresses are rejected. PNG/JPG/WebP logo uploads remain limited to 3 MB and four megapixels, with the existing normalization, screening and email-verification flow.
+
+POST /api/owner/stream-check requires browser CSRF, per-session/IP/global early limits and Turnstile action stream-check. It does not play audio or gate Save. Keep compatibility_flags global_fetch_strictly_public and STREAM_CHECK_PUBLIC_FETCH=true together; the latter is an explicit deployment attestation and the route fails closed without it. Only public global fetch is used, never a service/VPC binding. Requests send no user headers, revalidate at most two redirects, reject own-host and HTTPS downgrades, and cancel after six seconds or an 8 KiB sample. Audio framing plus response type can confirm an audio response; it cannot certify playback on a physical radio. Public numeric IP streams remain saveable, but optional automatic testing is not supported for them by Workers fetch. No upstream body or provider error is returned or stored.
+
+Public-fetch routing requirement: https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public

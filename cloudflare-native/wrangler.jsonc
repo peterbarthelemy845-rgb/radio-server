@@ -4,6 +4,7 @@
   "account_id": "ab18d3ad3112c3800a5e35005fcc31d9",
   "main": "worker.mjs",
   "compatibility_date": "2026-11-02",
+  "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": true,
   "d1_databases": [{
     "binding": "DB",
@@ -15,6 +16,6 @@
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "radio-locals-private-media"}],
   "images": {"binding": "IMAGES"},
   "assets": {"directory": "public", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none"},
-  "vars": {"PUBLIC_ORIGIN": "https://radiolocals.com", "MIGRATION_PREVIEW": "false", "TURNSTILE_SITE_KEY": "0x4AAAAAAFuFAAOfKstrRUVF", "ADMIN_EMAIL": "peterbarthelemy.mbmc@icloud.com"},
+  "vars": {"STREAM_CHECK_PUBLIC_FETCH": "true", "PUBLIC_ORIGIN": "https://radiolocals.com", "MIGRATION_PREVIEW": "false", "TURNSTILE_SITE_KEY": "0x4AAAAAAFuFAAOfKstrRUVF", "ADMIN_EMAIL": "peterbarthelemy.mbmc@icloud.com"},
   "triggers": {"crons": ["* * * * *"]}
 }
