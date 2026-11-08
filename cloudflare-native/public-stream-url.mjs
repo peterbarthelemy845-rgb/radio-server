@@ -17,8 +17,10 @@ function publicIPv4(host){
 }
 export function publicStreamUrl(value){
  const invalid=()=>new HttpError(400,'Use a public HTTP or HTTPS stream URL without sign-in details.');
- if(typeof value!=='string'||!value||value.length>2048||/[\u0000-\u0020\u007f\\]/.test(value))throw invalid();
+ // Firmware stores at most 1,024 bytes; URL.href is ASCII after encoding.
+ if(typeof value!=='string'||!value||value.length>1024||/[\u0000-\u0020\u007f\\]/.test(value))throw invalid();
  let url;try{url=new URL(value);}catch{throw invalid();}
+ if(url.href.length>1024)throw invalid();
  const host=url.hostname.toLowerCase();
  if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.hash||!host||host.endsWith('.')||host.startsWith('[')||url.port==='0')throw invalid();
  if(isIPv4(host)){if(!publicIPv4(host))throw invalid();}

@@ -20,6 +20,17 @@ test('saved URL validation allows public hostnames and public IPv4 with ports wh
  for(const url of ['file:///etc/passwd','ftp://stream.example.com/live','https://owner:secret@stream.example.com/live','https://stream.example.com/#secret','http://localhost/live','http://[::1]/live','http://[::ffff:8.8.8.8]/live','http://station.local/live','http://station.internal/live','http://metadata.google.internal/','http://host.home.arpa/','http://station.test/live','http://station.example/live','http://stream.example.com./live','http://stream.example.com:0/live','https://stream.example.com/\nlive','https://stream.example.com\\@localhost/live'])
   assert.throws(()=>publicStreamUrl(url),e=>e.status===400,url);
 });
+
+test('stored stream URLs fit the radio 1024-byte limit after URL normalization',()=>{
+ const prefix='https://stream.example.com/';
+ const maximum=prefix+'a'.repeat(1024-prefix.length);
+ assert.equal(publicStreamUrl(maximum),maximum);
+ assert.throws(()=>publicStreamUrl(maximum+'a'),e=>e.status===400);
+ // Short Unicode input expands into a longer percent-encoded address.
+ const encodedBoundary=prefix+'a'.repeat(1024-prefix.length-6)+'é';
+ assert.equal(publicStreamUrl(encodedBoundary).length,1024);
+ assert.throws(()=>publicStreamUrl(encodedBoundary+'a'),e=>e.status===400);
+});
 test('route and browser CSRF are checked before any human verifier or stream request',async()=>{
  const f=await fixture();let external=0;const deps={human:async()=>{external++;},fetch:async()=>{external++;}};
  assert.equal(await streamCheckRoutes(new Request(origin+'/api/owner/other'),f.env,f.now,deps),null);

@@ -18,13 +18,15 @@
 #register input:not([type=checkbox]):not([type=file]),#register select,#register textarea{min-height:40px;padding:8px 10px;margin-top:4px;font-size:16px;line-height:1.25;border:1px solid #d2e0f2;background:#fbfcff;border-radius:7px}
 #register .stream-connection{border:0;min-width:0;padding:0;margin:10px 0 0}
 #register .stream-connection legend{padding:0;margin:0 0 5px;font-size:12px;font-weight:700;color:#233a5b}
+#register .registration-stream-url{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+#register #streamUrlInput{min-width:0;margin:0}
+#register .registration-url-help{font-size:11px;line-height:1.4;color:#617694;margin:5px 0 0}
+#register .stream-manual-setup{margin:8px 0 0}
+#register .stream-manual-setup>summary{font-size:12px;font-weight:700;color:#1553a5;cursor:pointer;padding:7px 0}
 #register .stream-address-fields{padding:10px;border:1px solid #dce7f6;border-radius:9px;background:#f7faff}
 #register .stream-address-fields>label:first-child{margin-top:0}
 #register .stream-port-protocol,#register .registration-details{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 #register .stream-port-protocol>label,#register .registration-details>label{min-width:0}
-#register .generated-stream{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 8px;align-items:center;margin-top:10px;font-size:11px;color:#617694}
-#register .generated-stream>label{grid-column:1/-1;margin:0}
-#register #streamUrlInput{min-width:0;margin:0;background:#edf3fc;color:#233a5b;font-size:12px}
 #register #copyGeneratedStream{min-height:34px;padding:7px 9px;margin:0;font-size:11px}
 #register .stream-test-row{display:flex;align-items:center;gap:9px;margin-top:8px}
 #register #testStream{min-height:36px;margin:0;padding:8px 12px;font-size:12px;background:#e6effd;color:#1553a5}
