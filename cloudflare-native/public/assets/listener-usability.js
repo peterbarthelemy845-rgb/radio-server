@@ -37,8 +37,16 @@ const listenerDialogActions=document.createElement('div');listenerDialogActions.
 const listenerDialogCancel=document.createElement('button');listenerDialogCancel.type='button';listenerDialogCancel.className='secondary';listenerDialogCancel.textContent='Cancel';listenerDialogCancel.onclick=()=>listenerDialog.close('cancelled');
 const listenerDialogConfirm=document.createElement('button');listenerDialogConfirm.type='button';listenerDialogConfirm.onclick=()=>listenerDialog.close('confirmed');
 listenerDialogActions.append(listenerDialogCancel,listenerDialogConfirm);listenerDialog.append(listenerDialogTitle,listenerDialogText,listenerDialogActions);document.body.append(listenerDialog);
+let listenerDialogPending=false;
 function listenerActionDialog(title,text,confirmLabel='Done',allowCancel=false){
- return new Promise(resolve=>{listenerDialogTitle.textContent=title;listenerDialogText.textContent=text;listenerDialogCancel.hidden=!allowCancel;listenerDialogConfirm.textContent=confirmLabel;listenerDialogConfirm.className=allowCancel?'listener-dialog-confirm':'listener-dialog-done';listenerDialog.returnValue='';listenerDialog.addEventListener('close',()=>resolve(listenerDialog.returnValue==='confirmed'),{once:true});listenerDialog.showModal();(allowCancel?listenerDialogCancel:listenerDialogConfirm).focus();});
+ // A background completion must never replace an active approval prompt or
+ // inherit its answer. Keep ownership until the browser delivers close.
+ if(listenerDialogPending)return Promise.resolve(false);listenerDialogPending=true;
+ return new Promise((resolve,reject)=>{
+  const closed=()=>{listenerDialogPending=false;resolve(listenerDialog.returnValue==='confirmed');};
+  listenerDialogTitle.textContent=title;listenerDialogText.textContent=text;listenerDialogCancel.hidden=!allowCancel;listenerDialogConfirm.textContent=confirmLabel;listenerDialogConfirm.className=allowCancel?'listener-dialog-confirm':'listener-dialog-done';listenerDialog.returnValue='';listenerDialog.addEventListener('close',closed,{once:true});
+  try{listenerDialog.showModal();(allowCancel?listenerDialogCancel:listenerDialogConfirm).focus();}catch(error){listenerDialog.removeEventListener('close',closed);listenerDialogPending=false;reject(error);}
+ });
 }
 const draftForms=['registerForm','editForm','ticketForm','advertiseForm'];for(const id of draftForms){const form=$(id);form.addEventListener('input',()=>form.dataset.dirty='1');form.addEventListener('reset',()=>delete form.dataset.dirty);}
 function visibleDrafts(){return draftForms.map($).filter(form=>form.dataset.dirty&&form.getClientRects().length);}

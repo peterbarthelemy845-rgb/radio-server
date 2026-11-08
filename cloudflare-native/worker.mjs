@@ -87,7 +87,9 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     const body=await readJson(request), id=await authenticate(request,env.DB,body);
     await limit(env.DB,'radio-poll',id,12,60,now);
     const statements=[env.DB.prepare('UPDATE radios SET last_seen=? WHERE id=?').bind(now,id),
-      ...await inventoryStatements(env,id,body,now),...telemetryStatements(env,id,body,now)];
+      ...await inventoryStatements(env,id,body,now),...telemetryStatements(env,id,body,now),
+      env.DB.prepare(`UPDATE pair_claims SET state='expired' WHERE radio_id=? AND state='waiting'
+        AND (expires<=? OR NOT EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=pair_claims.session_hash AND s.expires>?))`).bind(id,now,now)];
     const ack=body.ack_id,result=body.ack_status;
     if(typeof ack==='string' && /^[0-9a-f]{32}$/.test(ack) && ['added','failed'].includes(result))
       statements.push(env.DB.prepare(`UPDATE radio_commands SET state=? WHERE id=? AND radio_id=?
@@ -107,7 +109,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     await recordListening(env,id,body.playing_station_code,now);
     if(decisionAck)claimResult=(await env.DB.prepare('SELECT state FROM pair_claims WHERE id=? AND radio_id=?').bind(claim,id).first())?.state||'';
     const pair=await env.DB.prepare(`SELECT c.id,c.confirmation_code,EXISTS(SELECT 1 FROM radio_control_claims sc WHERE sc.claim_id=c.id) AS control_scope FROM pair_claims c
-      WHERE c.radio_id=? AND c.state='waiting' AND c.expires>? ORDER BY c.created_at DESC LIMIT 1`).bind(id,now).first();
+      WHERE c.radio_id=? AND c.state='waiting' AND c.expires>?
+      AND EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=c.session_hash AND s.expires>?) ORDER BY c.created_at DESC LIMIT 1`).bind(id,now,now).first();
     // Lease and choose in one statement; duplicate polls cannot claim the same command concurrently.
     const command=await env.DB.prepare(`UPDATE radio_commands SET state='delivered',lease=? WHERE id=(
       SELECT c.id FROM radio_commands c JOIN stations s ON s.code=c.station_code

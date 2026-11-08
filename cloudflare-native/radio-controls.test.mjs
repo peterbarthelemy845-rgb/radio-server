@@ -2,9 +2,9 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {operationsFixture} from './operations-fixture.mjs';
 import {handle} from './worker.mjs';
-import {controlRoutes,pollControls} from './radio-controls.mjs';
+import {controlRoutes,pollControls,approvalStatements} from './radio-controls.mjs';
 import {phoneRoutes} from './phone-link.mjs';
-import {digest} from './security.mjs';
+import {digest,mac} from './security.mjs';
 import {createBackup,restoreBackup} from './backups.mjs';
 
 const radio='a'.repeat(32),other='c'.repeat(32),secret='b'.repeat(64),origin='https://radiolocals.com';
@@ -60,6 +60,56 @@ test('a reset or session expiry before the atomic control-claim write cannot que
   assert.equal(f.sqlite.prepare('SELECT count(*) n FROM pair_claims').get().n,0,change);
   assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_control_claims').get().n,0,change);
   const polled=await f.poll(f.telemetry);assert.equal(polled.pair_claim_id,'');assert.equal(polled.control_command_id,'');
+ }
+});
+
+test('physical approval cannot create or renew a grant after the initiating session expires',async()=>{
+ for(const scope of ['add','control']){
+  const f=await fixture();let claim;
+  if(scope==='add'){
+   f.sqlite.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').run(f.hash,radio);
+   f.sqlite.prepare('INSERT INTO radio_pairs(radio_id,code_hash,expires) VALUES (?,?,0)').run(radio,await mac(f.env,'device-code:1234'));
+   claim=await(await phoneRoutes(f.request('/api/phone/claim',{device_code:'1234'}),f.env,f.now,{human:async()=>{}})).json();
+  }else{
+   await f.poll(f.telemetry);claim=await f.post('/authorize',{radio_id:radio});
+  }
+  f.sqlite.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').run(f.now+1,f.hash);
+  const result=await f.poll({...f.telemetry,pair_claim_id:claim.claim_id,pair_decision:'approve',pair_scope:scope},f.now+2);
+  assert.equal(result.claim_result,'expired',scope);assert.equal(result.pair_claim_id,'',scope);
+  assert.equal(f.sqlite.prepare('SELECT state FROM pair_claims WHERE id=?').get(claim.claim_id).state,'expired',scope);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_control_grants').get().n,0,scope);
+  const base=f.sqlite.prepare('SELECT expires FROM phone_radios WHERE session_hash=? AND radio_id=?').get(f.hash,radio);
+  if(scope==='add')assert.equal(base,undefined);
+  else assert.equal(base.expires,f.now+1800,'an expired control claim cannot extend its older base grant');
+  await assert.rejects(phoneRoutes(f.request('/api/phone/radios'),f.env,f.now+2),e=>e.status===401);
+ }
+});
+
+test('an expired-session control claim is retired even if a legacy radio cannot approve its control scope',async()=>{
+ const f=await fixture();await f.poll(f.telemetry);const claim=await f.post('/authorize',{radio_id:radio});
+ f.sqlite.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').run(f.now+1,f.hash);
+ const result=await f.poll({pair_claim_id:claim.claim_id,pair_decision:'approve'},f.now+2);
+ assert.equal(result.claim_result,'expired');assert.equal(result.pair_claim_id,'');
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_control_grants').get().n,0);
+});
+
+test('live-session physical denial retains an accurate denied result',async()=>{
+ const f=await fixture();await f.poll(f.telemetry);const claim=await f.post('/authorize',{radio_id:radio});
+ const result=await f.poll({...f.telemetry,pair_claim_id:claim.claim_id,pair_decision:'deny',pair_scope:'control'},f.now+1);
+ assert.equal(result.claim_result,'denied');assert.equal(result.pair_claim_id,'');
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_control_grants').get().n,0);
+});
+
+test('the approval transaction independently rejects an expired initiating session for both claim scopes',async()=>{
+ for(const scope of ['add','control']){
+  const f=await fixture(),claim='d'.repeat(32);
+  f.sqlite.prepare('INSERT INTO pair_claims VALUES (?,?,?,?,?,?,?)').run(claim,radio,f.hash,'1234','waiting',f.now+180,f.now);
+  if(scope==='control')f.sqlite.prepare('INSERT INTO radio_control_claims VALUES (?)').run(claim);
+  f.sqlite.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').run(f.now,f.hash);
+  await f.env.DB.batch(approvalStatements(f.env,radio,claim,'approve',{pair_scope:scope,remote_control_version:1},f.now+1));
+  assert.equal(f.sqlite.prepare('SELECT state FROM pair_claims WHERE id=?').get(claim).state,'expired',scope);
+  assert.equal(f.sqlite.prepare('SELECT expires FROM phone_radios WHERE session_hash=? AND radio_id=?').get(f.hash,radio).expires,f.now+1800,scope);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_control_grants').get().n,0,scope);
  }
 });
 test('commands are absolute, bounded, deduplicated, leased and acknowledged only by their radio',async()=>{

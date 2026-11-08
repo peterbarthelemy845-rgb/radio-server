@@ -1,7 +1,21 @@
 'use strict';
 let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0,radioPairingBusy=false,radioPairingGeneration=0;
+const radioUnlinkPending=new Set();
 function cancelRadioPairing(){radioPairingGeneration++;if(radioPairingBusy){radioPairingBusy=false;busy($('connectRadioForm'),false);}}
 function currentRadioPairing(generation){return generation===radioPairingGeneration&&!$('myRadio').hidden;}
+async function unlinkMyRadio(radioId,deviceLabel,unlink){
+ const generation=radioViewGeneration,current=()=>generation===radioViewGeneration&&!$('myRadio').hidden&&!document.hidden;
+ if(!current()||radioUnlinkPending.has(radioId)||radioCardViews.get(radioId)?.unlink!==unlink)return;
+ radioUnlinkPending.add(radioId);unlink.disabled=true;
+ try{
+  if(!await listenerActionDialog('Unlink radio?',deviceLabel+' will be disconnected from this phone. You can connect it again with approval on the radio.','Unlink radio',true)||!current()||!radioCardViews.has(radioId))return;
+  await api('/api/phone/unlink',{radio_id:radioId});
+  if(readSelectedRadio()===radioId)rememberSelectedRadio('');radioInventories.delete(radioId);
+  const showFeedback=current(),updatedGeneration=++radioViewGeneration;radioViewSnapshot='';
+  if(showFeedback){await loadMyRadios(true);if(updatedGeneration===radioViewGeneration&&!$('myRadio').hidden&&!document.hidden)await listenerActionDialog('Radio unlinked',deviceLabel+' is no longer linked to this phone.');}
+ }catch(e){if(current())$('radioConnectStatus').textContent=e.message;}
+ finally{radioUnlinkPending.delete(radioId);unlink.disabled=false;const replacement=radioCardViews.get(radioId)?.unlink;if(replacement)replacement.disabled=false;}
+}
 const radioCardViews=new Map(),radioFreshness=document.createElement('p');radioFreshness.id='radioFreshness';radioFreshness.className='radio-freshness';radioFreshness.hidden=true;radioFreshness.setAttribute('aria-live','off');$('radioConnectStatus').before(radioFreshness);
 function checkedRadioTime(){return radioLastChecked?new Date(radioLastChecked).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';}
 function showRadioFreshness(available){radioFreshness.hidden=false;radioFreshness.textContent=radioLastChecked?(available?'Checked ':'Last checked ')+checkedRadioTime():available?'Status checked.':'Status has not been checked.';}
@@ -30,8 +44,8 @@ async function loadMyRadios(silent=false){
   for(const radio of result.radios){
    const radioId=String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),card=document.createElement('article'),status=document.createElement('p'),station=document.createElement('p');
    card.className='linked-radio-card';radioCardViews.set(radioId,{status,station,radio});
-   const unlink=document.createElement('button');unlink.type='button';unlink.className='secondary radio-unlink';unlink.textContent='Unlink radio';
-   unlink.onclick=async()=>{if(!await listenerActionDialog('Unlink radio?',deviceLabel+' will be disconnected from this phone. You can connect it again with approval on the radio.','Unlink radio',true))return;unlink.disabled=true;try{await api('/api/phone/unlink',{radio_id:radioId});if(readSelectedRadio()===radioId)rememberSelectedRadio('');radioInventories.delete(radioId);await loadMyRadios();await listenerActionDialog('Radio unlinked',deviceLabel+' is no longer linked to this phone.');}catch(e){$('radioConnectStatus').textContent=e.message;}finally{unlink.disabled=false;}};
+   const unlink=document.createElement('button');unlink.type='button';unlink.className='secondary radio-unlink';unlink.textContent='Unlink radio';unlink.disabled=radioUnlinkPending.has(radioId);radioCardViews.get(radioId).unlink=unlink;
+   unlink.onclick=()=>unlinkMyRadio(radioId,deviceLabel,unlink);
    const choose=document.createElement('button');choose.type='button';choose.className='secondary device-code-select';choose.textContent=deviceLabel;choose.setAttribute('aria-pressed',String(selected===radioId));choose.setAttribute('aria-label',deviceLabel+(selected===radioId?', selected':', select radio'));choose.title=selected===radioId?'Selected radio':'Select this radio';choose.onclick=()=>{rememberSelectedRadio(radioId);loadMyRadios();};
    card.append(status,station,choose,unlink);$('linkedRadios').append(card);
   }

@@ -73,6 +73,14 @@ test('login suppresses duplicate in-flight requests',async()=>{
  const f=fixture(),pending=deferred();f.human(pending.promise);const first=f.submit(f.login);await until(()=>f.humans.length===1);await f.submit(f.login);assert.equal(f.humans.length,1);pending.resolve('checked-token');await first;assert.equal(f.calls.length,1);assert.equal(f.calls[0].path,'/api/owner/login');
 });
 
+test('leaving signup or sign-in during the security check does not send a request or reopen verification',async()=>{
+ for(const target of ['registration','login']){const f=fixture(),pending=deferred();f.human(pending.promise);const submitting=f.submit(f[target]);await until(()=>f.humans.length===1);vm.runInContext("page('myRadio')",f.context);pending.resolve('checked-token');await submitting;assert.equal(f.calls.length,0);assert.equal(f.nodes.get('verification').open,false);assert.equal(f[target].submit.disabled,false);assert.equal(f.nodes.get('myRadio').hidden,false);}
+});
+
+test('late signup and sign-in acknowledgements do not open a code dialog over another page',async()=>{
+ for(const target of ['registration','login']){const f=fixture(),pending=deferred();f.answers.push(pending.promise);const submitting=f.submit(f[target]);await until(()=>f.calls.length===1);vm.runInContext("page('support')",f.context);pending.resolve({verification_id:'late-challenge',verification_email:'o***@example.com'});await submitting;assert.equal(f.nodes.get('verification').open,false);assert.equal(f.nodes.get('support').hidden,false);assert.equal(f.nodes.get('message').textContent,'');}
+});
+
 test('successful verification remains visibly successful when the editor fails, with a working retry',async()=>{
  const f=fixture();f.verify();f.editor(new Error('Editor network timeout'));f.answers.push({registration_completed:true,review_required:false,station_code:'13'});await f.submit(f.verifyForm);assert.equal(f.nodes.get('verification').open,false);assert.equal(f.registration.resetCalled,true);assert.equal(f.nodes.get('stationSuccess').open,true);assert.equal(f.nodes.get('stationSuccessTitle').textContent,'Station added successfully!');assert.equal(f.nodes.get('verifyMessage').textContent,'');assert.equal(f.nodes.get('retryOwnerEditor').hidden,false);assert.match(f.nodes.get('stationSuccessMessage').textContent,/verification succeeded/);f.editor(undefined);await f.nodes.get('retryOwnerEditor').onclick();assert.equal(f.editorCalls(),2);assert.equal(f.nodes.get('stationSuccess').open,false);
 });
@@ -101,4 +109,13 @@ test('an old session read cannot replace a newly verified station owner',async()
 });
 test('a station save finishing after navigation does not open an editor or change that page message',async()=>{
  const f=fixture(),pending=deferred(),form=f.nodes.get('editForm');f.answers.push(pending.promise);vm.runInContext("page('editor')",f.context);const saving=f.submit(form);await until(()=>f.calls.length===1);vm.runInContext("page('myRadio')",f.context);pending.resolve({message:'Saved.'});await saving;assert.equal(f.editorCalls(),0);assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('message').textContent,'');
+});
+
+test('a station save freezes its captured fields and ignores a second submission until it finishes',async()=>{
+ const f=fixture(),pending=deferred(),form=f.nodes.get('editForm');form.elements.stream_url.value='https://saved.example/live';form.elements.bio.value='Captured bio';form.elements.artwork.files=[{name:'new-cover.png',size:5}];f.answers.push(pending.promise);vm.runInContext("page('editor')",f.context);
+ const saving=f.submit(form);await until(()=>f.calls.length===1);assert.equal(form.elements.stream_url.disabled,true);assert.equal(form.elements.bio.disabled,true);assert.equal(form.elements.artwork.disabled,true);await f.submit(form);assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.stream_url,'https://saved.example/live');assert.equal(f.calls[0].body.bio,'Captured bio');assert.equal(f.files[0].name,'new-cover.png');pending.resolve({message:'Saved.'});await saving;assert.equal(f.editorCalls(),1);assert.equal(form.elements.stream_url.disabled,false);assert.equal(form.submit.disabled,false);
+});
+
+test('a failed station save keeps its draft and chosen cover available for retry',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm'),cover={name:'retry.png',size:5};form.elements.stream_url.value='https://retry.example/live';form.elements.bio.value='Keep this draft';form.elements.artwork.files=[cover];f.answers.push(Error('Save connection interrupted'));vm.runInContext("page('editor')",f.context);await f.submit(form);assert.equal(f.editorCalls(),0);assert.equal(form.elements.stream_url.value,'https://retry.example/live');assert.equal(form.elements.bio.value,'Keep this draft');assert.equal(form.elements.artwork.files[0],cover);assert.equal(form.elements.bio.disabled,false);assert.equal(form.submit.disabled,false);assert.equal(f.nodes.get('message').textContent,'Save connection interrupted');
 });

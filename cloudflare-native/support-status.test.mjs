@@ -75,3 +75,33 @@ test('challenge mail and private access updates roll back atomically on storage 
  f.sqlite.exec("CREATE TRIGGER reject_ticket_grant BEFORE INSERT ON support_ticket_grants BEGIN SELECT RAISE(ABORT,'grant rejected'); END");
  await assert.rejects(f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code},f.now+62),/grant rejected/);assert.equal(f.sqlite.prepare('SELECT consumed_at FROM support_status_verifications WHERE id=?').get(challenge.verification_id).consumed_at,null);
 });
+
+test('closing a private ticket cancels an in-flight email verification before it can restore access',async()=>{
+ const f=await setup(),reference=await f.insert(),challenge=await(await f.call('/api/support/status/request',{reference,email:ticketData.email})).json(),code=await f.code(challenge.verification_id);
+ const batch=f.env.DB.batch.bind(f.env.DB);let release,reached;const waiting=new Promise(resolve=>{reached=resolve;}),barrier=new Promise(resolve=>{release=resolve;});let hold=true;
+ f.env.DB.batch=async statements=>{if(hold){hold=false;reached();await barrier;}return batch(statements);};
+ const verifying=f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code});await waiting;
+ await f.call('/api/support/status/logout',{reference});release();
+ await assert.rejects(verifying,e=>e.status===400);
+ await assert.rejects(f.call('/api/support/status/ticket?reference='+reference),e=>e.status===403);
+ assert.equal(f.sqlite.prepare('SELECT consumed_at FROM support_status_verifications WHERE id=?').get(challenge.verification_id).consumed_at,f.now);
+ const next=await(await f.call('/api/support/status/request',{reference,email:ticketData.email},f.now+61)).json(),nextCode=await f.code(next.verification_id);
+ assert.equal((await(await f.call('/api/support/status/verify',{verification_id:next.verification_id,code:nextCode},f.now+62)).json()).status,'verified');
+});
+
+test('private ticket close revokes only its session and ticket, and rolls back on storage failure',async()=>{
+ const f=await setup(),reference=await f.insert(),another=await f.insert('c'.repeat(32)),other=await f.secondBrowser(),challenge=await(await f.call('/api/support/status/request',{reference,email:ticketData.email})).json(),otherChallenge=await(await f.call('/api/support/status/request',{reference,email:ticketData.email},f.now,other)).json();
+ const sessionHash=f.sqlite.prepare('SELECT session_hash FROM support_status_verifications WHERE id=?').get(challenge.verification_id).session_hash;
+ f.sqlite.prepare('INSERT INTO support_ticket_grants VALUES (?,?,?)').run(sessionHash,reference,f.now+1800);
+ f.sqlite.prepare('INSERT INTO support_ticket_grants VALUES (?,?,?)').run(sessionHash,another,f.now+1800);
+ f.sqlite.prepare('INSERT INTO support_status_verifications(id,session_hash,ticket_id,code_hash,expires,created_at) VALUES (?,?,?,?,?,?)').run('d'.repeat(32),sessionHash,another,'another-proof',f.now+900,f.now);
+ f.sqlite.exec("CREATE TRIGGER reject_ticket_close BEFORE DELETE ON support_ticket_grants BEGIN SELECT RAISE(ABORT,'close rejected'); END");
+ await assert.rejects(f.call('/api/support/status/logout',{reference}),/close rejected/);
+ assert.equal(f.sqlite.prepare('SELECT consumed_at FROM support_status_verifications WHERE id=?').get(challenge.verification_id).consumed_at,null);
+ assert.equal((await(await f.call('/api/support/status/ticket?reference='+reference)).json()).ticket.reference,reference);
+ f.sqlite.exec('DROP TRIGGER reject_ticket_close');await f.call('/api/support/status/logout',{reference});
+ assert.equal(f.sqlite.prepare('SELECT code_hash FROM support_status_verifications WHERE id=?').get(challenge.verification_id).code_hash,'');
+ assert.equal(f.sqlite.prepare('SELECT consumed_at FROM support_status_verifications WHERE id=?').get(otherChallenge.verification_id).consumed_at,null);
+ assert.equal(f.sqlite.prepare('SELECT consumed_at FROM support_status_verifications WHERE id=?').get('d'.repeat(32)).consumed_at,null);
+ assert.equal((await(await f.call('/api/support/status/ticket?reference='+another)).json()).ticket.reference,another);
+});

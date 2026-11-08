@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 function fixture({human}={}){
- const events={},calls=[],answers=[],ids=new Map();
+ const events={},calls=[],answers=[],ids=new Map(),observers=[];
  function element(tag='div'){const node={tag,children:[],dataset:{},hidden:false,attributes:{},textContent:'',value:'',setAttribute(k,v){this.attributes[k]=v;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},addEventListener(name,fn){this[name+'Listener']=fn;},showModal(){this.open=true;},close(){this.open=false;this.closeListener?.();},focus(){this.focused=true;},reset(){this.resetCalled=true;}};Object.defineProperty(node,'innerHTML',{set(){throw Error('Untrusted HTML insertion');}});return node;}
  const document={hidden:false,createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(){}};ids.set('supportTicketStatus',element());ids.set('support',element());
- const ctx={document,window:{addEventListener(name,fn){events[name]=fn;},dispatchEvent(){},appI18n:{language:'en'}},$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{observe(){}},setTimeout(){return 1;},clearTimeout(){},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
+ const ctx={document,window:{addEventListener(name,fn){events[name]=fn;},dispatchEvent(){},appI18n:{language:'en'}},$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(){return 1;},clearTimeout(){},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
  runInNewContext(readFileSync(new URL('./public/assets/support-status.js',import.meta.url),'utf8'),ctx);
- return {events,calls,answers,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx)};
+ return {events,calls,answers,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
 }
 function text(node){return node.textContent+(node.children||[]).map(text).join('');}
 const reference='b'.repeat(32);
@@ -46,4 +46,19 @@ test('repeated submits send only one lookup and one verification request',async(
 test('lookup retains the ticket and email captured before a delayed bot check',async()=>{
  const bot=deferred(),f=fixture({human:()=>bot.promise}),pending=deferred();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});
  f.get('statusReference').value='a'.repeat(32);f.get('statusEmail').value='other@example.com';bot.resolve('bot-proof');await new Promise(setImmediate);assert.equal(f.calls[0].body.reference,reference);assert.equal(f.calls[0].body.email,'listener@example.com');pending.resolve({verification_id:'c'.repeat(32)});await lookup;
+});
+test('leaving Support during a bot check abandons the request before sending email',async()=>{
+ const bot=deferred(),f=fixture({human:()=>bot.promise});f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});
+ f.leave();bot.resolve('bot-proof');await lookup;assert.equal(f.calls.length,0);assert.notEqual(f.get('statusVerify').open,true);assert.equal(f.get('supportStatusLookupBusy'),false);
+});
+test('late lookup responses cannot open the verification dialog over another page',async()=>{
+ const f=fixture(),pending=deferred();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ f.leave();pending.resolve({verification_id:'c'.repeat(32)});await lookup;assert.notEqual(f.get('statusVerify').open,true);assert.equal(f.get('supportStatusVerification'),'');
+});
+test('a navigation-cancelled lookup cannot unlock a new request after returning to Support',async()=>{
+ const f=fixture(),old=deferred(),next=deferred();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(old.promise);const first=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);f.leave();f.returnToSupport();f.answers.push(next.promise);const second=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ assert.equal(f.calls.length,2);old.resolve({verification_id:'c'.repeat(32)});await first;assert.equal(f.get('supportStatusLookupBusy'),true);assert.notEqual(f.get('statusVerify').open,true);next.resolve({verification_id:'d'.repeat(32)});await second;assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('supportStatusVerification'),'d'.repeat(32));
+});
+test('leaving Support dismisses its challenge and ignores a late verification result',async()=>{
+ const f=fixture();await beginVerification(f);const pending=deferred();f.answers.push(pending.promise);const verification=f.get('statusVerifyForm').onsubmit({preventDefault(){}});f.leave();assert.equal(f.get('statusVerify').open,false);pending.resolve({reference});await verification;assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.calls.filter(call=>call.path.startsWith('/api/support/status/ticket')).length,0);
 });

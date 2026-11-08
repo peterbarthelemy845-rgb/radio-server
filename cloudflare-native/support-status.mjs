@@ -71,7 +71,13 @@ export async function supportStatusRoutes(request,env,now,deps={human}){
   return json({status:'verified',reference:check.ticket_id,expires_in:1800});
  }
  if(path==='/api/support/status/logout'){
-  await env.DB.prepare('DELETE FROM support_ticket_grants WHERE session_hash=? AND ticket_id=?').bind(current.token_hash,reference(body.reference)).run();return json({status:'ok'});
+  const id=reference(body.reference);
+  // Closing private access also cancels its pending email proofs. A correct
+  // verification already waiting to commit must not reopen the closed ticket.
+  await env.DB.batch([
+   env.DB.prepare("UPDATE support_status_verifications SET consumed_at=?,code_hash='' WHERE session_hash=? AND ticket_id=? AND consumed_at IS NULL").bind(now,current.token_hash,id),
+   env.DB.prepare('DELETE FROM support_ticket_grants WHERE session_hash=? AND ticket_id=?').bind(current.token_hash,id)
+  ]);return json({status:'ok'});
  }
  throw new HttpError(404,'Not found.');
 }

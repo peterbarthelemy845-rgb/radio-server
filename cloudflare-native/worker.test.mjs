@@ -58,6 +58,12 @@ test('expired claim never creates a phone grant',async()=>{
   const result=await (await poll(env,{pair_claim_id:claim,pair_decision:'approve'})).json();
   assert.equal(result.claim_result,'expired');assert.equal(result.linked,false);
 });
+
+test('poll removes expired-session approval prompts before any radio decision',async()=>{
+ const env=await fixture();env.DB.sqlite.prepare('INSERT INTO pair_claims VALUES (?,?,?,?,?,?,?)').run(claim,id,'session','1234','waiting',now+120,now);
+ env.DB.sqlite.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').run(now,'session');
+ const result=await (await poll(env)).json();assert.equal(result.pair_claim_id,'');assert.equal(result.pair_check,'');assert.equal(result.linked,false);assert.equal(env.DB.sqlite.prepare('SELECT state FROM pair_claims WHERE id=?').get(claim).state,'expired');
+});
 test('command leases suppress repeated delivery and ack is device-scoped',async()=>{
   const env=await fixture();
   env.DB.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run('session',id,now+300);

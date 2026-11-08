@@ -95,9 +95,10 @@ export async function controlRoutes(request,env,now){
 export function approvalStatements(env,id,claim,decision,body,now){
  const scope=body.pair_scope==='control'&&body.remote_control_version===1;
  return [
-  env.DB.prepare(`UPDATE pair_claims SET state=CASE WHEN expires<=? THEN 'expired' WHEN ?='approve' THEN 'approved' ELSE 'denied' END
-   WHERE id=? AND radio_id=? AND state='waiting' AND (?='deny' OR NOT EXISTS(SELECT 1 FROM radio_control_claims WHERE claim_id=pair_claims.id)
-    OR (?=1 AND EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=pair_claims.radio_id AND p.session_hash=pair_claims.session_hash AND p.expires>?)))`).bind(now,decision,claim,id,decision,Number(scope),now),
+  env.DB.prepare(`UPDATE pair_claims SET state=CASE WHEN expires<=? OR NOT EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=pair_claims.session_hash AND s.expires>?) THEN 'expired' WHEN ?='approve' THEN 'approved' ELSE 'denied' END
+   WHERE id=? AND radio_id=? AND state='waiting' AND (expires<=? OR NOT EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=pair_claims.session_hash AND s.expires>?)
+    OR ?='deny' OR NOT EXISTS(SELECT 1 FROM radio_control_claims WHERE claim_id=pair_claims.id)
+    OR (?=1 AND EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=pair_claims.radio_id AND p.session_hash=pair_claims.session_hash AND p.expires>?)))`).bind(now,now,decision,claim,id,now,now,decision,Number(scope),now),
   env.DB.prepare(`INSERT INTO phone_radios(session_hash,radio_id,expires)
    SELECT c.session_hash,c.radio_id,CASE WHEN EXISTS(SELECT 1 FROM radio_control_claims sc WHERE sc.claim_id=c.id)
     THEN (SELECT p.expires FROM phone_radios p WHERE p.session_hash=c.session_hash AND p.radio_id=c.radio_id) ELSE ? END
