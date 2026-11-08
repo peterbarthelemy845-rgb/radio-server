@@ -53,15 +53,21 @@ async function verification(env,current,station,purpose,now,deletion=false){
   return {verification_id:id,verification_email:mask(station.contact_email),expires_in:900};
 }
 async function registrationResponse(env,current,row,now){
-  const saved=await env.DB.prepare(`SELECT v.id,v.expires,s.contact_email,s.email_verified_at,s.status FROM email_verifications v
+  const saved=await env.DB.prepare(`SELECT v.id,v.expires,v.consumed_at,s.contact_email,s.email_verified_at,s.status FROM email_verifications v
     JOIN stations s ON s.code=v.station_code WHERE v.id=? AND v.session_hash=? AND v.station_code=? AND v.purpose='registration'`)
     .bind(row.verification_id,current.token_hash,row.station_code).first();
   if(!saved||['deleted','suspended'].includes(saved.status))throw new HttpError(409,'This signup is no longer available. Please start again.');
   if(saved.email_verified_at!==null)throw new HttpError(409,'This station is already registered. Sign in to edit it.');
+  if(saved.consumed_at!==null)throw new HttpError(409,'This sign-in was cancelled. Reload the page and start again.');
   return json({status:'ok',verification_id:saved.id,verification_email:mask(saved.contact_email),expires_in:Math.max(0,saved.expires-now)});
 }
 export async function processMail(env,now=Math.floor(Date.now()/1000)){
   if(!env.EMAIL||!env.DATA_ENCRYPTION_KEY)return;
+  // A Worker can stop after claiming its final attempt. Once that lease is
+  // over, no retry is allowed: report a terminal failure instead of leaving
+  // the job looking in progress until its original expiry days later.
+  await env.DB.prepare(`UPDATE mail_outbox SET state='failed',encrypted_payload='',lease=0
+    WHERE id IN (SELECT id FROM mail_outbox WHERE state='sending' AND attempts>=5 AND lease<=? ORDER BY lease LIMIT 100)`).bind(now).run();
   // Retries use a lease persisted in D1; concurrent Workers cannot take the same job.
   const job=await env.DB.prepare(`UPDATE mail_outbox SET state='sending',attempts=attempts+1,lease=?
     WHERE id=(SELECT id FROM mail_outbox WHERE state IN ('pending','sending') AND attempts<5
@@ -74,8 +80,8 @@ export async function processMail(env,now=Math.floor(Date.now()/1000)){
     await env.DB.prepare("UPDATE mail_outbox SET state='sent',encrypted_payload='',lease=0 WHERE id=? AND lease=?")
       .bind(job.id,now+60).run();
   }catch{
-    await env.DB.prepare("UPDATE mail_outbox SET state=?,due=?,lease=0 WHERE id=? AND lease=?")
-      .bind(job.attempts>=5?'failed':'pending',now+Math.min(120,15*job.attempts),job.id,now+60).run();
+    await env.DB.prepare("UPDATE mail_outbox SET state=?,due=?,lease=0,encrypted_payload=CASE WHEN ? THEN '' ELSE encrypted_payload END WHERE id=? AND lease=?")
+      .bind(job.attempts>=5?'failed':'pending',now+Math.min(120,15*job.attempts),Number(job.attempts>=5),job.id,now+60).run();
   }
 }
 export async function authRoutes(request,env,now,deps={human}){
@@ -108,7 +114,12 @@ export async function authRoutes(request,env,now,deps={human}){
   await limit(env.DB,'owner-write',current.token_hash,30,900,now);
   const body=await readJson(request,path==='/api/owner/register'||path==='/api/owner/station'?4300000:4096);
   if(path==='/api/owner/logout'){
-    await env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL WHERE token_hash=?').bind(current.token_hash).run();
+    // A verification already waiting to commit must not restore the editing
+    // grant after sign-out. Its existing CAS also checks consumed_at is null.
+    await env.DB.batch([
+      env.DB.prepare('UPDATE email_verifications SET consumed_at=?,code_hash=\'\' WHERE session_hash=? AND consumed_at IS NULL').bind(now,current.token_hash),
+      env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL WHERE token_hash=?').bind(current.token_hash)
+    ]);
     return json({status:'ok'});
   }
   if(path==='/api/owner/delete'){

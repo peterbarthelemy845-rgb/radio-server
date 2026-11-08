@@ -103,15 +103,20 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     await env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE radio_id=? AND expires<=? AND state IN ('pending','delivered')").bind(id,now).run();
     // Authorization must be checked inside the write: an unlink can occur after
     // the earlier friendly validation but before this statement executes.
-    await env.DB.prepare(`INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires,session_hash)
+    const enqueued=await env.DB.prepare(`INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires,session_hash)
       SELECT ?,?,?,'pending',?,?,? WHERE EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=? AND p.session_hash=? AND p.expires>?)
-      AND EXISTS(SELECT 1 FROM stations WHERE code=? AND status='published') ON CONFLICT DO NOTHING`)
-      .bind(randomHex(16),id,Number(code),now,now+300,current.token_hash,id,current.token_hash,now,Number(code)).run();
-    const command=await env.DB.prepare(`SELECT c.id FROM radio_commands c JOIN phone_radios p ON p.radio_id=c.radio_id AND p.session_hash=c.session_hash
-      WHERE c.radio_id=? AND c.station_code=? AND c.session_hash=? AND p.expires>?
-      AND c.state IN ('pending','delivered') AND c.expires>?`).bind(id,Number(code),current.token_hash,now,now).first();
+      AND EXISTS(SELECT 1 FROM stations WHERE code=? AND status='published')
+      ON CONFLICT DO UPDATE SET id=radio_commands.id WHERE radio_commands.session_hash=excluded.session_hash
+      AND radio_commands.radio_id=excluded.radio_id AND radio_commands.station_code=excluded.station_code RETURNING id`)
+      .bind(randomHex(16),id,Number(code),now,now+300,current.token_hash,id,current.token_hash,now,Number(code)).first();
+    if(!enqueued)throw new HttpError(409,'Please try again.');
+    // Delivery and acknowledgement can finish before this response is read.
+    // Keep the atomically chosen ID, including a same-phone deduplicated retry,
+    // rather than searching only for work that is still pending.
+    const command=await env.DB.prepare(`SELECT c.id,c.state FROM radio_commands c JOIN phone_radios p ON p.radio_id=c.radio_id AND p.session_hash=c.session_hash
+      WHERE c.id=? AND c.radio_id=? AND c.session_hash=? AND p.expires>?`).bind(enqueued.id,id,current.token_hash,now).first();
     if(!command)throw new HttpError(409,'Please try again.');
-    return json({command_id:command.id,state:'pending'});
+    return json({command_id:command.id,state:command.state});
   }
   if(path==='/api/phone/command/status'){
     await limit(env.DB,'command-status',current.token_hash,40,60,now);

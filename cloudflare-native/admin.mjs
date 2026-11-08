@@ -96,7 +96,12 @@ export async function adminRoutes(request,env,now,deps={human}){
   return json({stations:await Promise.all(rows.results.map(async row=>({...row,revision:await revision(env,row)})))});
  }
  if(path==='/api/admin/logout'&&request.method==='POST'){
-  await env.DB.batch([env.DB.prepare('DELETE FROM admin_sessions WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM admin_mfa_sessions WHERE session_hash=?').bind(current.token_hash)]);return json({status:'ok'});
+  await env.DB.batch([
+   env.DB.prepare("UPDATE admin_verifications SET consumed_at=?,code_hash='' WHERE session_hash=? AND consumed_at IS NULL").bind(now,current.token_hash),
+   env.DB.prepare('UPDATE admin_email_proofs SET consumed_at=? WHERE session_hash=? AND consumed_at IS NULL').bind(now,current.token_hash),
+   env.DB.prepare('DELETE FROM admin_sessions WHERE session_hash=?').bind(current.token_hash),
+   env.DB.prepare('DELETE FROM admin_mfa_sessions WHERE session_hash=?').bind(current.token_hash)
+  ]);return json({status:'ok'});
  }
  if(path==='/api/admin/station'&&request.method==='POST'){
   await limit(env.DB,'admin-actions',current.token_hash,60,900,now);const body=await readJson(request);

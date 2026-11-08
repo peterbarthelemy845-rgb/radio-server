@@ -26,5 +26,8 @@ export function publicStreamUrl(value){
  if(isIPv4(host)){if(!publicIPv4(host))throw invalid();}
  else if(!host.includes('.')||host.length>253||!host.split('.').every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))||
   /(?:^|\.)(?:localhost|local|internal|lan|home|home\.arpa|arpa|test|invalid|example|onion)$/.test(host))throw invalid();
+ // These addresses are published to listeners and radios. Enforce the same
+ // credential rule on every server write/check, including owner edits.
+ for(const key of url.searchParams.keys())if(/^(?:access[_-]?token|token|auth(?:orization)?|api[_-]?key|key|password|pass|secret|signature|sig)$/i.test(key))throw invalid();
  return url.href;
 }

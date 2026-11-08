@@ -152,3 +152,17 @@ The administrator Support and Legal lists filter by request kind before limiting
 Phone claim insertion and reuse recheck the exact current Device Code and the initiating session in SQL. An in-flight request using a reset code cannot create a new approval prompt after the reset. Optional controls pairing also rechecks the existing phone grant and live session. Radio pairing and shared-add forms reject overlapping submissions and ignore late results after navigation; owner/editor and direct station-link loads cannot redirect a user who has already left the view.
 
 Advertisement submissions retain early per-IP limits and a shared 60-attempt/minute abuse bound. Their separate 60/day processing allowance is charged only after bot and field validation, so failed bot requests cannot consume the daily allowance. A radio's thirty-minute display window and ad receipt commit together, with approval/schedule rechecked in the window write. Receipt storage failures leave the radio eligible to retry.
+
+
+## Logout revocation and accurate asynchronous results (2026-11-08, release 2026.11.08.8)
+
+Owner logout atomically consumes all pending email proofs for that browser and clears its editing grant. Admin logout consumes pending email and MFA-stage proofs while clearing both grants. An already-validated request waiting to commit cannot recreate those grants after sign-out. Other browsers, listener radio links, cookie lifetime and the thirty-minute owner grant duration remain unchanged. Cancelled cached signup challenges return a clear restart message.
+
+Station-add enqueue atomically returns the chosen new or same-origin deduplicated command ID. The response reads that exact command under its current origin grant and returns its actual state, including a radio acknowledgement that completed before the browser response. It cannot return another phone's command.
+
+The server's shared public stream URL validator rejects credential query keys (token, access_token, authorization, API key, password, secret and signatures), matching signup validation. This applies to owner edits and optional checks too; ordinary listening/format query parameters remain accepted. Current published addresses were checked without logging their values and contained none of these credential forms. Unknown credential schemes embedded in arbitrary paths are not automatically detectable; station owners must supply public listening links.
+
+Reports capture the requested month and owner/admin context, clear old private content immediately and ignore superseded responses. Backup lists and create/restore feedback likewise cannot reopen a view after navigation. Backup mutations share one in-flight lock.
+
+
+Database restore includes its audit insertion in the same D1 batch and invalidates unconsumed owner email proofs before clearing grants. A held verification cannot sign an owner back in after restore. Media copies still happen before this transaction and cannot be rolled back by D1; the admin recovery note states this separation. Exhausted sending jobs whose final lease has expired are marked failed in bounded batches of 100, with their encrypted queued body cleared. Terminal provider failures likewise clear the body and never exceed five attempts. A delivery result is a provider report, not proof that the recipient read an email.

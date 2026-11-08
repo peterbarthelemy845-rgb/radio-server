@@ -88,6 +88,62 @@ test('phone cannot add until physical approval, then command is deduplicated and
   await f.poll({ack_id:command.command_id,ack_status:'added'});
   assert.equal((await (await phone.post('command/status',{command_id:command.command_id})).json()).state,'added');
 });
+
+test('fast added or failed acknowledgements return the real command state for new and deduplicated station additions',async()=>{
+  for(const state of ['added','failed'])for(const retry of [false,true]){
+    const f=await fixture(),phone=await f.browser();
+    f.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run(phone.hash,radio,now+1000);
+    const previous=retry?await(await phone.post('add',{radio_id:radio,station_code:'10'})).json():null;
+    const prepare=f.env.DB.prepare.bind(f.env.DB);let raced=false,deliveredId='';
+    f.env.DB.prepare=sql=>{
+      const query=prepare(sql);
+      if(sql.startsWith('SELECT c.id,c.state FROM radio_commands c JOIN phone_radios')){
+        const first=query.first.bind(query);query.first=async()=>{
+          raced=true;
+          const delivered=await(await f.poll({})).json();deliveredId=delivered.command_id;
+          await f.poll({ack_id:deliveredId,ack_status:state});
+          return first();
+        };
+      }
+      return query;
+    };
+    const result=await(await phone.post('add',{radio_id:radio,station_code:'10'})).json();
+    assert.equal(raced,true);assert.equal(result.command_id,deliveredId);assert.equal(result.state,state);
+    if(previous)assert.equal(result.command_id,previous.command_id,'a retry retains the original command ID even after its acknowledgement');
+    assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_commands').get().n,1);
+    assert.equal((await(await phone.post('command/status',{command_id:result.command_id})).json()).state,state);
+  }
+});
+
+test('same-phone pending retries preserve their command while another phone cannot adopt it',async()=>{
+  const f=await fixture(),one=await f.browser(),two=await f.browser();
+  for(const phone of [one,two])f.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run(phone.hash,radio,now+1000);
+  const accepted=await(await one.post('add',{radio_id:radio,station_code:'10'})).json();
+  const original={...f.sqlite.prepare('SELECT * FROM radio_commands WHERE id=?').get(accepted.command_id)};
+  await assert.rejects(two.post('add',{radio_id:radio,station_code:'10'}),e=>e.status===409);
+  assert.deepEqual({...f.sqlite.prepare('SELECT * FROM radio_commands WHERE id=?').get(accepted.command_id)},original);
+  const retry=await(await one.post('add',{radio_id:radio,station_code:'10'})).json();
+  assert.deepEqual(retry,accepted);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_commands').get().n,1);
+  await f.poll({});
+  const delivered=await(await one.post('add',{radio_id:radio,station_code:'10'})).json();
+  assert.equal(delivered.command_id,accepted.command_id);assert.equal(delivered.state,'delivered');
+});
+
+test('unlink before the add response lookup cannot reveal or return a revoked command',async()=>{
+  const f=await fixture(),phone=await f.browser();
+  f.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run(phone.hash,radio,now+1000);
+  const prepare=f.env.DB.prepare.bind(f.env.DB);let raced=false;
+  f.env.DB.prepare=sql=>{
+    const query=prepare(sql);
+    if(sql.startsWith('SELECT c.id,c.state FROM radio_commands c JOIN phone_radios')){
+      const first=query.first.bind(query);query.first=async()=>{raced=true;await phone.post('unlink',{radio_id:radio});return first();};
+    }
+    return query;
+  };
+  await assert.rejects(phone.post('add',{radio_id:radio,station_code:'10'}),e=>e.status===409);
+  assert.equal(raced,true);assert.equal(f.sqlite.prepare('SELECT state FROM radio_commands').get().state,'failed');
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM phone_radios').get().n,0);
+});
 test('another browser cannot replace a pending pairing request or inspect it',async()=>{
   const f=await fixture(),one=await f.browser(),two=await f.browser();
   const claim=await (await one.post('claim',{device_code:'1234'})).json();
@@ -205,7 +261,7 @@ test('station addition checks the originating grant inside enqueue and delivery 
     if(phase==='delivery')queued=await(await phone.post('add',{radio_id:radio,station_code:'10'})).json();
     const prepare=f.env.DB.prepare.bind(f.env.DB);let raced=false;
     f.env.DB.prepare=sql=>{
-      const q=prepare(sql),method=phase==='enqueue'?'run':'first';
+      const q=prepare(sql),method='first';
       if(sql.includes(phase==='enqueue'?'INSERT INTO radio_commands':'UPDATE radio_commands SET state=\'delivered\'')){
         const execute=q[method].bind(q);q[method]=async()=>{raced=true;f.sqlite.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').run(phone.hash,radio);return execute();};
       }

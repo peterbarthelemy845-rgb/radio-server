@@ -1,5 +1,5 @@
 'use strict';
-const APP_RELEASE='2026.11.08.7';
+const APP_RELEASE='2026.11.08.8';
 let appAvailableRelease='',appDismissedRelease='',appReleaseChecking=false;
 const appUpdateBanner=document.createElement('aside');appUpdateBanner.id='appUpdateBanner';appUpdateBanner.className='app-update-banner';appUpdateBanner.hidden=true;appUpdateBanner.setAttribute('aria-label','Website update');
 const appUpdateTitle=document.createElement('strong'),appUpdateNote=document.createElement('p'),appUpdateActions=document.createElement('div'),appUpdateRefresh=document.createElement('button'),appUpdateLater=document.createElement('button');

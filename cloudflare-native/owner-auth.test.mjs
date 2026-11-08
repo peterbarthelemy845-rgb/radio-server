@@ -24,6 +24,8 @@ async function fixture(){
 }
 async function registered(){const f=await fixture();const response=await f.post('/api/owner/register',f.registration);f.result=await response.json();
   const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get();f.code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];return f;}
+async function ownerLoginChallenge(f,headers={}){const result=await(await f.post('/api/owner/login',{email:f.registration.email,code:'10'},headers)).json(),job=f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get();return {...result,code:JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1]};}
+function pauseOwnerBatch(f){const batch=f.env.DB.batch;let release,arrived,paused=false;const reached=new Promise(resolve=>{arrived=resolve;}),waiting=new Promise(resolve=>{release=resolve;});f.env.DB.batch=async queries=>{if(!paused){paused=true;arrived();await waiting;}return batch(queries);};return {reached,release};}
 test('fresh session uses secure host-only cookie; absent server key fails closed',async()=>{
   const f=await fixture();assert.match(f.cookie,/^__Host-rl_session=/);assert.equal(f.state.csrf.length,64);
   await assert.rejects(authRoutes(new Request(host+'/api/session'),{...f.env,DATA_ENCRYPTION_KEY:''},now),e=>e.status===503);
@@ -162,11 +164,31 @@ test('owner cannot edit by supplying another station code and logout removes edi
   await f.post('/api/owner/logout',{});
   await assert.rejects(f.post('/api/owner/station',{stream_url:'https://example.com/live'}),e=>e.status===401);
 });
+test('logout prevents an older correct registration or login verification from restoring owner access',async()=>{
+ for(const kind of ['registration','login']){const f=await registered();let challenge={...f.result,code:f.code};if(kind==='login'){await f.post('/api/owner/verify',challenge);challenge=await ownerLoginChallenge(f);}
+  const expiry=f.sqlite.prepare('SELECT expires FROM sessions').get().expires,barrier=pauseOwnerBatch(f),pending=f.post('/api/owner/verify',{verification_id:challenge.verification_id,code:challenge.code});await barrier.reached;await f.post('/api/owner/logout',{});barrier.release();await assert.rejects(pending,e=>e.status===400);
+  assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,null);assert.equal(f.sqlite.prepare('SELECT expires FROM sessions').get().expires,expiry);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM email_verifications WHERE consumed_at IS NULL').get().n,0);
+  if(kind==='registration')await assert.rejects(f.post('/api/owner/register',f.registration),e=>e.status===409&&/cancelled/.test(e.message));
+  else{const fresh=await ownerLoginChallenge(f);await f.post('/api/owner/verify',{verification_id:fresh.verification_id,code:fresh.code});assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,10);}
+ }
+});
+test('owner logout revokes only its own pending proofs and rolls back completely on failure',async()=>{const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});const own=await ownerLoginChallenge(f);
+ const otherResponse=await authRoutes(new Request(host+'/api/session'),f.env,now),otherState=await otherResponse.json(),otherCookie=otherResponse.headers.get('set-cookie').split(';')[0],other=await ownerLoginChallenge(f,{Cookie:otherCookie,'X-CSRF-Token':otherState.csrf});
+ f.env.DB.failBatchAfter=1;await assert.rejects(f.post('/api/owner/logout',{}),/Simulated database/);assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions WHERE owner_station IS NOT NULL').get().owner_station,10);assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications WHERE id=?').get(own.verification_id).consumed_at,null);
+ f.env.DB.failBatchAfter=null;await f.post('/api/owner/logout',{});assert.notEqual(f.sqlite.prepare('SELECT consumed_at FROM email_verifications WHERE id=?').get(own.verification_id).consumed_at,null);assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications WHERE id=?').get(other.verification_id).consumed_at,null);
+});
 test('mail failures retry with a lease and never expose plaintext in stored errors',async()=>{
   const f=await registered();f.env.EMAIL.send=async()=>{throw new Error('provider secret body');};
   await processMail(f.env,now);const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get();
   assert.equal(job.state,'pending');assert.equal(job.attempts,1);assert.equal(job.due,now+15);assert.equal(job.lease,0);
   await processMail(f.env,now);assert.equal(f.sqlite.prepare('SELECT attempts FROM mail_outbox').get().attempts,1);
+});
+test('an exhausted expired mail lease becomes failed while active leases remain untouched and fresh mail can proceed',async()=>{const f=await fixture(),payload=await encrypt(f.env,JSON.stringify({text:'Private message'})),insert=f.sqlite.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,state,attempts,due,expires,lease) VALUES (?,?,?,?,?,?,?,?,?)');
+ insert.run('dead-final-attempt','listener@example.com','Expired final attempt',payload,'sending',5,now-120,now+86400,now-1);insert.run('active-final-attempt','listener@example.com','Still active',payload,'sending',5,now-120,now+86400,now+30);insert.run('fresh','listener@example.com','Fresh mail',payload,'pending',0,now,now+86400,0);
+ await processMail(f.env,now);const dead=f.sqlite.prepare('SELECT * FROM mail_outbox WHERE id=?').get('dead-final-attempt'),active=f.sqlite.prepare('SELECT * FROM mail_outbox WHERE id=?').get('active-final-attempt');assert.equal(dead.state,'failed');assert.equal(dead.attempts,5);assert.equal(dead.lease,0);assert.equal(dead.encrypted_payload,'');assert.equal(active.state,'sending');assert.equal(active.encrypted_payload,payload);assert.equal(active.lease,now+30);assert.deepEqual(f.mail.map(message=>message.subject),['Fresh mail']);
+ await processMail(f.env,now+31);assert.equal(f.sqlite.prepare('SELECT state FROM mail_outbox WHERE id=?').get('active-final-attempt').state,'failed');assert.equal(f.mail.length,1);
+});
+test('a fifth provider failure clears private queued content and never sends a sixth attempt',async()=>{const f=await registered();let sends=0;f.env.EMAIL.send=async()=>{sends++;throw Error('temporary provider failure');};f.sqlite.exec('UPDATE mail_outbox SET attempts=4');await processMail(f.env,now);const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get();assert.equal(job.state,'failed');assert.equal(job.attempts,5);assert.equal(job.encrypted_payload,'');assert.equal(job.lease,0);await processMail(f.env,now+600);assert.equal(sends,1);assert.equal(f.sqlite.prepare('SELECT attempts FROM mail_outbox').get().attempts,5);
 });
 test('artwork extensions, oversized files and local stream addresses are rejected',async()=>{
   const f=await fixture();await assert.rejects(f.post('/api/owner/register',{...f.registration,artwork:{name:'evil.svg',base64:Buffer.from(png).toString('base64')}}),e=>e.status===400);
