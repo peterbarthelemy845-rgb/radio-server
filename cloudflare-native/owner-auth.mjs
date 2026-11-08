@@ -32,21 +32,21 @@ export async function artwork(env,file,stableKey){
   await env.MEDIA.put('sanitized/'+key,sanitized,{httpMetadata:{contentType:'image/png'},customMetadata:{sanitizer_version:'1'}});
   return key;
 }
-async function verificationValues(env,now){
+async function verificationValues(env,now,deletion=false){
   const id=randomHex(16),code=otp(),mail=randomHex(16),expires=now+900;
   const codeHash=await mac(env,'email:'+id+':'+code);
-  const payload=await encrypt(env,JSON.stringify({text:`Your private Radio Locals verification code is ${code}.\n\nEnter it on the page where you requested it. It expires in 15 minutes and works once. Never share it. If you did not request this email, ignore it.`}));
+  const payload=await encrypt(env,JSON.stringify({text:`Your private Radio Locals ${deletion?'station deletion':'verification'} code is ${code}.\n\n${deletion?'This code confirms removal of your station. Only enter it if you requested deletion.':'Enter it on the page where you requested it.'} It expires in 15 minutes and works once. Never share it. If you did not request this email, ignore it.`}));
   return {id,mail,expires,codeHash,payload};
 }
-async function verification(env,current,station,purpose,now){
-  const {id,mail,expires,codeHash,payload}=await verificationValues(env,now);
+async function verification(env,current,station,purpose,now,deletion=false){
+  const {id,mail,expires,codeHash,payload}=await verificationValues(env,now,deletion);
   await env.DB.batch([
     env.DB.prepare("UPDATE email_verifications SET consumed_at=? WHERE session_hash=? AND purpose=? AND consumed_at IS NULL AND (purpose!='registration' OR station_code=?)")
       .bind(now,current.token_hash,purpose,station.code),
     env.DB.prepare('INSERT INTO email_verifications(id,session_hash,station_code,purpose,code_hash,expires,created_at) VALUES (?,?,?,?,?,?,?)')
-      .bind(id,current.token_hash,station.code,purpose,codeHash,expires,now),
+      .bind(id,current.token_hash,station.code,purpose,deletion?'delete:'+codeHash:codeHash,expires,now),
     env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) VALUES (?,?,?,?,?,?)')
-      .bind(mail,station.contact_email,'Your Radio Locals verification code',payload,now,expires),
+      .bind(mail,station.contact_email,deletion?'Confirm Radio Locals station deletion':'Your Radio Locals verification code',payload,now,expires),
     ...(purpose==='registration'?[env.DB.prepare("UPDATE registration_requests SET verification_id=? WHERE session_hash=? AND station_code=? AND state='complete'")
       .bind(id,current.token_hash,station.code)]:[]),
   ]);
@@ -117,8 +117,7 @@ export async function authRoutes(request,env,now,deps={human}){
       await limit(env.DB,'delete-email',current.token_hash,3,900,now);
       const station=await env.DB.prepare("SELECT code,contact_email FROM stations WHERE code=? AND status!='deleted'").bind(current.owner_station).first();
       if(!station)throw new HttpError(404,'Station not found.');
-      const result=await verification(env,current,station,'edit',now);
-      await env.DB.prepare("UPDATE email_verifications SET code_hash='delete:'||code_hash WHERE id=?").bind(result.verification_id).run();
+      const result=await verification(env,current,station,'edit',now,true);
       return json({status:'verification_required',...result});
     }
     if(body.confirm!==true)throw new HttpError(400,'Confirm station removal.');
@@ -126,13 +125,16 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the 6-digit email code.');
     const check=await env.DB.prepare(`UPDATE email_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND station_code=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *`).bind(id,current.token_hash,current.owner_station,now).first();
     if(!check||check.code_hash!=='delete:'+await mac(env,'email:'+id+':'+code))throw new HttpError(400,'Incorrect or expired deletion code.');
-    const used=await env.DB.prepare('UPDATE email_verifications SET consumed_at=? WHERE id=? AND consumed_at IS NULL RETURNING id').bind(now,id).first();
-    if(!used)throw new HttpError(400,'Code already used.');
-    await env.DB.batch([
-      env.DB.prepare("UPDATE stations SET status='deleted',updated_at=? WHERE code=?").bind(now,current.owner_station),
-      env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered')").bind(current.owner_station),
-      env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL WHERE owner_station=?').bind(current.owner_station)
+    const proof=check.code_hash+':'+randomHex(16),guard='EXISTS (SELECT 1 FROM email_verifications WHERE id=? AND session_hash=? AND station_code=? AND consumed_at=? AND code_hash=?)';
+    const proofArgs=[id,current.token_hash,current.owner_station,now,proof];
+    const updates=await env.DB.batch([
+      env.DB.prepare('UPDATE email_verifications SET consumed_at=?,code_hash=? WHERE id=? AND session_hash=? AND station_code=? AND consumed_at IS NULL AND expires>? AND code_hash=? RETURNING id')
+        .bind(now,proof,id,current.token_hash,current.owner_station,now,check.code_hash),
+      env.DB.prepare(`UPDATE stations SET status='deleted',updated_at=? WHERE code=? AND ${guard}`).bind(now,current.owner_station,...proofArgs),
+      env.DB.prepare(`UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered') AND ${guard}`).bind(current.owner_station,...proofArgs),
+      env.DB.prepare(`UPDATE sessions SET owner_station=NULL,owner_expires=NULL WHERE owner_station=? AND ${guard}`).bind(current.owner_station,...proofArgs)
     ]);
+    if(!updates[0]?.results?.[0])throw new HttpError(400,'Code already used.');
     return json({status:'ok',message:'Station removed from the directory.'});
   }
   if(path==='/api/owner/register'){
@@ -208,12 +210,12 @@ export async function authRoutes(request,env,now,deps={human}){
   if(path==='/api/owner/resend'){
     await deps.human(request,env,body.turnstile_token,'verification-resend',now);
     await limit(env.DB,'owner-resend',current.token_hash,3,900,now);
-    const prior=await env.DB.prepare('SELECT station_code,purpose,created_at FROM email_verifications WHERE id=? AND session_hash=? AND consumed_at IS NULL')
+    const prior=await env.DB.prepare('SELECT station_code,purpose,created_at,code_hash FROM email_verifications WHERE id=? AND session_hash=? AND consumed_at IS NULL')
       .bind(String(body.verification_id||''),current.token_hash).first();
     if(!prior||prior.created_at>now-60)throw new HttpError(400,'Wait a minute before requesting another code.');
     const station=await env.DB.prepare("SELECT code,contact_email FROM stations WHERE code=? AND status NOT IN ('suspended','deleted')").bind(prior.station_code).first();
     if(!station)throw new HttpError(400,'Please start again.');
-    return json({status:'ok',...await verification(env,current,station,prior.purpose,now)});
+    return json({status:'ok',...await verification(env,current,station,prior.purpose,now,prior.purpose==='edit'&&prior.code_hash.startsWith('delete:'))});
   }
   if(path==='/api/owner/verify'){
     await limit(env.DB,'email-verify-ip',request.headers.get('CF-Connecting-IP')||'unknown',30,900,now);

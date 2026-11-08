@@ -116,3 +116,14 @@ Apply 0014_registration_requests.sql before deploying this release. Signup retry
 Station creation, rights acceptance, verification challenge and queued email commit in one D1 transaction. Consuming the email code and granting the matching owner session also commit together. OTP attempt limits, Turnstile, CSRF and moderation remain enforced. Station names are limited to 96 UTF-8 bytes without control characters, matching the current radio.
 
 Signup fields lock during submission. Verification and resend share one request lock and ignore stale responses. Accepted email verification shows a success dialog even if the station editor cannot load; the dialog offers a retry. Client logo checks reject unsupported, oversized, undecodable or over-four-megapixel images before bot checks; server sanitization and screening remain authoritative. Errors appear inside the signup card. Session initialization is shared with startup so a slow directory request cannot prevent signup or race a second session cookie.
+
+
+## Revocation and failure recovery (2026-11-08)
+
+Apply 0015_station_command_origin.sql and 0016_current_station_presence.sql before deploying release 2026.11.08.5. Station-add commands now retain the initiating browser session. Unlink and logout atomically cancel that phone's pending pairing requests and queued additions, while preserving other linked phones. Enqueue and delivery recheck the originating grant inside the SQL statement. Commands created before attribution was available are failed closed by migration 0015 and may be requested again. Already executing firmware actions cannot be recalled by this server update.
+
+Migration 0016 distinguishes an omitted current-station telemetry field from an explicit report of no station. Older firmware retains the recent-listening fallback; explicit empty station reports clear it. Device code allocation starts at four digits and expands after repeated collisions without rotating existing stable codes.
+
+Admin email proof creation and MFA grants commit with their one-time code consumption. A failed transaction leaves the proof usable within its existing expiry and attempt limit. Station deletion likewise commits the deletion, pending-command cancellation, owner-session revocation and code consumption together. Deletion email resends preserve deletion-only scope and clearly identify the requested action.
+
+The public directory refreshes on return to Radio and after station changes, ignores stale responses, and preserves its last good list with a visible retry on failure. Directory and session failures cannot suppress Radio/Support initialization. Support verification locks duplicate requests and ignores responses after cancellation or replacement of the challenge.

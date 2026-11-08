@@ -10,12 +10,19 @@ export async function totpAt(secret,counter){const data=new Uint8Array(8);let n=
  const number=((hash[offset]&127)<<24)|(hash[offset+1]<<16)|(hash[offset+2]<<8)|hash[offset+3];
  return String(number%1000000).padStart(6,'0');
 }
-export async function consumeTotp(env,code,now){if(typeof code!=='string'||!/^\d{6}$/.test(code)||!env.ADMIN_TOTP_SECRET)return false;
- try{const secret=env.ADMIN_TOTP_SECRET.replace(/\s/g,'').toUpperCase(),hash=await digest(secret);
+// Validation is separate from consumption so a caller can commit the used step
+// in the same transaction as the authorization it permits.
+export async function matchTotp(env,code,now){if(typeof code!=='string'||!/^\d{6}$/.test(code)||!env.ADMIN_TOTP_SECRET)return null;
+ try{const secret=env.ADMIN_TOTP_SECRET.replace(/\s/g,'').toUpperCase(),secretHash=await digest(secret);
   for(const offset of [0,-1,1]){const counter=Math.floor(now/30)+offset;
    if(await totpAt(secret,counter)!==code)continue;
-   const used=await env.DB.prepare('INSERT INTO admin_mfa_used(secret_hash,counter) VALUES (?,?) ON CONFLICT DO NOTHING RETURNING counter').bind(hash,counter).first();
-   return Boolean(used);
+   return {secretHash,counter};
   }
- }catch{return false;}return false;
+ }catch{return null;}return null;
+}
+export async function consumeTotp(env,code,now){
+ const match=await matchTotp(env,code,now);if(!match)return false;
+ try{const used=await env.DB.prepare('INSERT INTO admin_mfa_used(secret_hash,counter) VALUES (?,?) ON CONFLICT DO NOTHING RETURNING counter').bind(match.secretHash,match.counter).first();
+  return Boolean(used);
+ }catch{return false;}
 }

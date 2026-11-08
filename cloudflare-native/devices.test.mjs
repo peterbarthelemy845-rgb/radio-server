@@ -26,3 +26,27 @@ test('new and reused device codes are encrypted and invalid credentials cannot b
  pair=f.sqlite.prepare('SELECT * FROM radio_pairs').get();
  assert.equal(await decrypt(f.env,pair.code_encrypted),created.pair_code);
 });
+
+test('occupied short-code pools expand without overwriting any existing radio’s code',async()=>{
+ const f=await fixture();await f.post('enroll',{enrollment_token:token});
+ const prepare=f.env.DB.prepare.bind(f.env.DB),lengths=[];let collisions=0;
+ f.env.DB.prepare=sql=>{
+  const query=prepare(sql);
+  if(sql.startsWith('INSERT INTO radio_pairs(')){
+   let parameters;const bind=query.bind.bind(query),run=query.run.bind(query);
+   query.bind=(...values)=>{parameters=values;bind(...values);return query;};
+   query.run=async()=>{
+    lengths.push((await decrypt(f.env,parameters[2])).length);
+    // Simulate unique-index collisions for all 4-, 5-, 6- and 7-digit tries.
+    if(collisions++<20)return {changes:0};return run();
+   };
+  }
+  return query;
+ };
+ const created=await(await f.post('link/start')).json();
+ assert.match(created.pair_code,/^[1-9][0-9]{7}$/);
+ assert.deepEqual(lengths,[...Array(5).fill(4),...Array(5).fill(5),...Array(5).fill(6),...Array(5).fill(7),8]);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_pairs').get().n,1);
+ const reused=await(await f.post('link/start',{stable_pair_code:created.pair_code})).json();
+ assert.equal(reused.pair_code,created.pair_code);
+});

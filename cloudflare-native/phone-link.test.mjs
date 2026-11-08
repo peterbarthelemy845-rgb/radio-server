@@ -12,14 +12,16 @@ async function fixture(){
   sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('./migrations/0009_device_code.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('./migrations/0010_saved_inventory.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0012_radio_controls.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0015_station_command_origin.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0016_current_station_presence.sql',import.meta.url),'utf8'));
   const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(qs){sqlite.exec('BEGIN');try{for(const q of qs)await q.run();sqlite.exec('COMMIT');}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
   const env={DB,DATA_ENCRYPTION_KEY:'e'.repeat(64)};
   sqlite.prepare('INSERT INTO radios VALUES (?,?,?,?,?)').run(radio,await digest(secret),'My radio',now,now);
   sqlite.prepare('INSERT INTO radio_pairs(radio_id,code_hash,expires) VALUES (?,?,0)').run(radio,await mac(env,'device-code:1234'));
   sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Test','https://example.com/live','owner@example.com','published',?,?)").run(now,now);
   async function browser(){const res=await authRoutes(new Request(host+'/api/session'),env,now);const state=await res.json(),cookie=res.headers.get('set-cookie').split(';')[0];
-    return {async get(path='radios',at=now){return phoneRoutes(new Request(host+'/api/phone/'+path,{headers:{Cookie:cookie}}),env,at);},async post(path,body){return phoneRoutes(new Request(host+'/api/phone/'+path,{method:'POST',headers:{Cookie:cookie,Origin:host,'X-CSRF-Token':state.csrf,'Content-Type':'application/json'},body:JSON.stringify(body)}),env,now,{human:async()=>{}});}};}
-  async function poll(body){return handle(new Request(host+'/api/radio/poll',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify({radio_id:radio,...body})}),env,now);}
+    return {hash:await digest(cookie.split('=')[1]),async get(path='radios',at=now){return phoneRoutes(new Request(host+'/api/phone/'+path,{headers:{Cookie:cookie}}),env,at);},async post(path,body){return phoneRoutes(new Request(host+'/api/phone/'+path,{method:'POST',headers:{Cookie:cookie,Origin:host,'X-CSRF-Token':state.csrf,'Content-Type':'application/json'},body:JSON.stringify(body)}),env,now,{human:async()=>{}});}};}
+  async function poll(body,at=now){return handle(new Request(host+'/api/radio/poll',{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},body:JSON.stringify({radio_id:radio,...body})}),env,at);}
   return {sqlite,env,browser,poll};
 }
 
@@ -114,4 +116,112 @@ test('revocation and station suspension block additional commands and status acc
   f.sqlite.exec('DELETE FROM phone_radios');
   await assert.rejects(phone.post('command/status',{command_id:command.command_id}),e=>e.status===404);
   await assert.rejects(phone.post('add',{radio_id:radio,station_code:'10'}),e=>e.status===403);
+});
+
+test('unlink cancels this phone’s queued additions and pairing claims while another phone’s command survives',async()=>{
+  const f=await fixture(),one=await f.browser(),two=await f.browser();
+  const approved=await(await one.post('claim',{device_code:'1234'})).json();
+  await f.poll({pair_claim_id:approved.claim_id,pair_decision:'approve'});
+  const second=await(await two.post('claim',{device_code:'1234'})).json();
+  await f.poll({pair_claim_id:second.claim_id,pair_decision:'approve'});
+  f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Second','https://example.com/second','owner@example.com','published',?,?)").run(now,now);
+  const own=await(await one.post('add',{radio_id:radio,station_code:'10'})).json();
+  const other=await(await two.post('add',{radio_id:radio,station_code:'11'})).json();
+  const waiting=await(await one.post('claim',{device_code:'1234'})).json();
+  await one.post('unlink',{radio_id:radio});
+  assert.equal(f.sqlite.prepare('SELECT state FROM pair_claims WHERE id=?').get(waiting.claim_id).state,'cancelled');
+  assert.equal(f.sqlite.prepare('SELECT state FROM pair_claims WHERE id=?').get(approved.claim_id).state,'cancelled');
+  assert.equal(f.sqlite.prepare('SELECT state FROM radio_commands WHERE id=?').get(own.command_id).state,'failed');
+  assert.equal(f.sqlite.prepare('SELECT state FROM radio_commands WHERE id=?').get(other.command_id).state,'pending');
+  const polled=await(await f.poll({pair_claim_id:waiting.claim_id,pair_decision:'approve',ack_id:own.command_id,ack_status:'added'})).json();
+  assert.equal(polled.claim_result,'cancelled');assert.equal(polled.command_id,other.command_id);
+  assert.equal(f.sqlite.prepare('SELECT 1 FROM phone_radios WHERE session_hash=? AND radio_id=?').get(one.hash,radio),undefined);
+  assert.equal(f.sqlite.prepare('SELECT state FROM radio_commands WHERE id=?').get(own.command_id).state,'failed');
+});
+
+test('mobile logout cancels pending and delivered additions and stale physical approval cannot relink',async()=>{
+  const f=await fixture(),token='f'.repeat(64),hash=await digest(token);
+  f.sqlite.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)').run(hash,'mobile-only',now,now+1000);
+  f.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run(hash,radio,now+1000);
+  const post=(path,body)=>phoneRoutes(new Request(host+'/api/phone/'+path,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)}),f.env,now,{human:async()=>{}});
+  const command=await(await post('add',{radio_id:radio,station_code:'10'})).json();
+  assert.equal((await(await f.poll({})).json()).command_id,command.command_id);
+  const claim=await(await post('claim',{device_code:'1234'})).json();
+  await post('logout',{});
+  const result=await(await f.poll({pair_claim_id:claim.claim_id,pair_decision:'approve'},now+61)).json();
+  assert.equal(result.command_id,'');assert.equal(result.linked,false);assert.equal(result.claim_result,'cancelled');
+  assert.equal(f.sqlite.prepare('SELECT state FROM radio_commands WHERE id=?').get(command.command_id).state,'failed');
+  await assert.rejects(post('add',{radio_id:radio,station_code:'10'}),e=>e.status===401);
+});
+
+test('station addition checks the originating grant inside enqueue and delivery statements',async()=>{
+  for(const phase of ['enqueue','delivery']){
+    const f=await fixture(),phone=await f.browser();
+    const claim=await(await phone.post('claim',{device_code:'1234'})).json();await f.poll({pair_claim_id:claim.claim_id,pair_decision:'approve'});
+    let queued;
+    if(phase==='delivery')queued=await(await phone.post('add',{radio_id:radio,station_code:'10'})).json();
+    const prepare=f.env.DB.prepare.bind(f.env.DB);let raced=false;
+    f.env.DB.prepare=sql=>{
+      const q=prepare(sql),method=phase==='enqueue'?'run':'first';
+      if(sql.includes(phase==='enqueue'?'INSERT INTO radio_commands':'UPDATE radio_commands SET state=\'delivered\'')){
+        const execute=q[method].bind(q);q[method]=async()=>{raced=true;f.sqlite.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').run(phone.hash,radio);return execute();};
+      }
+      return q;
+    };
+    if(phase==='enqueue'){
+      await assert.rejects(phone.post('add',{radio_id:radio,station_code:'10'}),e=>e.status===403||e.status===409);
+      assert.equal(f.sqlite.prepare('SELECT count(*) n FROM radio_commands').get().n,0);
+    }else{
+      assert.equal((await(await f.poll({})).json()).command_id,'');
+      assert.notEqual(f.sqlite.prepare('SELECT state FROM radio_commands WHERE id=?').get(queued.command_id).state,'delivered');
+    }
+    assert.equal(raced,true,phase);
+  }
+});
+
+test('expired originating grant prevents delivery even while another phone remains linked',async()=>{
+  const f=await fixture(),one=await f.browser(),two=await f.browser();
+  for(const phone of [one,two])f.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run(phone.hash,radio,now+1000);
+  const command=await(await one.post('add',{radio_id:radio,station_code:'10'})).json();
+  f.sqlite.prepare('UPDATE phone_radios SET expires=? WHERE session_hash=?').run(now,one.hash);
+  const polled=await(await f.poll({})).json();assert.equal(polled.linked,true);assert.equal(polled.command_id,'');
+  assert.equal(f.sqlite.prepare('SELECT state FROM radio_commands WHERE id=?').get(command.command_id).state,'failed');
+});
+
+test('unlink revocation is atomic when a database write fails',async()=>{
+  const f=await fixture(),phone=await f.browser();
+  const approved=await(await phone.post('claim',{device_code:'1234'})).json();await f.poll({pair_claim_id:approved.claim_id,pair_decision:'approve'});
+  const command=await(await phone.post('add',{radio_id:radio,station_code:'10'})).json();
+  const waiting=await(await phone.post('claim',{device_code:'1234'})).json();
+  const prepare=f.env.DB.prepare.bind(f.env.DB);
+  f.env.DB.prepare=sql=>{const query=prepare(sql);if(sql==='DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?')query.run=async()=>{throw Error('simulated database failure');};return query;};
+  await assert.rejects(phone.post('unlink',{radio_id:radio}),/simulated database failure/);
+  assert.ok(f.sqlite.prepare('SELECT 1 FROM phone_radios WHERE session_hash=? AND radio_id=?').get(phone.hash,radio));
+  assert.equal(f.sqlite.prepare('SELECT state FROM pair_claims WHERE id=?').get(waiting.claim_id).state,'waiting');
+  assert.equal(f.sqlite.prepare('SELECT state FROM radio_commands WHERE id=?').get(command.command_id).state,'pending');
+});
+
+test('command-origin migration fails closed for legacy queued commands and preserves completed history',async()=>{
+  const db=new DatabaseSync(':memory:');db.exec(readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8'));
+  db.prepare('INSERT INTO radios VALUES (?,?,?,?,?)').run(radio,'hash','Radio',now,now);
+  db.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Test','https://example.com/live','owner@example.com','published',?,?)").run(now,now);
+  for(const [index,state] of ['pending','delivered','added'].entries()){
+    // Separate station codes allow the existing per-radio active command uniqueness rule.
+    if(index)db.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Test','https://example.com/live','owner@example.com','published',?,?)").run(now,now);
+    db.prepare('INSERT INTO radio_commands VALUES (?,?,?,?,?,?,?)').run('legacy-'+state,radio,10+index,state,now,now+300,0);
+  }
+  db.exec(readFileSync(new URL('./migrations/0015_station_command_origin.sql',import.meta.url),'utf8'));
+  assert.deepEqual(db.prepare('SELECT state FROM radio_commands ORDER BY station_code').all().map(row=>row.state),['failed','failed','added']);
+});
+
+test('legacy current-station omission preserves listening reports while explicit none clears the display',async()=>{
+  const f=await fixture(),phone=await f.browser();
+  f.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run(phone.hash,radio,now+1000);
+  await f.poll({firmware_version:'2026.11.01',playing_station_code:'10'},now);
+  await f.poll({firmware_version:'2026.11.01',playing_station_code:'10'},now+60);
+  assert.equal((await(await phone.get('radios',now+60)).json()).radios[0].current_station,'Test');
+  await f.poll({firmware_version:'2026.11.07',playing_station_code:'10',current_station_code:null},now+61);
+  assert.equal((await(await phone.get('radios',now+61)).json()).radios[0].current_station,null);
+  await f.poll({firmware_version:'2026.11.07',playing_station_code:'10',current_station_code:'10'},now+62);
+  assert.equal((await(await phone.get('radios',now+62)).json()).radios[0].current_station,'Test');
 });

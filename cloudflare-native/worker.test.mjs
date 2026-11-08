@@ -7,6 +7,8 @@ const schema=readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),
 function database(){
   const sqlite=new DatabaseSync(':memory:');sqlite.exec(schema);sqlite.exec(readFileSync(new URL('./migrations/0005_community.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0008_reports_backups.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0007_local_ads.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0009_device_code.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0010_saved_inventory.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0012_radio_controls.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0013_support_ticket_access.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('./migrations/0014_registration_requests.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0015_station_command_origin.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0016_current_station_presence.sql',import.meta.url),'utf8'));
   return {sqlite,prepare(sql){
     let args=[];
     const query={bind(...values){args=values;return query;},
@@ -61,7 +63,8 @@ test('expired claim never creates a phone grant',async()=>{
 });
 test('command leases suppress repeated delivery and ack is device-scoped',async()=>{
   const env=await fixture();
-  env.DB.sqlite.prepare('INSERT INTO radio_commands VALUES (?,?,?,?,?,?,?)').run(command,id,10,'pending',now,now+300,0);
+  env.DB.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run('session',id,now+300);
+  env.DB.sqlite.prepare('INSERT INTO radio_commands VALUES (?,?,?,?,?,?,?,?)').run(command,id,10,'pending',now,now+300,0,'session');
   assert.equal((await (await poll(env)).json()).command_id,command);
   assert.equal((await (await poll(env)).json()).command_id,'');
   await poll(env,{ack_id:command,ack_status:'added'});
@@ -69,7 +72,8 @@ test('command leases suppress repeated delivery and ack is device-scoped',async(
 });
 test('suspended station is never delivered to device',async()=>{
   const env=await fixture();
-  env.DB.sqlite.prepare('INSERT INTO radio_commands VALUES (?,?,?,?,?,?,?)').run(command,id,10,'pending',now,now+300,0);
+  env.DB.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run('session',id,now+300);
+  env.DB.sqlite.prepare('INSERT INTO radio_commands VALUES (?,?,?,?,?,?,?,?)').run(command,id,10,'pending',now,now+300,0,'session');
   env.DB.sqlite.exec("UPDATE stations SET status='suspended'");
   assert.equal((await (await poll(env)).json()).command_id,'');
 });

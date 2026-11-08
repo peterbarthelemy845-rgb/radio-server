@@ -10,11 +10,11 @@ export function telemetryStatements(env,id,body,now){
  if(body.muted!==undefined&&typeof body.muted!=='boolean')throw new HttpError(400,'Invalid radio mute state.');
  let code=null;if(body.current_station_code!==undefined&&!['',0,'0',null].includes(body.current_station_code)){code=stationCode(body.current_station_code);if(code===null)throw new HttpError(400,'Invalid current station code.');}
  // A legacy poll clears capability rather than leaving an old green control UI.
- return [env.DB.prepare(`INSERT INTO radio_telemetry(radio_id,firmware_version,remote_control_version,volume_percent,muted,current_station_code,reported_at)
-  VALUES (?,?,?,?,?,?,?) ON CONFLICT(radio_id) DO UPDATE SET firmware_version=excluded.firmware_version,
+ return [env.DB.prepare(`INSERT INTO radio_telemetry(radio_id,firmware_version,remote_control_version,volume_percent,muted,current_station_code,reported_at,current_station_reported)
+  VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(radio_id) DO UPDATE SET firmware_version=excluded.firmware_version,
   remote_control_version=excluded.remote_control_version,volume_percent=excluded.volume_percent,muted=excluded.muted,
-  current_station_code=excluded.current_station_code,reported_at=excluded.reported_at
-  WHERE excluded.reported_at>=radio_telemetry.reported_at`).bind(id,version||null,body.remote_control_version===1?1:0,body.volume_percent??null,body.muted===undefined?null:Number(body.muted),code,now)];
+  current_station_code=excluded.current_station_code,reported_at=excluded.reported_at,current_station_reported=excluded.current_station_reported
+  WHERE excluded.reported_at>=radio_telemetry.reported_at`).bind(id,version||null,body.remote_control_version===1?1:0,body.volume_percent??null,body.muted===undefined?null:Number(body.muted),code,now,Number(Object.hasOwn(body,'current_station_code')))];
 }
 export async function controlInfo(env,sessionHash,id,now){
  const row=await env.DB.prepare(`SELECT t.*,s.name AS station_name,
@@ -24,7 +24,7 @@ export async function controlInfo(env,sessionHash,id,now){
  if(!row?.firmware_version&&!row?.remote_control_version)return null;
  return {firmware_version:row.firmware_version,remote_control_version:row.remote_control_version,volume_percent:row.volume_percent,
   muted:row.muted===null?null:Boolean(row.muted),current_station_code:row.station_name?String(row.current_station_code):null,
-  current_station:row.station_name||null,controls_allowed:Boolean(row.controls_allowed),telemetry_reported_at:row.reported_at,
+  ...(row.current_station_reported||row.current_station_code!==null?{current_station:row.station_name||null}:{}),controls_allowed:Boolean(row.controls_allowed),telemetry_reported_at:row.reported_at,
   controls_ready:row.remote_control_version===1&&row.reported_at>now-30};
 }
 async function linked(env,id,hash,now,control=false){

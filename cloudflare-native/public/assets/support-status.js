@@ -23,9 +23,11 @@ const statusVerifyForm=document.createElement('form'),statusCodeLabel=document.c
 const statusCode=document.createElement('input');statusCode.name='code';statusCode.inputMode='numeric';statusCode.autocomplete='one-time-code';statusCode.pattern='[0-9]{6}';statusCode.maxLength=6;statusCode.required=true;statusCodeLabel.append(statusCode);statusVerifyForm.append(statusCodeLabel);
 const statusVerifyButton=supportStatusNode('button','supportStatus.verifyButton','Verify and open ticket');statusVerifyButton.type='submit';statusVerifyForm.append(statusVerifyButton);
 const statusVerifyNotice=document.createElement('p');statusVerifyNotice.setAttribute('role','status');
-const statusCancel=supportStatusNode('button','supportStatus.cancel','Cancel','secondary');statusCancel.type='button';statusCancel.onclick=()=>statusVerify.close();
+const statusCancel=supportStatusNode('button','supportStatus.cancel','Cancel','secondary');statusCancel.type='button';statusCancel.onclick=()=>{invalidateSupportStatusChallenge();statusVerify.close();};
 statusVerify.append(statusVerifyTitle,statusVerifyHelp,statusVerifyForm,statusVerifyNotice,statusCancel);document.body.append(statusVerify);
-let supportStatusVerification='',supportStatusReference='',supportStatusTimer,supportStatusGeneration=0;
+let supportStatusVerification='',supportStatusReference='',supportStatusTimer,supportStatusGeneration=0,supportStatusChallengeGeneration=0,supportStatusLookupBusy=false,supportStatusVerifyBusy=false;
+function invalidateSupportStatusChallenge(){supportStatusChallengeGeneration++;supportStatusVerification='';supportStatusVerifyBusy=false;busy(statusVerifyForm,false);statusCode.value='';statusVerifyNotice.textContent='';}
+function currentSupportStatusChallenge(generation,id){return generation===supportStatusChallengeGeneration&&supportStatusVerification===id&&statusVerify.open;}
 const supportStatusLabels={new:['supportStatus.open','Open'],review:['supportStatus.review','In review'],closed:['supportStatus.closed','Closed']};
 function supportTicketStateNode(state){const [key,label]=supportStatusLabels[state]||['supportStatus.open','Open'];return supportStatusNode('span',key,label,'support-ticket-state');}
 function supportPrivateText(tag,text,className){const node=supportStatusNode(tag,null,text,className);node.dataset.i18nSkip='true';return node;}
@@ -52,9 +54,23 @@ async function openSupportTicket(reference,silent=false){
  }catch(e){if(generation!==supportStatusGeneration)return;if(e.status===401||e.status===403)clearSupportTicket();delete statusNotice.dataset.i18n;statusNotice.textContent=e.message;scheduleSupportTicketRefresh();}
 }
 function clearSupportTicket(){++supportStatusGeneration;supportStatusReference='';clearTimeout(supportStatusTimer);statusPrivate.replaceChildren();statusPrivate.hidden=true;statusLookup.hidden=false;statusIntro.hidden=false;statusRecent.hidden=false;statusNotice.textContent='';}
-statusLookup.onsubmit=async event=>{event.preventDefault();busy(statusLookup,true);statusNotice.textContent='';try{const result=await api('/api/support/status/request',{reference:statusReference.value.trim().toLowerCase(),email:statusEmail.value,turnstile_token:await human(statusLookup,'support-status')});supportStatusVerification=result.verification_id;statusCode.value='';statusVerifyNotice.textContent='';statusVerify.showModal();statusCode.focus();}catch(e){delete statusNotice.dataset.i18n;statusNotice.textContent=e.message;}finally{busy(statusLookup,false);supportStatusChanged();}};
-statusVerifyForm.onsubmit=async event=>{event.preventDefault();busy(statusVerifyForm,true);try{const result=await api('/api/support/status/verify',{verification_id:supportStatusVerification,code:statusCode.value});statusVerify.close();statusCode.value='';statusLookup.reset();await openSupportTicket(result.reference);}catch(e){statusVerifyNotice.textContent=e.message;}finally{busy(statusVerifyForm,false);supportStatusChanged();}};
-statusVerify.addEventListener('close',()=>{statusCode.value='';statusVerifyNotice.textContent='';});
+statusLookup.onsubmit=async event=>{
+ event.preventDefault();if(supportStatusLookupBusy||statusVerify.open)return;
+ const generation=++supportStatusChallengeGeneration,reference=statusReference.value.trim().toLowerCase(),email=statusEmail.value;
+ supportStatusVerification='';supportStatusLookupBusy=true;busy(statusLookup,true,true);statusNotice.textContent='';
+ try{const turnstile_token=await human(statusLookup,'support-status');if(generation!==supportStatusChallengeGeneration)return;const result=await api('/api/support/status/request',{reference,email,turnstile_token});if(generation!==supportStatusChallengeGeneration)return;supportStatusVerification=result.verification_id;statusCode.value='';statusVerifyNotice.textContent='';if(!statusVerify.open)statusVerify.showModal();statusCode.focus();}
+ catch(e){if(generation===supportStatusChallengeGeneration){delete statusNotice.dataset.i18n;statusNotice.textContent=e.message;}}
+ finally{supportStatusLookupBusy=false;busy(statusLookup,false);supportStatusChanged();}
+};
+statusVerifyForm.onsubmit=async event=>{
+ event.preventDefault();if(supportStatusVerifyBusy||!supportStatusVerification||!statusVerify.open)return;
+ const generation=supportStatusChallengeGeneration,id=supportStatusVerification,code=statusCode.value;supportStatusVerifyBusy=true;busy(statusVerifyForm,true,true);
+ try{const result=await api('/api/support/status/verify',{verification_id:id,code});if(!currentSupportStatusChallenge(generation,id))return;invalidateSupportStatusChallenge();statusVerify.close();statusLookup.reset();await openSupportTicket(result.reference);}
+ catch(e){if(currentSupportStatusChallenge(generation,id))statusVerifyNotice.textContent=e.message;}
+ finally{if(generation===supportStatusChallengeGeneration){supportStatusVerifyBusy=false;busy(statusVerifyForm,false);}supportStatusChanged();}
+};
+statusVerify.addEventListener('cancel',invalidateSupportStatusChallenge);
+statusVerify.addEventListener('close',()=>{if(!statusVerify.open&&supportStatusVerification)invalidateSupportStatusChallenge();});
 statusDetails.addEventListener('toggle',()=>{if(statusDetails.open&&!supportStatusReference)loadSupportTicketRecent();scheduleSupportTicketRefresh();});document.addEventListener('visibilitychange',scheduleSupportTicketRefresh);new MutationObserver(scheduleSupportTicketRefresh).observe($('support'),{attributes:true,attributeFilter:['hidden']});
 window.addEventListener('radio-locals-ready',loadSupportTicketRecent);if(typeof state!=='undefined'&&state)loadSupportTicketRecent();
 window.addEventListener('support-ticket-created',event=>{if(/^[a-f0-9]{32}$/.test(event.detail?.reference||'')){loadSupportTicketRecent();openSupportTicket(event.detail.reference);}});

@@ -26,7 +26,10 @@ export async function deviceRoutes(request,env,now){const path=new URL(request.u
   await env.DB.prepare('UPDATE radio_pairs SET code_encrypted=? WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?)').bind(await encrypt(env,stable),id,existing.code_hash,now).run();
   return json({pair_code:stable,persistent:true,expires_in:0});}
  for(let attempt=0;attempt<30;attempt++){
-  const number=crypto.getRandomValues(new Uint32Array(1))[0];const code=attempt===0&&stable?stable:String(1000+number%9000),codeHash=await mac(env,'device-code:'+code);
+  // Start short, then expand after collisions so a growing fleet cannot exhaust
+  // the four-digit pool. Existing stable codes are never changed here.
+  const digits=Math.min(8,4+Math.floor(attempt/5)),minimum=10**(digits-1);
+  const number=crypto.getRandomValues(new Uint32Array(1))[0];const code=attempt===0&&stable?stable:String(minimum+number%(9*minimum)),codeHash=await mac(env,'device-code:'+code);
   // Unique indices reject collisions; no existing radio's code can be replaced.
   await env.DB.prepare('INSERT INTO radio_pairs(radio_id,code_hash,expires,code_encrypted) VALUES (?,?,0,?) ON CONFLICT DO NOTHING').bind(id,codeHash,await encrypt(env,code)).run();
   const row=await env.DB.prepare('SELECT code_hash FROM radio_pairs WHERE radio_id=?').bind(id).first();

@@ -38,11 +38,16 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   const current=await browserWrite(request,env,now),body=await readJson(request);
   const ip=request.headers.get('CF-Connecting-IP')||'unknown';
   if(path==='/api/phone/unlink'){
-    const id=String(body.radio_id||'');await env.DB.batch([...revokeControlStatements(env,id,current.token_hash),env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').bind(current.token_hash,id)]);
+    const id=String(body.radio_id||'');await env.DB.batch([
+      ...revokeControlStatements(env,id,current.token_hash),
+      env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND radio_id=? AND state IN ('waiting','approved')").bind(current.token_hash,id),
+      env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE session_hash=? AND radio_id=? AND state IN ('pending','delivered')").bind(current.token_hash,id),
+      env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').bind(current.token_hash,id)
+    ]);
     return json({status:'ok'});
   }
   if(path==='/api/phone/logout'){
-    await env.DB.batch([env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND state IN ('waiting','approved')").bind(current.token_hash),env.DB.prepare('DELETE FROM radio_control_grants WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').bind(now,current.token_hash)]);return json({status:'ok'});
+    await env.DB.batch([env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND state IN ('waiting','approved')").bind(current.token_hash),env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE session_hash=? AND state IN ('pending','delivered')").bind(current.token_hash),env.DB.prepare('DELETE FROM radio_control_grants WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').bind(now,current.token_hash)]);return json({status:'ok'});
   }
   if(path==='/api/phone/claim'){
     await limit(env.DB,'claim-ip',ip,5,900,now);
@@ -87,10 +92,15 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     if(!/^[0-9]{2,6}$/.test(code)||!await env.DB.prepare("SELECT 1 FROM stations WHERE code=? AND status='published'").bind(Number(code)).first())
       throw new HttpError(404,'Station not found.');
     await env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE radio_id=? AND expires<=? AND state IN ('pending','delivered')").bind(id,now).run();
-    await env.DB.prepare(`INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires)
-      VALUES (?,?,?,'pending',?,?) ON CONFLICT DO NOTHING`).bind(randomHex(16),id,Number(code),now,now+300).run();
-    const command=await env.DB.prepare(`SELECT id FROM radio_commands WHERE radio_id=? AND station_code=?
-      AND state IN ('pending','delivered') AND expires>?`).bind(id,Number(code),now).first();
+    // Authorization must be checked inside the write: an unlink can occur after
+    // the earlier friendly validation but before this statement executes.
+    await env.DB.prepare(`INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires,session_hash)
+      SELECT ?,?,?,'pending',?,?,? WHERE EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=? AND p.session_hash=? AND p.expires>?)
+      AND EXISTS(SELECT 1 FROM stations WHERE code=? AND status='published') ON CONFLICT DO NOTHING`)
+      .bind(randomHex(16),id,Number(code),now,now+300,current.token_hash,id,current.token_hash,now,Number(code)).run();
+    const command=await env.DB.prepare(`SELECT c.id FROM radio_commands c JOIN phone_radios p ON p.radio_id=c.radio_id AND p.session_hash=c.session_hash
+      WHERE c.radio_id=? AND c.station_code=? AND c.session_hash=? AND p.expires>?
+      AND c.state IN ('pending','delivered') AND c.expires>?`).bind(id,Number(code),current.token_hash,now,now).first();
     if(!command)throw new HttpError(409,'Please try again.');
     return json({command_id:command.id,state:'pending'});
   }

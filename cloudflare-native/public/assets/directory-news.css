@@ -103,3 +103,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #78
 #listenerActionDialog .listener-dialog-done{width:100%;font-size:19px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;min-height:58px}
 #listenerActionDialog button:focus-visible{outline:3px solid #2377ff;outline-offset:3px}
 /* END listener inventory and confirmation improvements */
+
+#stationDirectoryStatus{margin:8px 0 12px;padding:10px 12px;border:1px solid #cedbef;border-radius:12px;background:#f4f7fc;color:#20314f}
+#stationDirectoryStatus p{margin:0 0 8px;font-size:13px;line-height:1.4}
+#stationDirectoryStatus button{min-height:40px;margin:0;padding:8px 14px;font-size:13px}

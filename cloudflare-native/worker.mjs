@@ -102,6 +102,8 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     }
     statements.push(env.DB.prepare(`UPDATE radio_commands SET state='expired' WHERE radio_id=?
       AND expires<=? AND state IN ('pending','delivered')`).bind(id,now));
+    statements.push(env.DB.prepare(`UPDATE radio_commands SET state='failed' WHERE radio_id=? AND state IN ('pending','delivered')
+      AND NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=radio_commands.radio_id AND p.session_hash=radio_commands.session_hash AND p.expires>?)`).bind(id,now));
     await env.DB.batch(statements);
     await recordListening(env,id,body.playing_station_code,now);
     if(decisionAck)claimResult=(await env.DB.prepare('SELECT state FROM pair_claims WHERE id=? AND radio_id=?').bind(claim,id).first())?.state||'';
@@ -110,9 +112,10 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     // Lease and choose in one statement; duplicate polls cannot claim the same command concurrently.
     const command=await env.DB.prepare(`UPDATE radio_commands SET state='delivered',lease=? WHERE id=(
       SELECT c.id FROM radio_commands c JOIN stations s ON s.code=c.station_code
+      JOIN phone_radios p ON p.radio_id=c.radio_id AND p.session_hash=c.session_hash
       WHERE c.radio_id=? AND c.state IN ('pending','delivered') AND c.expires>? AND c.lease<=?
-      AND s.status='published' ORDER BY c.created_at LIMIT 1)
-      RETURNING id,station_code,expires`).bind(now+60,id,now,now).first();
+      AND s.status='published' AND p.expires>? ORDER BY c.created_at LIMIT 1)
+      RETURNING id,station_code,expires`).bind(now+60,id,now,now,now).first();
     const linked=Boolean(await env.DB.prepare('SELECT 1 FROM phone_radios WHERE radio_id=? AND expires>?').bind(id,now).first());
     const control=await pollControls(env,id,body,now);
     return json({...control,linked,command_id:command?.id||'',station_code:command?String(command.station_code):'',
@@ -165,6 +168,8 @@ export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
     env.DB.prepare('DELETE FROM rate_limits WHERE expires<?').bind(now),
     env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE state='waiting' AND expires<=?").bind(now),
     env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE state IN ('pending','delivered') AND expires<=?").bind(now),
+    env.DB.prepare(`UPDATE radio_commands SET state='failed' WHERE state IN ('pending','delivered')
+      AND NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=radio_commands.radio_id AND p.session_hash=radio_commands.session_hash AND p.expires>?)`).bind(now),
     env.DB.prepare('DELETE FROM radio_control_grants WHERE expires<=?').bind(now),
     env.DB.prepare('DELETE FROM phone_radios WHERE expires<=?').bind(now),
     env.DB.prepare("UPDATE radio_control_commands SET state='expired' WHERE expires<=? AND state IN ('pending','delivered')").bind(now),

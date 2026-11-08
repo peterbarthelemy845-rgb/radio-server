@@ -199,6 +199,33 @@ test('owner removal requires confirmation and hides only the signed-in station',
  await assert.rejects(f.post('/api/owner/delete',{confirm:true}),e=>e.status===401);
 });
 
+test('a failed deletion transaction leaves the email code and owner grant usable for retry',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+ const challenge=await(await f.post('/api/owner/delete',{})).json();
+ const mail=f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get();
+ const code=JSON.parse(await decrypt(f.env,mail.encrypted_payload)).text.match(/code is (\d{6})/)[1];
+ f.env.DB.failBatchAfter=2;await assert.rejects(f.post('/api/owner/delete',{confirm:true,verification_id:challenge.verification_id,code}),/Simulated database/);
+ assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications WHERE id=?').get(challenge.verification_id).consumed_at,null);
+ assert.notEqual(f.sqlite.prepare('SELECT status FROM stations WHERE code=10').get().status,'deleted');
+ assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,10);
+ f.env.DB.failBatchAfter=null;await f.post('/api/owner/delete',{confirm:true,verification_id:challenge.verification_id,code});
+ assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=10').get().status,'deleted');
+});
+
+test('resending a deletion code preserves its deletion-only purpose and invalidates the old code',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+ const first=await(await f.post('/api/owner/delete',{})).json();
+ const second=await(await f.post('/api/owner/resend',{verification_id:first.verification_id,turnstile_token:'test'}, {},now+61)).json();
+ assert.notEqual(first.verification_id,second.verification_id);
+ const challenge=f.sqlite.prepare('SELECT code_hash FROM email_verifications WHERE id=?').get(second.verification_id);assert.match(challenge.code_hash,/^delete:/);
+ assert.notEqual(f.sqlite.prepare('SELECT consumed_at FROM email_verifications WHERE id=?').get(first.verification_id).consumed_at,null);
+ const mail=f.sqlite.prepare('SELECT subject,encrypted_payload FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get();assert.match(mail.subject,/deletion/);
+ const text=JSON.parse(await decrypt(f.env,mail.encrypted_payload)).text,code=text.match(/code is (\d{6})/)[1];assert.match(text,/confirms removal/);
+ await assert.rejects(f.post('/api/owner/verify',{verification_id:second.verification_id,code},{},now+61),e=>e.status===400);
+ await f.post('/api/owner/delete',{confirm:true,verification_id:second.verification_id,code},{},now+61);
+ assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=10').get().status,'deleted');
+});
+
 test('station-owner session survives navigation and expires after thirty minutes',async()=>{
  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
  const request=()=>new Request(host+'/api/owner/station',{headers:{Cookie:f.cookie}});

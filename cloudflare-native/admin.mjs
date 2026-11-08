@@ -1,5 +1,5 @@
 import {json,session,browserWrite,readJson,limit,human,otp,mac,randomHex,encrypt,decrypt,digest,HttpError} from './security.mjs';
-import {consumeTotp} from './totp.mjs';
+import {matchTotp} from './totp.mjs';
 import {decisionReason,ownerNotification,commitOwnerNotification} from './notifications.mjs';
 async function revision(env,row){return mac(env,'station-review:'+JSON.stringify(row));}
 export async function adminRoutes(request,env,now,deps={human}){
@@ -26,10 +26,13 @@ export async function adminRoutes(request,env,now,deps={human}){
   if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the six-digit email code.');
   const check=await env.DB.prepare(`UPDATE admin_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING code_hash`).bind(id,current.token_hash,now).first();
   if(!check||check.code_hash!==await mac(env,'admin:'+id+':'+code))throw new HttpError(400,'Incorrect or expired code.');
-  const consumed=await env.DB.prepare('UPDATE admin_verifications SET consumed_at=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? RETURNING id').bind(now,id,current.token_hash,now).first();
-  if(!consumed)throw new HttpError(400,'Incorrect or expired code.');
-  const proof=randomHex(16);
-  await env.DB.prepare('INSERT INTO admin_email_proofs(id,session_hash,expires) VALUES (?,?,?)').bind(proof,current.token_hash,now+300).run();
+  const proof=randomHex(16),marker='verified:'+proof;
+  await env.DB.batch([
+   env.DB.prepare('UPDATE admin_verifications SET consumed_at=?,code_hash=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND code_hash=?').bind(now,marker,id,current.token_hash,now,check.code_hash),
+   env.DB.prepare(`INSERT INTO admin_email_proofs(id,session_hash,expires) SELECT ?,?,? WHERE EXISTS
+    (SELECT 1 FROM admin_verifications WHERE id=? AND session_hash=? AND consumed_at=? AND code_hash=?)`).bind(proof,current.token_hash,now+300,id,current.token_hash,now,marker)
+  ]);
+  if(!await env.DB.prepare('SELECT 1 FROM admin_email_proofs WHERE id=? AND session_hash=?').bind(proof,current.token_hash).first())throw new HttpError(400,'Incorrect or expired code.');
   return json({status:'mfa_required',mfa_id:proof});
  }
  if(path==='/api/admin/mfa'&&request.method==='POST'){
@@ -37,13 +40,19 @@ export async function adminRoutes(request,env,now,deps={human}){
   if(!/^[a-f0-9]{32}$/.test(id))throw new HttpError(400,'Start sign-in again.');
   const proof=await env.DB.prepare(`UPDATE admin_email_proofs SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING id`).bind(id,current.token_hash,now).first();
   if(!proof)throw new HttpError(400,'This sign-in expired. Start again.');
-  if(!await consumeTotp(env,body.authenticator_code,now))throw new HttpError(400,'Incorrect or already-used authenticator code. Wait for the next code and try again.');
-  const consumed=await env.DB.prepare('UPDATE admin_email_proofs SET consumed_at=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? RETURNING id').bind(now,id,current.token_hash,now).first();
-  if(!consumed)throw new HttpError(400,'This sign-in expired. Start again.');
+  const match=await matchTotp(env,body.authenticator_code,now);
+  if(!match)throw new HttpError(400,'Incorrect or already-used authenticator code. Wait for the next code and try again.');
+  // Only this attempt can see its random consumed-proof marker. Matching a
+  // previously used TOTP step alone must never authorize a losing request.
+  const marker='used:'+randomHex(16),applied='EXISTS (SELECT 1 FROM admin_email_proofs WHERE id=? AND session_hash=? AND consumed_at=?)',args=[marker,current.token_hash,now];
   await env.DB.batch([
-   env.DB.prepare('INSERT INTO admin_sessions(session_hash,expires) VALUES (?,?) ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires').bind(current.token_hash,now+900),
-   env.DB.prepare('INSERT INTO admin_mfa_sessions(session_hash,expires) VALUES (?,?) ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires').bind(current.token_hash,now+900)
+   env.DB.prepare(`UPDATE admin_email_proofs SET id=?,consumed_at=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>?
+    AND NOT EXISTS (SELECT 1 FROM admin_mfa_used WHERE secret_hash=? AND counter=?)`).bind(marker,now,id,current.token_hash,now,match.secretHash,match.counter),
+   env.DB.prepare(`INSERT INTO admin_mfa_used(secret_hash,counter) SELECT ?,? WHERE ${applied}`).bind(match.secretHash,match.counter,...args),
+   env.DB.prepare(`INSERT INTO admin_sessions(session_hash,expires) SELECT ?,? WHERE ${applied} ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires`).bind(current.token_hash,now+900,...args),
+   env.DB.prepare(`INSERT INTO admin_mfa_sessions(session_hash,expires) SELECT ?,? WHERE ${applied} ON CONFLICT(session_hash) DO UPDATE SET expires=excluded.expires`).bind(current.token_hash,now+900,...args)
   ]);
+  if(!await env.DB.prepare(`SELECT 1 FROM admin_email_proofs WHERE id=? AND session_hash=? AND consumed_at=?`).bind(...args).first())throw new HttpError(400,'Incorrect or already-used authenticator code. Wait for the next code and try again.');
   return json({status:'ok'});
  }
  const grant=await env.DB.prepare('SELECT 1 FROM admin_sessions a JOIN admin_mfa_sessions m ON m.session_hash=a.session_hash WHERE a.session_hash=? AND a.expires>? AND m.expires>?').bind(current.token_hash,now,now).first();

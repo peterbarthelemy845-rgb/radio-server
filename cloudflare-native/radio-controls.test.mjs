@@ -59,7 +59,7 @@ test('station selection uses only fresh saved published codes and pauses behind 
  const f=await fixture();await f.approve();
  await assert.rejects(f.post('',{radio_id:radio,action:'select_station',value:'99',request_id:'s'.repeat(32)}),e=>e.status===409);
  const body={radio_id:radio,action:'select_station',value:String(f.station),request_id:'t'.repeat(32)},command=await f.post('',body);
- f.sqlite.prepare("INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires) VALUES ('old-add',?,?,'pending',?,?)").run(radio,f.station,f.now,f.now+300);
+ f.sqlite.prepare("INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires,session_hash) VALUES ('old-add',?,?,'pending',?,?,?)").run(radio,f.station,f.now,f.now+300,f.hash);
  const waiting=await f.poll(f.telemetry);assert.equal(waiting.control_command_id,'');assert.equal(waiting.control_valid_id,command.command_id);
  f.sqlite.prepare("UPDATE radio_commands SET state='added'").run();
  const delivered=await f.poll(f.telemetry);assert.equal(delivered.control_command_id,command.command_id);assert.equal(delivered.control_value,f.station);
