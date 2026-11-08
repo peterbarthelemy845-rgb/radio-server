@@ -1,11 +1,11 @@
 (()=>{
  'use strict';
  const registrationForm=document.getElementById('registerForm');
- const registrationIds=['connectionUrlMode','connectionIpMode','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','generatedStreamUrl','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman'];
+ const registrationIds=['streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman'];
  const registrationNodes=Object.fromEntries(registrationIds.map(id=>[id,document.getElementById(id)]));
  if(!registrationForm||registrationIds.some(id=>!registrationNodes[id]))return;
  const registrationUrl=registrationNodes.streamUrlInput,registrationBuilder=[registrationNodes.streamHost,registrationNodes.streamPort,registrationNodes.streamProtocol,registrationNodes.streamPath];
- let registrationMode='url',registrationUrlDraft=registrationUrl.value,registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
+ let registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
  function registrationStatus(key,fallback,state=''){
   const target=registrationNodes.streamTestStatus;target.dataset.state=state;registrationStatusKey=key;registrationStatusFallback=fallback;
@@ -35,8 +35,7 @@
  }
  function registrationSetUrl(value){
   if(registrationUrl.value===value)return;
-  registrationUrl.value=value;registrationInternalInput=true;
-  try{registrationUrl.dispatchEvent(new Event('input',{bubbles:true}));}finally{registrationInternalInput=false;}
+  registrationUrl.value=value;registrationUrl.dispatchEvent(new Event('input',{bubbles:true}));
  }
  function registrationControls(){
   const submitting=registrationForm.querySelector('button[type="submit"]')?.disabled===true;
@@ -51,48 +50,28 @@
   if(!path.startsWith('/')||path.startsWith('//')||/[\x00-\x1f\x7f\\#]/.test(path))throw registrationIssue('registration.validPath','Start the stream path with one / and do not include a fragment.',registrationNodes.streamPath);
   try{return registrationParse(protocol+'://'+host+(port?':'+port:'')+path);}catch(error){throw {...error,field:error.key==='registration.noTokens'?registrationNodes.streamPath:registrationNodes.streamHost};}
  }
- function registrationValidate(report=false,canonicalize=false){
+ function registrationValidate(report=false){
   registrationUrl.setCustomValidity('');for(const field of registrationBuilder)field.setCustomValidity('');
   try{
-   const parsed=registrationMode==='ip'?registrationCompose():registrationParse(registrationUrl.value);
-   if(registrationMode==='ip'||canonicalize)registrationSetUrl(parsed.href);registrationNodes.generatedStreamUrl.textContent=parsed.href;registrationValid=true;registrationControls();return true;
+   const parsed=registrationCompose();
+   registrationSetUrl(parsed.href);registrationValid=true;registrationControls();return true;
   }catch(error){
-   registrationValid=false;registrationNodes.generatedStreamUrl.textContent='';
-   const field=error.field||(registrationMode==='ip'?registrationNodes.streamHost:registrationUrl),safe=error.message||'Check the stream address and try again.';
-   field.setCustomValidity(safe);if(registrationMode==='ip')registrationSetUrl('');registrationControls();
+   registrationValid=false;
+   const field=error.field||registrationNodes.streamHost,safe=error.message||'Check the stream address and try again.';
+   field.setCustomValidity(safe);registrationSetUrl('');registrationControls();
    if(report){registrationStatus(error.key||'',error.fallback||safe,'invalid');field.focus();field.reportValidity();}
    return false;
   }
  }
- function registrationSetMode(next){
-  if(next===registrationMode)return;
-  registrationInvalidate();
-  if(next==='ip'){
-   registrationUrlDraft=registrationUrl.value;
-   try{const parsed=registrationParse(registrationUrl.value);registrationNodes.streamHost.value=parsed.hostname;registrationNodes.streamPort.value=parsed.port;registrationNodes.streamProtocol.value=parsed.protocol.slice(0,-1);registrationNodes.streamPath.value=parsed.pathname+parsed.search;}catch{}
-  }
-  registrationMode=next;registrationNodes.streamAddressFields.hidden=next!=='ip';registrationUrl.readOnly=next==='ip';
-  for(const field of registrationBuilder){field.disabled=next!=='ip';field.required=next==='ip'&&field===registrationNodes.streamHost;field.setCustomValidity('');}
-  registrationNodes.connectionUrlMode.setAttribute('aria-pressed',String(next==='url'));registrationNodes.connectionIpMode.setAttribute('aria-pressed',String(next==='ip'));
-  if(next==='url'&&!registrationUrl.value&&registrationUrlDraft)registrationSetUrl(registrationUrlDraft);
-  registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));
- }
- registrationNodes.connectionUrlMode.onclick=()=>registrationSetMode('url');registrationNodes.connectionIpMode.onclick=()=>registrationSetMode('ip');
- registrationUrl.addEventListener('input',()=>{if(registrationInternalInput)return;registrationInvalidate();registrationUrlDraft=registrationUrl.value;registrationValidate();});
- registrationUrl.addEventListener('paste',event=>{
-  if(registrationMode!=='url'||registrationUrl.readOnly||registrationUrl.value!=='https://')return;
-  const pasted=event.clipboardData?.getData('text/plain')?.trim();if(!/^https?:\/\//i.test(pasted||''))return;
-  event.preventDefault();registrationUrl.value=pasted;registrationUrl.dispatchEvent(new Event('input',{bubbles:true}));
- });
- for(const field of registrationBuilder)for(const event of ['input','change'])field.addEventListener(event,()=>{if(registrationMode!=='ip')return;registrationInvalidate();registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
- window.prepareRegistrationStream=()=>registrationValidate(true,true);
+ for(const field of registrationBuilder)for(const event of ['input','change'])field.addEventListener(event,()=>{registrationInvalidate();registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
+ window.prepareRegistrationStream=()=>registrationValidate(true);
  registrationNodes.copyGeneratedStream.onclick=async()=>{
-  if(!registrationValidate(true,true))return;const value=registrationUrl.value;
+  if(!registrationValidate(true))return;const value=registrationUrl.value;
   try{if(!window.isSecureContext||!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText(value);registrationStatus('registration.urlCopied','Stream URL copied.','copy');}
   catch{registrationUrl.focus();registrationUrl.select();registrationStatus('registration.copyManually','Select and copy the stream URL shown above.','copy');}
  };
  registrationNodes.testStream.onclick=async()=>{
-  if(registrationActiveTest||!registrationValidate(true,true))return;
+  if(registrationActiveTest||!registrationValidate(true))return;
   const version=registrationVersion,value=registrationUrl.value,attempt={};registrationActiveTest=attempt;registrationControls();
   registrationStatus('registration.checking','Checking the stream. No audio will play.','checking');
   const current=()=>registrationActiveTest===attempt&&registrationVersion===version&&registrationUrl.value===value&&!document.getElementById('register').hidden;
@@ -107,7 +86,7 @@
  };
  new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
  window.addEventListener('app-language-changed',()=>{registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
- registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationMode='url';registrationNodes.streamAddressFields.hidden=true;registrationUrl.readOnly=false;for(const field of registrationBuilder){field.disabled=true;field.required=false;field.setCustomValidity('');}registrationNodes.connectionUrlMode.setAttribute('aria-pressed','true');registrationNodes.connectionIpMode.setAttribute('aria-pressed','false');registrationUrlDraft=registrationUrl.value;registrationValidate();});});
- for(const field of registrationBuilder){field.disabled=true;field.required=false;field.setCustomValidity('');}
- registrationNodes.streamAddressFields.hidden=true;registrationUrl.readOnly=false;registrationNodes.connectionUrlMode.setAttribute('aria-pressed','true');registrationNodes.connectionIpMode.setAttribute('aria-pressed','false');registrationValidate();
+ registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationValidate();});});
+ for(const field of registrationBuilder){field.disabled=false;field.required=field===registrationNodes.streamHost;field.setCustomValidity('');}
+ registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=true;registrationValidate();
 })();

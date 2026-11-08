@@ -18,17 +18,13 @@
 #register input:not([type=checkbox]):not([type=file]),#register select,#register textarea{min-height:40px;padding:8px 10px;margin-top:4px;font-size:16px;line-height:1.25;border:1px solid #d2e0f2;background:#fbfcff;border-radius:7px}
 #register .stream-connection{border:0;min-width:0;padding:0;margin:10px 0 0}
 #register .stream-connection legend{padding:0;margin:0 0 5px;font-size:12px;font-weight:700;color:#233a5b}
-#register .connection-methods{display:grid;grid-template-columns:1fr 1fr;padding:3px;gap:4px;border:1px solid #d2e0f2;border-radius:9px;background:#f0f5fe}
-#register .connection-methods button{display:flex;align-items:center;justify-content:center;gap:6px;min-height:34px;background:transparent;color:#4b6483;font-size:12px;border-radius:6px;padding:7px 5px}
-#register .connection-methods button[aria-pressed=true]{background:#0863df;color:white;box-shadow:0 2px 5px #0863df20}
-#register .connection-methods small{font-size:9px;font-weight:400;opacity:.85}
-#register .stream-address-fields{margin-top:8px;padding:10px;border:1px solid #dce7f6;border-radius:9px;background:#f7faff}
+#register .stream-address-fields{padding:10px;border:1px solid #dce7f6;border-radius:9px;background:#f7faff}
 #register .stream-address-fields>label:first-child{margin-top:0}
 #register .stream-port-protocol,#register .registration-details{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 #register .stream-port-protocol>label,#register .registration-details>label{min-width:0}
 #register .generated-stream{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 8px;align-items:center;margin-top:10px;font-size:11px;color:#617694}
-#register .generated-stream>span{grid-column:1/-1}
-#register .generated-stream output{overflow-wrap:anywhere;line-height:1.4;color:#233a5b;min-width:0}
+#register .generated-stream>label{grid-column:1/-1;margin:0}
+#register #streamUrlInput{min-width:0;margin:0;background:#edf3fc;color:#233a5b;font-size:12px}
 #register #copyGeneratedStream{min-height:34px;padding:7px 9px;margin:0;font-size:11px}
 #register .stream-test-row{display:flex;align-items:center;gap:9px;margin-top:8px}
 #register #testStream{min-height:36px;margin:0;padding:8px 12px;font-size:12px;background:#e6effd;color:#1553a5}
