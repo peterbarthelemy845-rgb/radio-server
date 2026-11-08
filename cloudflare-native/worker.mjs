@@ -156,6 +156,7 @@ export async function fetchHandler(request,env,ctx) {
 }
 export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM registration_requests WHERE expires<=?').bind(now),
     env.DB.prepare('DELETE FROM support_ticket_grants WHERE expires<=?').bind(now),
     env.DB.prepare('DELETE FROM radio_control_claims WHERE claim_id IN (SELECT id FROM pair_claims WHERE expires<?)').bind(now-7*86400),
     env.DB.prepare('DELETE FROM support_status_verifications WHERE expires<=?').bind(now),

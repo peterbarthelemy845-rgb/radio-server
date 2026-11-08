@@ -1,0 +1,86 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
+import {webcrypto} from 'node:crypto';
+
+const source=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8').split('function list(){}')[0];
+function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
+function fixture(){
+ const nodes=new Map(),calls=[],humans=[],files=[],logoFiles=[],answers=[];let humanResult='checked-token',editorResult,editorCalls=0,logoResult=true;
+ class UiEvent{constructor(type,options={}){this.type=type;this.bubbles=!!options.bubbles;this.defaultPrevented=false;}preventDefault(){this.defaultPrevented=true;}}
+ function node(id,tagName='DIV'){
+  const listeners={};const element={id,tagName,children:[],elements:{},dataset:{},attrs:{},disabled:false,hidden:false,open:false,textContent:'',value:'',defaultValue:'',files:[],checked:false,type:'text',
+   setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},focus(){document.activeElement=this;},
+   addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatchEvent(event){for(const fn of listeners[event.type]||[])fn(event);if(event.bubbles&&this.parent)this.parent.dispatchEvent(event);return !event.defaultPrevented;},
+   querySelectorAll(selector){const tags=selector.split(',').map(tag=>tag.toUpperCase());return this.children.flatMap(child=>[...(tags.includes(child.tagName)?[child]:[]),...child.querySelectorAll(selector)]);},
+   reset(){this.dispatchEvent(new UiEvent('reset'));this.resetCalled=true;for(const field of Object.values(this.elements)){field.value=field.defaultValue;field.checked=false;field.files=[];}},
+   showModal(){this.open=true;this.shown=true;},close(){this.open=false;this.closed=true;this.dispatchEvent(new UiEvent('close'));}
+  };nodes.set(id,element);return element;
+ }
+ const document={activeElement:null,getElementById(id){return nodes.get(id)||node(id);}};
+ function append(parent,child){parent.children.push(child);child.parent=parent;return child;}
+ function form(id,fields){const target=node(id,'FORM');for(const [name,value] of Object.entries(fields)){const field=append(target,node(id+'-'+name,'INPUT'));field.name=name;field.value=value;target.elements[name]=field;}target.submit=append(target,node(id+'-submit','BUTTON'));return target;}
+ const registration=form('registerForm',{name:'Sample Radio',stream_url:'http://stream.example.com:8000/live',bio:'Sample bio',email:'owner@example.com',artwork:'',rights_confirmed:'on'});registration.elements.artwork.type='file';registration.elements.artwork.files=[{name:'logo.png',size:5}];registration.elements.rights_confirmed.type='checkbox';registration.elements.rights_confirmed.checked=true;
+ registration.copy=append(registration,node('copyGeneratedStream','BUTTON'));registration.copy.disabled=true;
+ const login=form('loginForm',{email:'owner@example.com',code:'13'}),verification=node('verification','DIALOG'),verifyForm=form('verifyForm',{code:'123456'});append(verification,verifyForm);append(verification,node('resend','BUTTON'));append(verification,node('closeVerify','BUTTON'));
+ form('editForm',{stream_url:'',bio:'',artwork:''});for(const id of ['openLogin','openRegister','navAdd','navLibrary','registerMessage','message','verifyText','verifyMessage','registrationHuman','stationSuccessTitle','stationSuccessText','stationSuccessMessage','retryOwnerEditor'])document.getElementById(id);node('stationSuccess','DIALOG');nodes.get('retryOwnerEditor').hidden=true;
+ class FormDataFixture{constructor(target){this.entries=Object.values(target.elements).filter(field=>!field.disabled&&(field.type!=='checkbox'||field.checked)).map(field=>[field.name,field.type==='file'?field.files[0]:field.value]);}[Symbol.iterator](){return this.entries[Symbol.iterator]();}}
+ const context=vm.createContext({document,window:{},Event:UiEvent,FormData:FormDataFixture,TextEncoder,crypto:webcrypto,navigator:{onLine:true},history:{replaceState(){}},location:{search:''},
+  __api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(answer!==undefined)return await answer;return {verification_id:'new-challenge',verification_email:'o***@example.com'};},
+  __human:async(container,action)=>{humans.push({container,action});return await humanResult;},__fileData:async file=>{files.push(file);return file?{name:file.name,base64:'c2FtcGxl'}:undefined;},
+  __editor:async()=>{editorCalls++;if(editorResult instanceof Error)throw editorResult;return await editorResult;},__logo:async file=>{logoFiles.push(file);return await logoResult;}
+ });
+ vm.runInContext(source,context);vm.runInContext("state={csrf:'test-csrf',agreement_version:'test-terms',turnstile_site_key:'test-site-key'};api=__api;human=__human;fileData=__fileData;editor=__editor;window.validateRegistrationLogo=__logo;",context);
+ async function submit(target){return target.onsubmit({preventDefault(){},target});}
+ return {nodes,document,registration,login,verifyForm,calls,humans,files,logoFiles,context,submit,answers,verify(result={}){context.result={verification_id:'challenge-a',verification_email:'o***@example.com',...result};vm.runInContext('verify(result)',context);},id(){return vm.runInContext('verificationId',context);},human(value){humanResult=value;},editor(value){editorResult=value;},editorCalls:()=>editorCalls,logo(value){logoResult=value;},event:type=>new UiEvent(type),busy(target,on,fields=false){context.target=target;context.on=on;context.fields=fields;vm.runInContext('busy(target,on,fields)',context);}};
+}
+async function until(check){for(let i=0;i<100&&!check();i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(check(),'Expected async checkpoint');}
+
+test('busy cycles restore earlier disabled states and optionally freeze fields without losing them',()=>{
+ const f=fixture(),form=f.registration;form.elements.email.disabled=true;f.busy(form,true,true);assert.equal(form.dataset.busy,'1');assert.equal(form.submit.disabled,true);assert.equal(form.elements.name.disabled,true);f.busy(form,false);assert.equal(form.copy.disabled,true);assert.equal(form.submit.disabled,false);assert.equal(form.elements.name.disabled,false);assert.equal(form.elements.email.disabled,true);assert.equal(form.dataset.busy,undefined);
+});
+
+test('signup snapshots before disabling fields, validates the captured logo, and suppresses duplicate submits',async()=>{
+ const f=fixture(),pending=deferred(),original=f.registration.elements.artwork.files[0];f.logo(pending.promise);const first=f.submit(f.registration);await until(()=>f.logoFiles.length===1);assert.equal(f.registration.elements.name.disabled,true);await f.submit(f.registration);assert.equal(f.logoFiles.length,1);pending.resolve(true);await first;assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.name,'Sample Radio');assert.equal(f.calls[0].body.email,'owner@example.com');assert.equal(f.calls[0].body.rights_confirmed,true);assert.equal(f.logoFiles[0],original);assert.equal(f.files[0],original);assert.match(f.calls[0].body.request_id,/^[a-f0-9]{32}$/);assert.equal(f.registration.elements.name.disabled,false);assert.equal(f.nodes.get('verification').open,true);
+});
+
+test('unchanged signup retries keep their request id after uncertain failure and changed data gets a new id',async()=>{
+ const f=fixture();f.answers.push(new Error('Connection interrupted'));await f.submit(f.registration);assert.equal(f.document.activeElement,f.nodes.get('registerMessage'));assert.equal(f.nodes.get('registerMessage').textContent,'Connection interrupted');const first=f.calls[0].body.request_id;await f.submit(f.registration);assert.equal(f.calls[1].body.request_id,first);f.nodes.get('closeVerify').onclick();f.registration.elements.name.value='Changed Radio';await f.submit(f.registration);assert.notEqual(f.calls[2].body.request_id,first);
+});
+
+test('logo validation failure focuses a visible signup error without bot or registration requests',async()=>{
+ const f=fixture();f.logo(false);f.registration.elements.artwork.validationMessage='Choose an image under 3 MB.';await f.submit(f.registration);assert.equal(f.calls.length,0);assert.equal(f.humans.length,0);assert.equal(f.registration.submit.disabled,false);assert.equal(f.registration.copy.disabled,true);assert.equal(f.registration.dataset.busy,undefined);assert.equal(f.nodes.get('registerMessage').textContent,'Choose an image under 3 MB.');assert.equal(f.document.activeElement,f.nodes.get('registerMessage'));
+});
+
+test('signup waits for a complete session when initial page loading has not finished',async()=>{
+ const f=fixture(),pending=deferred();vm.runInContext('state=undefined',f.context);f.answers.push(pending.promise,{verification_id:'ready-challenge',verification_email:'o***@example.com'});const first=f.submit(f.registration);await until(()=>f.calls.length===1);assert.equal(f.calls[0].path,'/api/session');assert.equal(f.humans.length,0);assert.equal(f.registration.elements.name.disabled,true);pending.resolve({csrf:'fresh-csrf',agreement_version:'fresh-terms',turnstile_site_key:'fresh-key'});await first;assert.equal(f.calls[1].path,'/api/owner/register');assert.equal(f.calls[1].body.agreement_version,'fresh-terms');assert.equal(f.calls[1].body.email,'owner@example.com');assert.equal(f.id(),'ready-challenge');
+});
+
+test('signup shares an in-flight initial session request instead of racing a second cookie',async()=>{
+ const f=fixture(),pending=deferred();vm.runInContext('state=undefined',f.context);f.answers.push(pending.promise,{verification_id:'shared-challenge',verification_email:'o***@example.com'});const initial=vm.runInContext('loadOwnerSession()',f.context),submission=f.submit(f.registration);await until(()=>f.logoFiles.length===1);assert.equal(f.calls.length,1);assert.equal(f.calls[0].path,'/api/session');pending.resolve({csrf:'shared-csrf',agreement_version:'shared-terms',turnstile_site_key:'shared-key'});await Promise.all([initial,submission]);assert.equal(f.calls.filter(call=>call.path==='/api/session').length,1);assert.equal(f.calls[1].body.agreement_version,'shared-terms');assert.equal(f.id(),'shared-challenge');
+});
+
+test('a failed session bootstrap can be retried without a stuck form or cached rejection',async()=>{
+ const f=fixture();vm.runInContext('state=undefined',f.context);f.answers.push(new Error('Session connection interrupted'));await f.submit(f.registration);assert.equal(f.humans.length,0);assert.equal(f.registration.submit.disabled,false);assert.equal(f.nodes.get('registerMessage').textContent,'Session connection interrupted');f.answers.push({csrf:'retry-csrf',agreement_version:'retry-terms',turnstile_site_key:'retry-key'},{verification_id:'retry-challenge',verification_email:'o***@example.com'});await f.submit(f.registration);assert.equal(f.calls.filter(call=>call.path==='/api/session').length,2);assert.equal(f.calls.at(-1).path,'/api/owner/register');assert.equal(f.id(),'retry-challenge');
+});
+
+test('login initializes a missing session and incomplete setup fails before a bot challenge',async()=>{
+ const f=fixture();vm.runInContext('state=undefined',f.context);f.answers.push({csrf:'fresh-csrf',agreement_version:'fresh-terms',turnstile_site_key:'fresh-key'},{verification_id:'login-challenge',verification_email:'o***@example.com'});await f.submit(f.login);assert.equal(f.calls[0].path,'/api/session');assert.equal(f.calls[1].path,'/api/owner/login');assert.equal(f.id(),'login-challenge');const incomplete=fixture();vm.runInContext('state=undefined',incomplete.context);incomplete.answers.push({csrf:'only-csrf'});await incomplete.submit(incomplete.registration);assert.equal(incomplete.calls.length,1);assert.equal(incomplete.humans.length,0);assert.match(incomplete.nodes.get('registerMessage').textContent,/setup is not ready/);assert.equal(incomplete.registration.submit.disabled,false);
+});
+
+test('login suppresses duplicate in-flight requests',async()=>{
+ const f=fixture(),pending=deferred();f.human(pending.promise);const first=f.submit(f.login);await until(()=>f.humans.length===1);await f.submit(f.login);assert.equal(f.humans.length,1);pending.resolve('checked-token');await first;assert.equal(f.calls.length,1);assert.equal(f.calls[0].path,'/api/owner/login');
+});
+
+test('successful verification remains visibly successful when the editor fails, with a working retry',async()=>{
+ const f=fixture();f.verify();f.editor(new Error('Editor network timeout'));f.answers.push({registration_completed:true,review_required:false,station_code:'13'});await f.submit(f.verifyForm);assert.equal(f.nodes.get('verification').open,false);assert.equal(f.registration.resetCalled,true);assert.equal(f.nodes.get('stationSuccess').open,true);assert.equal(f.nodes.get('stationSuccessTitle').textContent,'Station added successfully!');assert.equal(f.nodes.get('verifyMessage').textContent,'');assert.equal(f.nodes.get('retryOwnerEditor').hidden,false);assert.match(f.nodes.get('stationSuccessMessage').textContent,/verification succeeded/);f.editor(undefined);await f.nodes.get('retryOwnerEditor').onclick();assert.equal(f.editorCalls(),2);assert.equal(f.nodes.get('stationSuccess').open,false);
+});
+
+test('verification and resend share one lock, preventing double requests and accidental close',async()=>{
+ const f=fixture(),pending=deferred();f.verify();f.answers.push(pending.promise);const first=f.submit(f.verifyForm);await until(()=>f.calls.length===1);await f.submit(f.verifyForm);await f.nodes.get('resend').onclick();f.nodes.get('closeVerify').onclick();const cancel=f.event('cancel');f.nodes.get('verification').dispatchEvent(cancel);assert.equal(cancel.defaultPrevented,true);assert.equal(f.nodes.get('verification').open,true);assert.equal(f.nodes.get('resend').disabled,true);assert.equal(f.calls.length,1);pending.reject(new Error('Incorrect code'));await first;assert.equal(f.nodes.get('verifyMessage').textContent,'Incorrect code');assert.equal(f.nodes.get('resend').disabled,false);assert.equal(f.verifyForm.submit.disabled,false);
+});
+
+test('an older resend response cannot replace a newer challenge or its controls',async()=>{
+ const f=fixture(),pending=deferred();f.verify();f.answers.push(pending.promise);const first=f.nodes.get('resend').onclick();await until(()=>f.calls.length===1);assert.equal(f.calls[0].body.verification_id,'challenge-a');f.verify({verification_id:'challenge-b'});pending.resolve({verification_id:'stale-resend'});await first;assert.equal(f.id(),'challenge-b');assert.equal(f.nodes.get('verifyMessage').textContent,'');assert.equal(f.nodes.get('resend').disabled,false);assert.equal(f.nodes.get('verification').open,true);
+});

@@ -4,7 +4,7 @@
  const registrationIds=['streamManualSetup','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman'];
  const registrationNodes=Object.fromEntries(registrationIds.map(id=>[id,document.getElementById(id)]));
  if(!registrationForm||registrationIds.some(id=>!registrationNodes[id]))return;
- const registrationUrl=registrationNodes.streamUrlInput,registrationBuilder=[registrationNodes.streamHost,registrationNodes.streamPort,registrationNodes.streamProtocol,registrationNodes.streamPath];
+ const registrationUrl=registrationNodes.streamUrlInput,registrationName=registrationForm.elements?.name,registrationBuilder=[registrationNodes.streamHost,registrationNodes.streamPort,registrationNodes.streamProtocol,registrationNodes.streamPath];
  let registrationSource='url',registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
  function registrationStatus(key,fallback,state=''){
@@ -13,6 +13,12 @@
   target.textContent=key?registrationText(key,fallback):fallback;
  }
  function registrationInvalidate(){registrationVersion++;registrationActiveTest=null;registrationStatus('','');}
+ function registrationValidateName(report=false){
+  if(!registrationName)return true;
+  const name=registrationName.value.trim(),invalid=/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96;
+  registrationName.setCustomValidity(invalid?registrationText('registration.shorterName','Shorten the station name so it fits on the radio.'):'');
+  if(invalid&&report){registrationName.focus();registrationName.reportValidity();}return !invalid;
+ }
  function registrationPublicIpv4(host){
   if(!/^\d+\.\d+\.\d+\.\d+$/.test(host))return false;
   const parts=host.split('.').map(Number);if(parts.some(part=>part<0||part>255))return false;
@@ -79,7 +85,9 @@
   field.addEventListener('invalid',()=>{registrationNodes.streamManualSetup.open=true;});
   for(const event of ['input','change'])field.addEventListener(event,()=>{registrationSource='ip';registrationInvalidate();registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
  }
- window.prepareRegistrationStream=()=>registrationValidate(true,true);
+ if(registrationName)registrationName.addEventListener('input',()=>registrationValidateName());
+ window.prepareRegistrationStream=()=>registrationValidateName(true)&&registrationValidate(true,true);
+ registrationForm.addEventListener('form-busy-changed',registrationControls);
  registrationNodes.copyGeneratedStream.onclick=async()=>{
   if(!registrationValidate(true,true))return;const value=registrationUrl.value;
   try{if(!window.isSecureContext||!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText(value);registrationStatus('registration.urlCopied','Stream URL copied.','copy');}
@@ -103,8 +111,8 @@
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };
  new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
- window.addEventListener('app-language-changed',()=>{registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
- registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationSource='url';registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationValidate();});});
+ window.addEventListener('app-language-changed',()=>{registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
+ registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationSource='url';registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationValidateName();registrationValidate();});});
  for(const field of registrationBuilder){field.disabled=false;field.required=false;field.setCustomValidity('');}
  registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=false;registrationNodes.streamManualSetup.open=false;registrationValidate();
 })();

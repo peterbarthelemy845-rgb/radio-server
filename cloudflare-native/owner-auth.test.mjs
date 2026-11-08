@@ -7,19 +7,20 @@ import {decrypt,human,encrypt} from './security.mjs';
 const now=1800000000,host='https://radio-locals-native.example';
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64'));
 async function fixture(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('./migrations/0001_core.sql',import.meta.url),'utf8'));
-  const DB={sqlite,prepare(sql){let args=[];const q={bind(...values){args=values;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},
-    async batch(queries){sqlite.exec('BEGIN');try{for(const q of queries)await q.run();sqlite.exec('COMMIT');}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0014_registration_requests.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
+  let batchLock=Promise.resolve(),imageReads=0;
+  const DB={sqlite,failBatchAfter:null,prepare(sql){let args=[];const statement=sqlite.prepare(sql);const q={bind(...values){args=values;return q;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){return statement.run(...args);},async execute(){return statement.columns().length?{results:statement.all(...args)}:statement.run(...args);}};return q;},
+    async batch(queries){const task=async()=>{sqlite.exec('BEGIN');try{const results=[];let completed=0;for(const q of queries){results.push(await q.execute());if(++completed===DB.failBatchAfter)throw new Error('Simulated database write failure');}sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}};const result=batchLock.then(task);batchLock=result.catch(()=>{});return result;}};
   const objects=new Map(),mail=[];
   const env={DB,DATA_ENCRYPTION_KEY:'a'.repeat(64),TURNSTILE_SITE_KEY:'test',TURNSTILE_SECRET_KEY:'private-test',
     MEDIA:{async put(key,data,meta){objects.set(key,{data,meta});},async get(key){const o=objects.get(key);return o?{body:o.data,customMetadata:o.meta.customMetadata}:null;}},
-    IMAGES:{async info(){return {width:1,height:1};},input(){return {transform(){return {async output(){return {response:()=>new Response(png)};}};}};}},
+    IMAGES:{async info(){imageReads++;return {width:1,height:1};},input(){return {transform(){return {async output(){return {response:()=>new Response(png)};}};}};}},
     EMAIL:{async send(message){mail.push(message);return {messageId:'test'};}}};
   const response=await authRoutes(new Request(host+'/api/session'),env,now);
   const state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
-  async function post(path,body,changes={}){return authRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf,...changes},body:JSON.stringify(body)}),env,now,{human:async()=>{}});}
-  const registration={name:'Test station',email:'owner@example.com',stream_url:'https://example.com/live',bio:'Test bio',rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
-  return {env,sqlite,state,cookie,post,registration,mail,objects};
+  async function post(path,body,changes={},time=now){return authRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf,...changes},body:JSON.stringify(body)}),env,time,{human:async()=>{}});}
+  const registration={request_id:'1'.repeat(32),name:'Test station',email:'owner@example.com',stream_url:'https://example.com/live',bio:'Test bio',rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
+  return {env,sqlite,state,cookie,post,registration,mail,objects,imageReads:()=>imageReads};
 }
 async function registered(){const f=await fixture();const response=await f.post('/api/owner/register',f.registration);f.result=await response.json();
   const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get();f.code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];return f;}
@@ -40,12 +41,105 @@ test('registration sanitizes private artwork, encrypts email and stays unpublish
   await processMail(f.env,now);assert.equal(f.mail.length,1);assert.equal(f.mail[0].from,'info@radiolocals.com');
   assert.equal(f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox').get().encrypted_payload,'');
 });
+
+test('a lost signup response can be retried without another station, image, agreement or email',async()=>{
+  const f=await registered(),result=await(await f.post('/api/owner/register',f.registration)).json();
+  assert.equal(result.verification_id,f.result.verification_id);assert.equal(f.imageReads(),1);assert.equal(f.objects.size,1);
+  for(const table of ['stations','agreement_acceptances','email_verifications','mail_outbox'])assert.equal(f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n,1,table);
+  assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications').get().consumed_at,null);
+  await assert.rejects(f.post('/api/owner/register',{...f.registration,bio:'Changed under same retry key'}),e=>e.status===409);
+  await assert.rejects(f.post('/api/owner/register',{...f.registration,request_id:'not-a-request-id'}),e=>e.status===400);
+  assert.equal(f.imageReads(),1);
+});
+
+test('older open forms without a request ID retry safely and remain isolated from another browser',async()=>{
+  const f=await fixture(),legacy={...f.registration};delete legacy.request_id;
+  const first=await(await f.post('/api/owner/register',legacy)).json(),again=await(await f.post('/api/owner/register',legacy)).json();
+  assert.equal(again.verification_id,first.verification_id);assert.equal(f.imageReads(),1);assert.equal(f.objects.size,1);
+  for(const table of ['stations','agreement_acceptances','email_verifications','mail_outbox'])assert.equal(f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n,1,table);
+  const response=await authRoutes(new Request(host+'/api/session'),f.env,now),state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
+  const other=await authRoutes(new Request(host+'/api/owner/register',{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf},body:JSON.stringify(legacy)}),f.env,now,{human:async()=>{}});
+  assert.notEqual((await other.json()).verification_id,first.verification_id);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations').get().n,2);
+  for(const request_id of [null,'',1,'not-a-request-id'])await assert.rejects(f.post('/api/owner/register',{...legacy,request_id}),e=>e.status===400);
+});
+
+test('signup retry keys are session-bound and concurrent submissions cannot duplicate work',async()=>{
+  const f=await fixture(),results=await Promise.allSettled([f.post('/api/owner/register',f.registration),f.post('/api/owner/register',f.registration)]);
+  assert.equal(results.filter(result=>result.status==='fulfilled').length,1);assert.equal(results.find(result=>result.status==='rejected').reason.status,409);
+  assert.equal(f.imageReads(),1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations').get().n,1);
+  const original=(await results.find(result=>result.status==='fulfilled').value.json()).verification_id;
+  const response=await authRoutes(new Request(host+'/api/session'),f.env,now),state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
+  const other=await authRoutes(new Request(host+'/api/owner/register',{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf},body:JSON.stringify(f.registration)}),f.env,now,{human:async()=>{}});
+  assert.notEqual((await other.json()).verification_id,original);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations').get().n,2);
+});
+
+test('signup database failure rolls back station and email creation; retry reuses the same private image object',async()=>{
+  const f=await fixture();f.env.DB.failBatchAfter=3;
+  await assert.rejects(f.post('/api/owner/register',f.registration),/Simulated database write failure/);
+  for(const table of ['stations','agreement_acceptances','email_verifications','mail_outbox'])assert.equal(f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n,0,table);
+  assert.equal(f.sqlite.prepare('SELECT lease_until FROM registration_requests').get().lease_until,0);assert.equal(f.objects.size,1);
+  f.env.DB.failBatchAfter=null;const result=await(await f.post('/api/owner/register',f.registration)).json();assert.match(result.verification_id,/^[a-f0-9]{32}$/);
+  assert.equal(f.objects.size,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations').get().n,1);
+});
+
+test('a newer registration for another station does not invalidate a pending emailed signup code',async()=>{
+  const f=await registered();await f.post('/api/owner/register',{...f.registration,request_id:'2'.repeat(32),name:'Other station'});
+  assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications WHERE id=?').get(f.result.verification_id).consumed_at,null);
+  assert.equal((await(await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code})).json()).registration_completed,true);
+});
+
+test('signup resend updates its cached retry challenge without creating or rescanning the station',async()=>{
+  const f=await registered();const resent=await(await f.post('/api/owner/resend',{verification_id:f.result.verification_id},{},now+61)).json();
+  const retried=await(await f.post('/api/owner/register',f.registration,{},now+62)).json();assert.equal(retried.verification_id,resent.verification_id);assert.equal(f.imageReads(),1);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations').get().n,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,2);
+});
+
+test('station name limits match the radios UTF-8 byte capacity',async()=>{
+  const f=await fixture();await assert.rejects(f.post('/api/owner/register',{...f.registration,name:'é'.repeat(49)}),e=>e.status===400);
+  for(const name of ['Good\0hidden','Good\nradio','Good\x7fradio'])await assert.rejects(f.post('/api/owner/register',{...f.registration,name}),e=>e.status===400);
+  const result=await(await f.post('/api/owner/register',{...f.registration,name:'é'.repeat(48)})).json();assert.equal(result.status,'ok');
+});
+
+test('signup retry retention expires without deleting its referenced station or browser session',async()=>{
+  const {operationsFixture}=await import('./operations-fixture.mjs'),{cleanup}=await import('./worker.mjs'),f=await operationsFixture();
+  assert.equal(f.sqlite.prepare('PRAGMA foreign_keys').get().foreign_keys,1);
+  const sessionHash=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash;
+  f.sqlite.prepare("INSERT INTO registration_requests(session_hash,request_id,payload_hash,lease_token,lease_until,created_at,expires) VALUES (?,?,?,?,?,?,?)")
+    .run(sessionHash,'1'.repeat(32),'payload','lease',0,f.now,f.now+10);
+  await cleanup(f.env,f.now);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM registration_requests').get().n,1);
+  await cleanup(f.env,f.now+10);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM registration_requests').get().n,0);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM sessions WHERE token_hash=?').get(sessionHash).n,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations WHERE code=?').get(f.station).n,1);
+  const own=await registered();await assert.rejects(own.post('/api/owner/register',own.registration,{},now+86400),e=>e.status===409);
+});
 test('email verification grants only the matching station and cannot replay',async()=>{
   const f=await registered();const body={verification_id:f.result.verification_id,code:f.code};
   const result=await (await f.post('/api/owner/verify',body)).json();assert.equal(result.station_code,'10');
   assert.equal(f.sqlite.prepare('SELECT status FROM stations').get().status,'pending_review');
   assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,10);
   await assert.rejects(f.post('/api/owner/verify',body),e=>e.status===400);
+});
+
+test('verification failure rolls back code consumption and ownership so the same correct code can be retried',async()=>{
+  const f=await registered(),body={verification_id:f.result.verification_id,code:f.code};f.env.DB.failBatchAfter=2;
+  await assert.rejects(f.post('/api/owner/verify',body),/Simulated database write failure/);
+  assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications').get().consumed_at,null);assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,null);
+  assert.equal(f.sqlite.prepare('SELECT email_verified_at FROM stations').get().email_verified_at,null);
+  f.env.DB.failBatchAfter=null;assert.equal((await(await f.post('/api/owner/verify',body)).json()).registration_completed,true);
+});
+
+test('concurrent correct email-code submissions grant ownership once and cannot replay the consumed code',async()=>{
+  const f=await registered(),body={verification_id:f.result.verification_id,code:f.code};const results=await Promise.allSettled([f.post('/api/owner/verify',body),f.post('/api/owner/verify',body)]);
+  assert.equal(results.filter(result=>result.status==='fulfilled').length,1);assert.equal(results.find(result=>result.status==='rejected').reason.status,400);
+  assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,10);assert.ok(f.sqlite.prepare('SELECT consumed_at FROM email_verifications').get().consumed_at);
+});
+
+test('a suspended or deleted station cannot be claimed with a previously issued signup code',async()=>{
+  for(const status of ['suspended','deleted']){
+    const f=await registered();f.sqlite.prepare('UPDATE stations SET status=?').run(status);
+    await assert.rejects(f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code}),e=>e.status===400);
+    assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,null);
+    assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications').get().consumed_at,null);
+  }
 });
 test('five wrong guesses lock verification even when the next code is correct',async()=>{
   const f=await registered();const wrong=f.code==='000000'?'111111':'000000';

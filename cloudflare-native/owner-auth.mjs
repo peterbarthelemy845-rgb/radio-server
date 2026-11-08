@@ -6,7 +6,7 @@ const RIGHTS='I represent this station and have streaming and artwork rights. I 
 const emailPattern=/^[^\s@\r\n]{1,64}@[^\s@\r\n]+\.[^\s@\r\n]+$/;
 const mask=email=>email[0]+'***@'+email.split('@')[1];
 export function streamUrl(value){return publicStreamUrl(value);}
-export async function artwork(env,file){
+export async function artwork(env,file,stableKey){
   if(!env.IMAGES||!env.MEDIA)throw new HttpError(503,'Artwork processing is not ready.');
   if(!file||typeof file.base64!=='string'||file.base64.length>4194304||typeof file.name!=='string')
     throw new HttpError(400,'Choose a PNG, JPG or WebP image under 3 MB.');
@@ -27,23 +27,38 @@ export async function artwork(env,file){
   }catch{throw new HttpError(400,'This image could not be processed. Choose another image under 4 megapixels.');}
   const sanitized=await output.arrayBuffer();
   if(sanitized.byteLength>3*1024*1024)throw new HttpError(400,'Processed image is too large.');
-  const key=randomHex()+'.png';
+  const key=stableKey||randomHex()+'.png';
+  if(!/^[a-f0-9]{64}\.png$/.test(key))throw new Error('Invalid internal artwork key.');
   await env.MEDIA.put('sanitized/'+key,sanitized,{httpMetadata:{contentType:'image/png'},customMetadata:{sanitizer_version:'1'}});
   return key;
 }
-async function verification(env,current,station,purpose,now){
+async function verificationValues(env,now){
   const id=randomHex(16),code=otp(),mail=randomHex(16),expires=now+900;
   const codeHash=await mac(env,'email:'+id+':'+code);
   const payload=await encrypt(env,JSON.stringify({text:`Your private Radio Locals verification code is ${code}.\n\nEnter it on the page where you requested it. It expires in 15 minutes and works once. Never share it. If you did not request this email, ignore it.`}));
+  return {id,mail,expires,codeHash,payload};
+}
+async function verification(env,current,station,purpose,now){
+  const {id,mail,expires,codeHash,payload}=await verificationValues(env,now);
   await env.DB.batch([
-    env.DB.prepare('UPDATE email_verifications SET consumed_at=? WHERE session_hash=? AND purpose=? AND consumed_at IS NULL')
-      .bind(now,current.token_hash,purpose),
+    env.DB.prepare("UPDATE email_verifications SET consumed_at=? WHERE session_hash=? AND purpose=? AND consumed_at IS NULL AND (purpose!='registration' OR station_code=?)")
+      .bind(now,current.token_hash,purpose,station.code),
     env.DB.prepare('INSERT INTO email_verifications(id,session_hash,station_code,purpose,code_hash,expires,created_at) VALUES (?,?,?,?,?,?,?)')
       .bind(id,current.token_hash,station.code,purpose,codeHash,expires,now),
     env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) VALUES (?,?,?,?,?,?)')
       .bind(mail,station.contact_email,'Your Radio Locals verification code',payload,now,expires),
+    ...(purpose==='registration'?[env.DB.prepare("UPDATE registration_requests SET verification_id=? WHERE session_hash=? AND station_code=? AND state='complete'")
+      .bind(id,current.token_hash,station.code)]:[]),
   ]);
   return {verification_id:id,verification_email:mask(station.contact_email),expires_in:900};
+}
+async function registrationResponse(env,current,row,now){
+  const saved=await env.DB.prepare(`SELECT v.id,v.expires,s.contact_email,s.email_verified_at,s.status FROM email_verifications v
+    JOIN stations s ON s.code=v.station_code WHERE v.id=? AND v.session_hash=? AND v.station_code=? AND v.purpose='registration'`)
+    .bind(row.verification_id,current.token_hash,row.station_code).first();
+  if(!saved||['deleted','suspended'].includes(saved.status))throw new HttpError(409,'This signup is no longer available. Please start again.');
+  if(saved.email_verified_at!==null)throw new HttpError(409,'This station is already registered. Sign in to edit it.');
+  return json({status:'ok',verification_id:saved.id,verification_email:mask(saved.contact_email),expires_in:Math.max(0,saved.expires-now)});
 }
 export async function processMail(env,now=Math.floor(Date.now()/1000)){
   if(!env.EMAIL||!env.DATA_ENCRYPTION_KEY)return;
@@ -122,18 +137,61 @@ export async function authRoutes(request,env,now,deps={human}){
   }
   if(path==='/api/owner/register'){
     await deps.human(request,env,body.turnstile_token,'station-submit',now);
+    const name=String(body.name||'').trim(),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase();
+    if(!name)throw new HttpError(400,'Enter a station name.');
+    if(/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96)throw new HttpError(400,'Shorten the station name so it fits on the radio.');
+    if(bio.length>250||email.length>254||!emailPattern.test(email))throw new HttpError(400,'Check the station bio and email.');
+    if(body.rights_confirmed!==true||body.agreement_version!==VERSION)throw new HttpError(400,'Confirm station rights and the current terms.');
+    let requestId=body.request_id;
+    if(requestId!==undefined&&(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)))throw new HttpError(400,'Refresh the signup page and try again.');
+    const url=streamUrl(body.stream_url),location=String(body.location||'').slice(0,80);
+    const payloadHash=await digest(JSON.stringify([name,url,bio,email,location,VERSION,body.artwork?.name,body.artwork?.base64]));
+    // Older open forms have no retry ID. Keep their in-progress signup safe
+    // without forcing a reload or storing any private draft in the browser.
+    if(requestId===undefined)requestId=(await mac(env,'legacy-registration:'+current.token_hash+':'+payloadHash)).slice(0,32);
+    const prior=await env.DB.prepare('SELECT * FROM registration_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();
+    if(prior&&prior.payload_hash!==payloadHash)throw new HttpError(409,'Signup details changed. Please submit a new signup request.');
+    if(prior?.expires<=now)throw new HttpError(409,'This signup request expired. Reload the page and start again.');
+    if(prior?.state==='complete')return registrationResponse(env,current,prior,now);
     await limit(env.DB,'register-ip',request.headers.get('CF-Connecting-IP')||'unknown',5,86400,now);
     await limit(env.DB,'register-global','all',100,86400,now);
-    const name=String(body.name||'').trim(),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase();
-    if(!name||name.length>96||bio.length>250||email.length>254||!emailPattern.test(email))throw new HttpError(400,'Check the station name, bio and email.');
-    if(body.rights_confirmed!==true||body.agreement_version!==VERSION)throw new HttpError(400,'Confirm station rights and the current terms.');
-    const url=streamUrl(body.stream_url),key=await artwork(env,body.artwork);
-    const station=await env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at)
-      VALUES (?,?,?,?,?,?,?,?) RETURNING code,contact_email`).bind(name,url,bio,String(body.location||'').slice(0,80),email,key,now,now).first();
-    await env.DB.prepare('INSERT INTO agreement_acceptances(station_code,agreement_version,agreement_hash,accepted_at) VALUES (?,?,?,?)')
-      .bind(station.code,VERSION,await digest(RIGHTS),now).run();
-    const result=await verification(env,current,station,'registration',now);
-    return json({status:'ok',...result});
+    const lease=randomHex(16);
+    const claimed=await env.DB.prepare(`INSERT INTO registration_requests(session_hash,request_id,payload_hash,lease_token,lease_until,created_at,expires)
+      VALUES (?,?,?,?,?,?,?) ON CONFLICT(session_hash,request_id) DO UPDATE SET lease_token=excluded.lease_token,lease_until=excluded.lease_until
+      WHERE state='pending' AND lease_until<=? AND payload_hash=excluded.payload_hash RETURNING *`)
+      .bind(current.token_hash,requestId,payloadHash,lease,now+120,now,now+86400,now).first();
+    if(!claimed)throw new HttpError(409,'This signup is still processing. Please try again shortly.');
+    try{
+      // A crashed attempt can safely replace this same private object on retry.
+      const key=await artwork(env,body.artwork,await mac(env,'registration-art:'+current.token_hash+':'+requestId)+'.png');
+      const values=await verificationValues(env,now),agreementHash=await digest(RIGHTS);
+      const guard="session_hash=? AND request_id=? AND lease_token=? AND state='pending'";
+      const owner=[current.token_hash,requestId,lease];
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at)
+          SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)`)
+          .bind(name,url,bio,location,email,key,now,now,...owner),
+        env.DB.prepare(`UPDATE registration_requests SET station_code=last_insert_rowid() WHERE ${guard} AND station_code IS NULL AND changes()>0`).bind(...owner),
+        env.DB.prepare(`INSERT INTO agreement_acceptances(station_code,agreement_version,agreement_hash,accepted_at)
+          SELECT station_code,?,?,? FROM registration_requests WHERE ${guard} AND station_code IS NOT NULL`).bind(VERSION,agreementHash,now,...owner),
+        env.DB.prepare(`UPDATE email_verifications SET consumed_at=? WHERE session_hash=? AND purpose='registration' AND consumed_at IS NULL
+          AND station_code=(SELECT station_code FROM registration_requests WHERE ${guard})`).bind(now,current.token_hash,...owner),
+        env.DB.prepare(`INSERT INTO email_verifications(id,session_hash,station_code,purpose,code_hash,expires,created_at)
+          SELECT ?,session_hash,station_code,'registration',?,?,? FROM registration_requests WHERE ${guard} AND station_code IS NOT NULL`)
+          .bind(values.id,values.codeHash,values.expires,now,...owner),
+        env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires)
+          SELECT ?,?,'Your Radio Locals verification code',?,?,? FROM registration_requests WHERE ${guard} AND station_code IS NOT NULL`)
+          .bind(values.mail,email,values.payload,now,values.expires,...owner),
+        env.DB.prepare(`UPDATE registration_requests SET state='complete',verification_id=?,lease_until=0 WHERE ${guard} AND station_code IS NOT NULL`)
+          .bind(values.id,...owner)
+      ]);
+      const complete=await env.DB.prepare("SELECT * FROM registration_requests WHERE session_hash=? AND request_id=? AND state='complete'").bind(current.token_hash,requestId).first();
+      if(!complete)throw new HttpError(409,'This signup is still processing. Please try again shortly.');
+      return registrationResponse(env,current,complete,now);
+    }catch(error){
+      try{await env.DB.prepare("UPDATE registration_requests SET lease_until=0 WHERE session_hash=? AND request_id=? AND lease_token=? AND state='pending'").bind(current.token_hash,requestId,lease).run();}catch{}
+      throw error;
+    }
   }
   if(path==='/api/owner/login'){
     await deps.human(request,env,body.turnstile_token,'station-access',now);
@@ -165,14 +223,22 @@ export async function authRoutes(request,env,now,deps={human}){
     const check=await env.DB.prepare(`UPDATE email_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=?
       AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *`).bind(id,current.token_hash,now).first();
     if(!check||check.code_hash!==await mac(env,'email:'+id+':'+code))throw new HttpError(400,'Incorrect or expired code.');
-    const consumed=await env.DB.prepare(`UPDATE email_verifications SET consumed_at=? WHERE id=? AND session_hash=?
-      AND consumed_at IS NULL AND expires>? RETURNING station_code,purpose`).bind(now,id,current.token_hash,now).first();
+    const proof=check.code_hash+':'+randomHex(16);
+    const consumedGuard='EXISTS (SELECT 1 FROM email_verifications WHERE id=? AND session_hash=? AND consumed_at=? AND code_hash=?)';
+    const proofArgs=[id,current.token_hash,now,proof];
+    const updates=[
+      env.DB.prepare(`UPDATE email_verifications SET consumed_at=?,code_hash=? WHERE id=? AND session_hash=?
+        AND consumed_at IS NULL AND expires>? AND code_hash=? AND EXISTS (SELECT 1 FROM stations WHERE code=email_verifications.station_code
+          AND status NOT IN ('deleted','suspended') AND ((email_verifications.purpose='registration' AND status='pending_email')
+          OR (email_verifications.purpose='edit' AND email_verified_at IS NOT NULL))) RETURNING station_code,purpose`).bind(now,proof,id,current.token_hash,now,check.code_hash),
+      env.DB.prepare(`UPDATE sessions SET owner_station=?,owner_expires=? WHERE token_hash=? AND ${consumedGuard}`)
+        .bind(check.station_code,now+1800,current.token_hash,...proofArgs)
+    ];
+    if(check.purpose==='registration')updates.push(env.DB.prepare(`UPDATE stations SET email_verified_at=?,
+      status='pending_review',updated_at=? WHERE code=? AND status='pending_email' AND ${consumedGuard}`).bind(now,now,check.station_code,...proofArgs));
+    const results=await env.DB.batch(updates);
+    const consumed=results[0]?.results?.[0];
     if(!consumed)throw new HttpError(400,'Incorrect or expired code.');
-    const updates=[env.DB.prepare(`UPDATE sessions SET owner_station=?,owner_expires=? WHERE token_hash=?`)
-      .bind(consumed.station_code,now+1800,current.token_hash)];
-    if(consumed.purpose==='registration')updates.push(env.DB.prepare(`UPDATE stations SET email_verified_at=?,
-      status='pending_review',updated_at=? WHERE code=? AND status='pending_email'`).bind(now,now,consumed.station_code));
-    await env.DB.batch(updates);
     const approved=await screenStation(env,consumed.station_code);
     return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved});
   }

@@ -7,18 +7,25 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 function registrationFixture({url='',secure=true,clipboard=true}={}){
  const nodes=new Map(),observers=[],windowEvents={},humanCalls=[],apiCalls=[],copied=[];let dirty=0,humanResult=Promise.resolve('checked-token'),apiResult=Promise.resolve({result:'not_confirmed',audio_response:false,message:'Not confirmed. You can still save.'});
- const ids=['register','registerForm','streamManualSetup','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman','saveRegistration'];
+ const ids=['register','registerForm','stationName','streamManualSetup','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman','saveRegistration'];
  function element(id){const listeners={};const node={id,value:'',hidden:false,open:false,disabled:false,readOnly:false,required:false,dataset:{},attrs:{},validity:{badInput:false},validationMessage:'',textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},querySelector(){return id==='registerForm'?nodes.get('saveRegistration'):null;},setCustomValidity(value){this.validationMessage=value;},reportValidity(){this.reported=true;return !this.validationMessage;},focus(){document.activeElement=this;},select(){this.selected=true;},addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatchEvent(event){for(const fn of listeners[event.type]||[])fn(event);if(event.bubbles&&id!=='registerForm')nodes.get('registerForm').dispatchEvent(event);return true;}};nodes.set(id,node);return node;}
- ids.forEach(element);const document={activeElement:null,getElementById:id=>nodes.get(id)};nodes.get('streamProtocol').value='https';nodes.get('streamUrlInput').value=url;nodes.get('registerForm').addEventListener('input',()=>{dirty++;});
+ ids.forEach(element);const document={activeElement:null,getElementById:id=>nodes.get(id)};nodes.get('registerForm').elements={name:nodes.get('stationName')};nodes.get('streamProtocol').value='https';nodes.get('streamUrlInput').value=url;nodes.get('registerForm').addEventListener('input',()=>{dirty++;});
  const window={isSecureContext:secure,addEventListener(type,fn){windowEvents[type]=fn;}};
  const navigator={clipboard:clipboard?{async writeText(value){copied.push(value);}}:undefined};
- const context=vm.createContext({window,document,navigator,URL,Event,Promise,queueMicrotask,MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(target){this.target=target;}},human:async(container,action)=>{humanCalls.push({container,action});return humanResult;},api:async(path,body)=>{apiCalls.push({path,body});return apiResult;},Audio:class{constructor(){throw Error('Registration must never play audio.');}},fetch(){throw Error('Registration may use only the authenticated stream-check API.');}});
+ const context=vm.createContext({window,document,navigator,URL,Event,Promise,TextEncoder,queueMicrotask,MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(target){this.target=target;}},human:async(container,action)=>{humanCalls.push({container,action});return humanResult;},api:async(path,body)=>{apiCalls.push({path,body});return apiResult;},Audio:class{constructor(){throw Error('Registration must never play audio.');}},fetch(){throw Error('Registration may use only the authenticated stream-check API.');}});
  vm.runInContext(readFileSync(new URL('./public/assets/registration-form.js',import.meta.url),'utf8'),context);
  function input(id,value){nodes.get(id).value=value;nodes.get(id).dispatchEvent(new Event('input',{bubbles:true}));}
  function address(value){input('streamUrlInput',value);}
  async function flush(){await Promise.resolve();await Promise.resolve();await Promise.resolve();}
  return {nodes,window,document,input,address,flush,humanCalls,apiCalls,copied,dirty:()=>dirty,prepare:()=>window.prepareRegistrationStream(),human(result){humanResult=result;},result(result){apiResult=result;},async reset(){nodes.get('registerForm').dispatchEvent(new Event('reset'));for(const id of ['streamHost','streamPort','streamPath','streamUrlInput'])nodes.get(id).value='';nodes.get('streamProtocol').value='https';await flush();},hide(){nodes.get('register').hidden=true;for(const observer of observers)if(observer.target===nodes.get('register'))observer.fn([]);},language(){windowEvents['app-language-changed']?.();}};
 }
+
+test('station names fit the radio UTF-8 capacity and reject embedded control characters',()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'});
+ for(const name of ['a'.repeat(96),'é'.repeat(48)]){f.input('stationName',name);assert.equal(f.prepare(),true);}
+ for(const name of ['é'.repeat(49),'Station\u0000Name']){f.input('stationName',name);assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,f.nodes.get('stationName'));}
+ f.input('stationName','Radio Espwa');assert.equal(f.prepare(),true);assert.equal(f.nodes.get('stationName').validationMessage,'');
+});
 
 test('a complete stream URL populates manual details without changing HTTP, port, path or query',()=>{
  const f=registrationFixture({url:'http://stream.example.com:8000/live?sid=1'}),n=f.nodes;

@@ -36,6 +36,9 @@
 #register #streamTestStatus[data-state=success]{color:#177347}
 #register #streamTestStatus[data-state=invalid],#register #streamTestStatus[data-state=error]{color:#a22832}
 #register #streamTestStatus[data-state=unconfirmed]{color:#795215}
+#register #registerMessage{color:#9d2632;background:#fff0f1;border:1px solid #edc3c8;border-radius:7px;padding:9px;margin:9px 0 0;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+#register #registerMessage:empty{display:none}
+#register .cover-hint[data-state=invalid]{color:#a22832;font-weight:600}
 #register .registration-details textarea{min-height:54px;height:54px}
 #register .check{margin-top:10px;padding:8px;background:#f0f6ff;font-size:11px;line-height:1.45;border-radius:7px}
 #register .check input{margin:0;width:20px;height:20px;min-height:20px}
