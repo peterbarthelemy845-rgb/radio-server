@@ -79,6 +79,11 @@
  }
  registrationNodes.connectionUrlMode.onclick=()=>registrationSetMode('url');registrationNodes.connectionIpMode.onclick=()=>registrationSetMode('ip');
  registrationUrl.addEventListener('input',()=>{if(registrationInternalInput)return;registrationInvalidate();registrationUrlDraft=registrationUrl.value;registrationValidate();});
+ registrationUrl.addEventListener('paste',event=>{
+  if(registrationMode!=='url'||registrationUrl.readOnly||registrationUrl.value!=='https://')return;
+  const pasted=event.clipboardData?.getData('text/plain')?.trim();if(!/^https?:\/\//i.test(pasted||''))return;
+  event.preventDefault();registrationUrl.value=pasted;registrationUrl.dispatchEvent(new Event('input',{bubbles:true}));
+ });
  for(const field of registrationBuilder)for(const event of ['input','change'])field.addEventListener(event,()=>{if(registrationMode!=='ip')return;registrationInvalidate();registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
  window.prepareRegistrationStream=()=>registrationValidate(true,true);
  registrationNodes.copyGeneratedStream.onclick=async()=>{
