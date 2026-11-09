@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);let state,verificationId,stations=[],humanLoading,sitePageGeneration=0;
-function page(id){sitePageGeneration++;if(id==='library')id='myRadio';if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
+function page(id){sitePageGeneration++;if(id==='library')id='myRadio';if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
 function message(text){$('message').textContent=text;}
 async function api(path,body,options={}){
  if(!navigator.onLine)throw new Error('No internet. Check your connection and try again.');
@@ -26,7 +26,7 @@ function formIsBusy(form){return formBusyStates.has(form);}
 function loadHuman(){if(window.turnstile)return Promise.resolve();if(!humanLoading)humanLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';let timer;const failed=()=>{clearTimeout(timer);script.remove();humanLoading=null;reject(new Error('Security check could not load. Refresh and try again.'));};script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=failed;document.head.append(script);timer=setTimeout(failed,15000);});return humanLoading;}
 async function human(container,action){await ensureOwnerSession();await loadHuman();return new Promise((resolve,reject)=>{let widget,settled=false;const area=container.querySelector('.human');area.replaceChildren();function finish(error,token){if(settled)return;settled=true;clearTimeout(timer);if(widget!==undefined)window.turnstile.remove(widget);if(error)reject(error);else resolve(token);}const timer=setTimeout(()=>finish(new Error('Security check timed out. Please try again.')),90000);widget=window.turnstile.render(area,{sitekey:state.turnstile_site_key,action,theme:'light',size:'flexible',retry:'never',callback:token=>finish(null,token),'error-callback':code=>{finish(new Error('Security check could not complete ('+String(code).replace(/[^0-9]/g,'').slice(0,8)+'). Refresh and try again. If it continues, open this page in your regular browser.'));return true;},'expired-callback':()=>finish(new Error('Security check expired. Please try again.'))});});}
 async function fileData(file){if(!file?.size)return undefined;if(file.size>3*1024*1024)throw new Error('Choose an image under 3 MB.');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return {name:file.name,base64:btoa(binary)};}
-let verificationGeneration=0,verificationBusy=false,verificationResendDeadline=0,verificationResendTimer,ownerAccessGeneration=0,registrationRequestFingerprint='',registrationRequestId='',ownerSessionPromise,ownerSessionGeneration=0;
+let verificationGeneration=0,verificationPageGeneration=0,verificationBusy=false,verificationResendDeadline=0,verificationResendTimer,ownerAccessGeneration=0,registrationRequestFingerprint='',registrationRequestId='',ownerSessionPromise,ownerSessionGeneration=0;
 function renderVerificationResend(){
  clearTimeout(verificationResendTimer);verificationResendTimer=undefined;
  const button=$('resend'),remaining=Math.max(0,Math.ceil((verificationResendDeadline-Date.now())/1000));
@@ -35,8 +35,9 @@ function renderVerificationResend(){
  if(remaining&&$('verification').open){const generation=verificationGeneration;verificationResendTimer=setTimeout(()=>{if(generation===verificationGeneration&&$('verification').open)renderVerificationResend();},Math.min(1000,verificationResendDeadline-Date.now()));}
 }
 function setVerificationBusy(on){verificationBusy=on;busy($('verification'),on,true);renderVerificationResend();}
-function currentVerification(generation,id){return verificationGeneration===generation&&verificationId===id&&$('verification').open;}
-function verify(result){verificationGeneration++;verificationResendDeadline=Date.now()+60000;setVerificationBusy(false);verificationId=result.verification_id;$('verifyText').textContent='Enter the private code sent to '+result.verification_email+'. It expires in 15 minutes.';$('verifyMessage').textContent='';$('verifyForm').reset();if(!$('verification').open)$('verification').showModal();renderVerificationResend();}
+function currentVerification(generation,id){return verificationGeneration===generation&&verificationPageGeneration===sitePageGeneration&&verificationId===id&&$('verification').open;}
+function invalidateOwnerVerification(){verificationGeneration++;verificationId=null;verificationResendDeadline=0;setVerificationBusy(false);if($('verification').open)$('verification').close();}
+function verify(result){verificationGeneration++;verificationPageGeneration=sitePageGeneration;verificationResendDeadline=Date.now()+60000;setVerificationBusy(false);verificationId=result.verification_id;$('verifyText').textContent='Enter the private code sent to '+result.verification_email+'. It expires in 15 minutes.';$('verifyMessage').textContent='';$('verifyForm').reset();if(!$('verification').open)$('verification').showModal();renderVerificationResend();}
 window.addEventListener?.('app-language-changed',renderVerificationResend);
 function registrationMessage(text){const target=$('registerMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
 function loadOwnerSession(){if(!ownerSessionPromise){const generation=ownerSessionGeneration;ownerSessionPromise=api('/api/session').then(result=>{if(generation===ownerSessionGeneration)state=result;return result;}).finally(()=>{ownerSessionPromise=null;});}return ownerSessionPromise;}
@@ -47,7 +48,7 @@ function ownerEditorUnavailable(result,error){ownerAccessSuccess(result);if($('s
 async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;state.owner_station=result.station.code;page('editor');$('ownerName').textContent=result.station.name;const form=$('editForm'),sameStation=form.dataset.stationCode===String(result.station.code),keepDraft=preserveDraft&&sameStation&&!!(form.dataset.dirty||form.elements.artwork.files[0]);if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(result.station.artwork_url);$('ownerStatus').textContent='Station code #'+result.station.code+' · '+result.station.status.replaceAll('_',' ');if(!keepDraft){form.elements.stream_url.value=result.station.stream_url;form.elements.bio.value=result.station.bio;form.elements.artwork.value='';delete form.dataset.dirty;}form.dataset.stationCode=String(result.station.code);return true;}
 $('openLogin').onclick=()=>{page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await loadOwnerSession();if(generation!==sitePageGeneration)return;if(state?.owner_station)await editor(true,generation);else page('login');}catch(e){if(generation===sitePageGeneration)message(e.message);}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
 $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.preventDefault();});
-$('verification').addEventListener('close',()=>{verificationGeneration++;verificationId=null;verificationResendDeadline=0;setVerificationBusy(false);});
+$('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
 $('registerForm').addEventListener('reset',()=>{registrationRequestFingerprint='';registrationRequestId='';registrationMessage('');});
 $('registerForm').onsubmit=async event=>{
  event.preventDefault();const form=event.target;if(formIsBusy(form))return;if(window.prepareRegistrationStream&&!window.prepareRegistrationStream())return;registrationMessage('');const generation=++ownerAccessGeneration,view=sitePageGeneration,current=()=>generation===ownerAccessGeneration&&view===sitePageGeneration;
@@ -57,19 +58,64 @@ $('registerForm').onsubmit=async event=>{
 $('loginForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;const generation=++ownerAccessGeneration,view=sitePageGeneration,current=()=>generation===ownerAccessGeneration&&view===sitePageGeneration,data=Object.fromEntries(new FormData(form));busy(form,true,true);try{await ensureOwnerSession();if(!current())return;data.turnstile_token=await human(form,'station-access');if(!current())return;const result=await api('/api/owner/login',data);if(current())verify(result);}catch(e){if(current())message(e.message);}finally{busy(form,false);}};
 $('verifyForm').onsubmit=async event=>{
  event.preventDefault();if(verificationBusy||!verificationId||!$('verification').open)return;const form=event.target,generation=verificationGeneration,id=verificationId,code=form.elements.code.value;setVerificationBusy(true);
- try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;setVerificationBusy(false);$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{await editor(!result.registration_completed);if(!result.registration_completed)message(result.message);}catch(e){ownerEditorUnavailable(result,e);}}
+ try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;const view=sitePageGeneration;setVerificationBusy(false);$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{if(await editor(!result.registration_completed,view)!==false&&!result.registration_completed)message(result.message);}catch(e){if(view===sitePageGeneration)ownerEditorUnavailable(result,e);}}
  catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}
 };
 $('resend').onclick=async()=>{if(verificationBusy||!verificationId||!$('verification').open||Date.now()<verificationResendDeadline)return;const generation=verificationGeneration,id=verificationId;setVerificationBusy(true);try{const token=await human($('verification'),'verification-resend');if(!currentVerification(generation,id))return;const result=await api('/api/owner/resend',{verification_id:id,turnstile_token:token});if(!currentVerification(generation,id))return;verificationId=result.verification_id;verificationResendDeadline=Date.now()+60000;$('verifyForm').reset();$('verifyMessage').textContent='A new code has been requested. Use only the newest email code.';}catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}};
 if($('retryOwnerEditor'))$('retryOwnerEditor').onclick=async()=>{const button=$('retryOwnerEditor');if(button.disabled)return;button.disabled=true;try{await editor(true);$('stationSuccess').close();}catch(e){if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Check your connection and try again.';else message(e.message);}finally{button.disabled=false;}};
-function ownerChangesSaved(text){
- const dialog=$('ownerSaveSuccess');
- if(!dialog||document.hidden||$('editor').hidden||document.querySelector?.('dialog[open]')){message(text);return;}
- $('ownerSaveSuccessText').textContent=text||'Changes saved successfully.';
- message('');dialog.showModal();$('ownerSaveSuccessDone').focus({preventScroll:true});
+function ownerText(key,fallback){const text=window.appI18n?.t(key);return typeof text==='string'&&text!==key?text:fallback;}
+function ownerRefreshFeedback(failed,text=''){
+ const notice=$('ownerSaveRefreshStatus'),retry=$('ownerSaveRefreshRetry');
+ if(notice){notice.hidden=!failed;notice.textContent=failed?text||ownerText('owner.savedRefreshFailed','Your changes were saved. The editor could not refresh. Try Refresh editor.'):'';}
+ if(retry)retry.hidden=!failed;
+}
+function ownerChangesSaved(text,refreshFailed=false){
+ const saved=text==='Changes saved for safety review.'?ownerText('owner.review',text):text==='Changes saved successfully.'?ownerText('owner.saved',text):text||ownerText('owner.saved','Changes saved successfully.'),feedback=refreshFailed?ownerText('owner.savedRefreshFailed','Your changes were saved. The editor could not refresh. Try Refresh editor.'):'',dialog=$('ownerSaveSuccess');
+ if(!dialog||document.hidden||$('editor').hidden||document.querySelector?.('dialog[open]')){message(saved+(feedback?' '+feedback:''));return;}
+ $('ownerSaveSuccessText').textContent=saved+(feedback?' '+feedback:'');message('');dialog.showModal();$('ownerSaveSuccessDone').focus({preventScroll:true});
 }
 if($('ownerSaveSuccessDone'))$('ownerSaveSuccessDone').onclick=()=>$('ownerSaveSuccess').close();
-$('editForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;const generation=sitePageGeneration,data={stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];busy(form,true,true);try{data.artwork=await fileData(artwork);const result=await api('/api/owner/station',data);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);if(generation!==sitePageGeneration)return;delete form.dataset.dirty;form.elements.artwork.value='';if(await editor(false,generation)!==false)ownerChangesSaved(result.message);}catch(e){if(generation===sitePageGeneration)message(e.message);}finally{busy(form,false);}};
+if($('ownerSaveRefreshRetry'))$('ownerSaveRefreshRetry').onclick=async()=>{
+ const form=$('editForm'),retry=$('ownerSaveRefreshRetry');if(formIsBusy(form)||retry.disabled||$('editor').hidden)return;
+ const generation=sitePageGeneration;retry.disabled=true;busy(form,true,true);
+ try{if(await editor(true,generation)!==false){ownerRefreshFeedback(false);message('');}}
+ catch(e){if(generation===sitePageGeneration)ownerRefreshFeedback(true,ownerText('owner.refreshFailed','The editor could not refresh. Please try again.'));}
+ finally{retry.disabled=false;busy(form,false);}
+};
+let ownerCoverObjectUrl,ownerCoverGeneration=0,ownerSavedCoverUrl='',ownerCoverPreviewFile;
+function clearOwnerCoverUrl(){if(ownerCoverObjectUrl){URL.revokeObjectURL(ownerCoverObjectUrl);ownerCoverObjectUrl=null;}ownerCoverPreviewFile=null;}
+function renderOwnerSavedCover(){const image=$('ownerCover'),empty=$('ownerCoverEmpty');empty.textContent='No cover art uploaded yet';image.hidden=!ownerSavedCoverUrl;empty.hidden=!!ownerSavedCoverUrl;if(ownerSavedCoverUrl)image.src=ownerSavedCoverUrl;else image.removeAttribute('src');}
+function ownerArtworkNotice(text='',key=''){const notice=$('ownerArtworkMessage');if(!notice)return;notice.hidden=!text;notice.textContent=text;notice.dataset.state=text?(key==='owner.checkingArtwork'?'checking':'invalid'):'';if(key)notice.dataset.i18n=key;else delete notice.dataset.i18n;}
+function showOwnerCover(url){ownerCoverGeneration++;ownerSavedCoverUrl=url||'';clearOwnerCoverUrl();renderOwnerSavedCover();$('editForm').elements.artwork.setCustomValidity?.('');ownerArtworkNotice();}
+async function validateOwnerArtwork(file,{preview=false,focus=false}={}){
+ if(!file)return true;const input=$('editForm').elements.artwork,generation=ownerCoverGeneration;
+ ownerArtworkNotice(ownerText('owner.checkingArtwork','Checking cover art…'),'owner.checkingArtwork');
+ let result;try{if(typeof window.inspectStationLogo!=='function')throw Error('Artwork inspection unavailable');result=await window.inspectStationLogo(file);}
+ catch{result={valid:false,key:'owner.artworkCheckUnavailable',message:'Cover art could not be checked. Please refresh and try again.'};}
+ if(generation!==ownerCoverGeneration||input.files[0]!==file)return false;
+ if(!result.valid){input.value='';input.setCustomValidity?.('');clearOwnerCoverUrl();renderOwnerSavedCover();const text=ownerText(result.key,result.message);ownerArtworkNotice(text,result.key);if(focus)$('ownerArtworkMessage')?.focus();return false;}
+ input.setCustomValidity?.('');ownerArtworkNotice();
+ if(preview&&ownerCoverPreviewFile!==file){clearOwnerCoverUrl();ownerCoverObjectUrl=URL.createObjectURL(file);ownerCoverPreviewFile=file;$('ownerCover').src=ownerCoverObjectUrl;$('ownerCover').hidden=false;$('ownerCoverEmpty').hidden=true;}
+ return true;
+}
+$('ownerCover').onerror=()=>{$('ownerCover').hidden=true;$('ownerCoverEmpty').hidden=false;$('ownerCoverEmpty').textContent='Cover art could not load. Please try refreshing.';};
+$('editForm').elements.artwork.onchange=async event=>{ownerCoverGeneration++;clearOwnerCoverUrl();renderOwnerSavedCover();ownerArtworkNotice();const file=event.target.files[0];if(file)await validateOwnerArtwork(file,{preview:true});};
+window.addEventListener?.('pagehide',()=>{ownerCoverGeneration++;clearOwnerCoverUrl();});
+$('editForm').onsubmit=async event=>{
+ event.preventDefault();const form=event.target;if(formIsBusy(form))return;
+ const generation=sitePageGeneration,data={stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
+ try{
+  if(artwork&&!await validateOwnerArtwork(artwork,{focus:true}))return;
+  if(generation!==sitePageGeneration)return;
+  data.artwork=await fileData(artwork);if(generation!==sitePageGeneration)return;const result=await api('/api/owner/station',data);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);if(generation!==sitePageGeneration)return;
+  delete form.dataset.dirty;form.elements.artwork.value='';ownerRefreshFeedback(false);
+  // The write has completed. A failed read afterwards must not turn it into a
+  // failed save or make the owner repeat a committed update.
+  try{if(await editor(false,generation)!==false)ownerChangesSaved(result.message);}
+  catch{if(generation===sitePageGeneration){ownerRefreshFeedback(true);ownerChangesSaved(result.message,true);}}
+ }catch(e){if(generation===sitePageGeneration)message(e.message);}
+ finally{if(retry)retry.disabled=false;busy(form,false);}
+};
 $('logout').onclick=async()=>{try{await api('/api/owner/logout',{});ownerSessionGeneration++;if(state)state.owner_station=null;delete $('editForm').dataset.stationCode;page('login');}catch(e){message(e.message);}};
 function list(){}
 
@@ -221,10 +267,6 @@ const siteOrderedScriptsReady=new Promise(resolve=>{
 });
 void initializeSite();
 
-let ownerCoverObjectUrl;
-function showOwnerCover(url){if(ownerCoverObjectUrl){URL.revokeObjectURL(ownerCoverObjectUrl);ownerCoverObjectUrl=null;}$('ownerCoverEmpty').textContent='No cover art uploaded yet';$('ownerCover').hidden=!url;$('ownerCoverEmpty').hidden=!!url;if(url)$('ownerCover').src=url;else $('ownerCover').removeAttribute('src');}
-$('ownerCover').onerror=()=>{$('ownerCover').hidden=true;$('ownerCoverEmpty').hidden=false;$('ownerCoverEmpty').textContent='Cover art could not load. Please try refreshing.';};
-$('editForm').elements.artwork.onchange=event=>{const file=event.target.files[0];if(!file)return;showOwnerCover('');ownerCoverObjectUrl=URL.createObjectURL(file);$('ownerCover').src=ownerCoverObjectUrl;$('ownerCover').hidden=false;$('ownerCoverEmpty').hidden=true;};
 $('stationSuccessDone').onclick=()=>$('stationSuccess').close();
 
 $('ticketForm').onsubmit=async event=>{

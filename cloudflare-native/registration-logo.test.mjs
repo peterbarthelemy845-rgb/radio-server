@@ -63,3 +63,8 @@ test('error text follows language changes and page exit releases the retained pr
  const f=fixture(),invalid=logoFile({size:0});await f.choose(invalid);f.language(key=>key==='registration.logoRequired'?'Chwazi yon logo estasyon.':key);assert.equal(f.hint.textContent,'Chwazi yon logo estasyon.');assert.equal(f.input.validationMessage,'Chwazi yon logo estasyon.');
  const file=logoFile(),changed=f.choose(file);await f.flush();f.images[0].load();await changed;const url=f.preview.src;f.pagehide();assert.ok(f.revoked.includes(url));
 });
+
+
+test('shared owner inspection applies all logo checks without changing registration controls',async()=>{
+ const f=fixture(),file=logoFile();const inspected=f.window.inspectStationLogo(file);await f.flush();assert.equal(f.images.length,1);f.images[0].load(2500,1700);const result=await inspected;assert.equal(result.valid,false);assert.equal(result.key,'registration.logoDimensions');assert.equal(f.preview.src,'');assert.equal(f.hint.textContent,'');assert.equal(f.input.validationMessage,'');assert.equal(file.reads,1);assert.equal(await f.window.inspectStationLogo(file),result);assert.equal(file.reads,1);assert.equal(f.revoked.length,1);
+});

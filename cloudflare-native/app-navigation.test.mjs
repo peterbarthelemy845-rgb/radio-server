@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-function fixture({app=false,standalone=false,path='/',initial='myRadio'}={}){
+function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLifecycle=false}={}){
  const events=new Map(),frames=[],mediaEvents={},nodes=new Map(),stationOpenings=[];let loads=0,supportLoads=0,sharedGeneration=0;
  function node(id='',tag='DIV'){
   const listeners={};const n={id,tagName:tag,hidden:false,dataset:{},children:[],scrollLeft:0,isConnected:true,textContent:'',attrs:{},classList:{values:new Set(),toggle(name,on){if(on)this.values.add(name);else this.values.delete(name);}},setAttribute(key,value){this.attrs[key]=value;},addEventListener(key,fn){(listeners[key]??=[]).push(fn);},append(...items){this.children.push(...items);},before(){},focus(){document.activeElement=this;},querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;queueMicrotask(()=>{for(const fn of listeners.close||[])fn({});});},dispatch(name,event={}){for(const fn of listeners[name]||[])fn(event);}};if(id)nodes.set(id,n);return n;
  }
- const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;
+ const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;
  for(const id of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(id).hidden=id!==initial;
  const supportLink=node('supportLink','A');supportLink.href='https://radio.example/support';const wifiLink=nodes.get('openWifiSetup');wifiLink.tagName='A';wifiLink.href='https://radio.example/wifi-setup';
  const document={body:node(),activeElement:null,querySelector(selector){return selector.startsWith('nav a')?supportLink:null;},createElement:tag=>node('',tag.toUpperCase())};nodes.get('ticketForm').elements=Object.fromEntries(['name','email','device_code','subject','message','station_code'].map(key=>[key,Object.assign(node('ticket-'+key,'INPUT'),{value:''})]));
@@ -20,6 +20,12 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio'}={}){
  const window={scrollX:0,scrollY:0,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
  const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:()=>({matches:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,
   page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0});
+ if(ownerLifecycle){
+  const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
+  vm.runInContext('let sitePageGeneration=0,verificationId=null,verificationGeneration=0,verificationPageGeneration=0,verificationResendDeadline=0,verificationBusy=false;function setVerificationBusy(value){verificationBusy=value;}',context);
+  vm.runInContext(site.slice(site.indexOf('function currentVerification('),site.indexOf('function verify(result)')),context);
+  vm.runInContext(site.slice(site.indexOf('function page('),site.indexOf('function message(')),context);
+ }
  vm.runInContext(readFileSync(new URL('./public/assets/app-navigation.js',import.meta.url),'utf8'),context);
  function flush(){while(frames.length)frames.shift()();}
  async function settle(){await Promise.resolve();await Promise.resolve();flush();}
@@ -125,4 +131,10 @@ test('reporting cannot change routes or a draft during an add, pairing, control 
 
 test('Clear station and form reset remove the association without replacing the message draft',async()=>{
  const f=fixture(),form=f.nodes.get('ticketForm');form.elements.message.value='Keep this message';f.window.openStationProblemReport({code:'13',name:'Station One'});await f.settle();f.nodes.get('clearTicketStation').dispatch('click');assert.equal(form.elements.station_code.value,'');assert.equal(f.nodes.get('ticketStationContext').hidden,true);assert.equal(form.elements.message.value,'Keep this message');f.window.openStationProblemReport({code:'14',name:'Station Two'});form.dispatch('reset');assert.equal(form.elements.station_code.value,'');assert.equal(f.nodes.get('ticketStationContext').hidden,true);assert.equal(f.nodes.get('ticketStationName').textContent,'');
+});
+
+
+test('browser Back leaves owner verification through the real core page lifecycle',async()=>{
+ const f=fixture({ownerLifecycle:true});f.click(f.supportLink);vm.runInContext("page('login');verificationId='owner-challenge';verificationPageGeneration=sitePageGeneration;verificationBusy=true;verificationResendDeadline=Date.now()+60000;",f.context);f.nodes.get('verification').showModal();const generation=vm.runInContext('verificationGeneration',f.context);assert.equal(vm.runInContext("currentVerification(verificationGeneration,'owner-challenge')",f.context),true);
+ f.history.back();await f.settle();assert.equal(f.nodes.get('verification').open,false);assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('login').hidden,true);assert.equal(vm.runInContext('verificationId',f.context),null);assert.equal(vm.runInContext('verificationBusy',f.context),false);assert.equal(vm.runInContext('verificationResendDeadline',f.context),0);assert.ok(vm.runInContext('verificationGeneration',f.context)>generation);assert.equal(vm.runInContext("currentVerification("+generation+",'owner-challenge')",f.context),false);
 });

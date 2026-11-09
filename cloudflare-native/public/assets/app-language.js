@@ -87,6 +87,8 @@ Object.assign(appCreole,{
 });
 Object.assign(appEnglish,{'owner.savedTitle':'Changes saved','owner.saved':'Changes saved successfully.','owner.review':'Changes saved for safety review.'});
 Object.assign(appCreole,{'owner.savedTitle':'Chanjman yo anrejistre','owner.saved':'Chanjman yo anrejistre avèk siksè.','owner.review':'Chanjman yo anrejistre pou verifikasyon sekirite.'});
+Object.assign(appEnglish,{'radio.updating':'Updating status…','policy.terms':'Station Terms','policy.privacy':'Privacy Notice','policy.loading':'Loading…','policy.failed':'This page could not load. Please try again.','owner.refreshEditor':'Refresh editor','owner.savedRefreshFailed':'Your changes were saved. The editor could not refresh. Try Refresh editor.','owner.refreshFailed':'The editor could not refresh. Please try again.','owner.checkingArtwork':'Checking cover art…','owner.artworkCheckUnavailable':'Cover art could not be checked. Please refresh and try again.'});
+Object.assign(appCreole,{'radio.updating':'N ap mete estati a ajou…','policy.terms':'Kondisyon estasyon yo','policy.privacy':'Avi sou vi prive','policy.loading':'N ap chaje…','policy.failed':'Paj sa a pa ka chaje. Tanpri eseye ankò.','owner.refreshEditor':'Rechaje paj estasyon an','owner.savedRefreshFailed':'Chanjman ou yo anrejistre. Paj estasyon an pa ka rechaje. Peze Rechaje paj estasyon an.','owner.refreshFailed':'Paj estasyon an pa ka rechaje. Tanpri eseye ankò.','owner.checkingArtwork':'N ap verifye imaj la…','owner.artworkCheckUnavailable':'Nou pa ka verifye imaj la. Tanpri rechaje paj la epi eseye ankò.'});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';
@@ -100,7 +102,7 @@ function appTranslatePhrase(source){
  for(const [pattern,prefix] of rules){const match=source.match(pattern);if(match)return prefix+match[1];}
  return source;
 }
-const appTranslationSkip='script,style,textarea,[data-i18n-skip],#admin,#legal,#adReview,#reports,#backups,#ownerName,#ownerStatus,#shareName,#shareStationBio,.station-tile-name,.support-thread-message,.support-status-original,.support-status-message';
+const appTranslationSkip='script,style,textarea,[data-i18n-skip],#admin,#legal,#policyPreviewBody,#adReview,#reports,#backups,#ownerName,#ownerStatus,#shareName,#shareStationBio,.station-tile-name,.support-thread-message,.support-status-original,.support-status-message';
 function applyAppTranslations(){
  document.documentElement.lang=appLanguage;
  for(const picker of document.querySelectorAll('[data-language-picker]'))if(picker.value!==appLanguage)picker.value=appLanguage;

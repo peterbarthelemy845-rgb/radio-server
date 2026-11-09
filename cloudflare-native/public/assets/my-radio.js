@@ -22,6 +22,14 @@ function showRadioFreshness(available,hasRadios=radioCardViews.size>0){radioFres
 function updateRadioCardStatus(available){for(const view of radioCardViews.values()){const {status,station,radio,report}=view;status.textContent=available?(radio.online?'Online':'Radio offline. Check power and Wi-Fi.'):'Status unavailable';status.className=available?(radio.online?'radio-online':'radio-offline'):'radio-unknown';station.textContent='Current station: '+(available?(radio.online?(radio.current_station||'Not reported yet'):'Unavailable while offline'):'Unavailable until status is checked');if(report)report.hidden=!available||!radio.current_station||!(/^[1-9][0-9]{1,5}$/).test(String(radio.current_station_code||''));}const selected=radioCardViews.get(String(readSelectedRadio()))?.radio;$('openWifiSetup').hidden=!available||(radioCardViews.size>0&&selected?.online!==false);}
 function publishRadioStatus(radios){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{radios,checked_at:Date.now()}}));}
 function markRadioStatusUnavailable(text){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{unavailable:true}}));updateRadioCardStatus(false);showRadioFreshness(false);$('refreshRadios').hidden=false;if(text)$('radioConnectStatus').textContent=text;}
+function markRadioStatusUpdating(){
+ // A refresh is not a failure. Retain the last reported station while making
+ // its freshness clear, and reserve retry controls for a failed request.
+ for(const {status,report} of radioCardViews.values()){status.textContent='Updating status…';status.className='radio-unknown';if(report)report.hidden=true;}
+ if(radioCardViews.size)showRadioFreshness(false);
+ else{radioFreshness.hidden=false;radioFreshness.textContent='Updating status…';}
+ $('refreshRadios').hidden=true;$('radioConnectStatus').textContent='';
+}
 function showRadioReconnect(){
  radioSessionExpired=true;cancelRadioPairing();radioViewSnapshot='';radioLastChecked=0;radioCardViews.clear();$('linkedRadios').replaceChildren();rememberSelectedRadio('');radioInventories.clear();publishRadioStatus([]);
  $('connectRadio').hidden=true;$('connectRadioForm').hidden=false;$('refreshRadios').hidden=true;radioFreshness.hidden=true;radioFreshness.textContent='';updateRadioCardStatus(true);
@@ -29,6 +37,7 @@ function showRadioReconnect(){
 }
 async function loadMyRadios(silent=false){
  if(silent&&$('connectRadioForm').querySelector('button').disabled)return;
+ if(radioLastChecked&&(!silent||Date.now()-radioLastChecked>30000)&&!$('myRadio').hidden&&!document.hidden&&navigator.onLine)markRadioStatusUpdating();
  if(radioLoading){if(!silent)radioReloadRequested=true;return;}radioLoading=true;
  if(!silent&&$('myRadio').hidden)page('myRadio');
  const generation=radioViewGeneration;
@@ -83,7 +92,7 @@ let radioRefreshTimer;function scheduleRadioRefresh(){clearTimeout(radioRefreshT
 function radioVisibilityChanged(){
  if($('myRadio').hidden)cancelRadioPairing();
  if(document.hidden||$('myRadio').hidden)radioViewGeneration++;
- else{if(radioLastChecked&&Date.now()-radioLastChecked>30000)markRadioStatusUnavailable('Checking radio status…');loadMyRadios(true);}
+ else loadMyRadios(true);
  scheduleRadioRefresh();
 }
 new MutationObserver(radioVisibilityChanged).observe($('myRadio'),{attributes:true,attributeFilter:['hidden']});document.addEventListener('visibilitychange',radioVisibilityChanged);window.addEventListener('online',()=>{if(!$('myRadio').hidden)loadMyRadios(true);});window.addEventListener('offline',()=>{radioViewGeneration++;markRadioStatusUnavailable('No internet. Check your connection and tap Try again.');});

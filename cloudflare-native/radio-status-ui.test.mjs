@@ -32,6 +32,20 @@ test('radio checks show a timestamp and unchanged polls preserve card nodes with
  f.advance(60000);f.answers.push(response());await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,count);assert.match(f.freshness.textContent,/^Checked /);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
 });
 
+test('returning to stale radio data shows a neutral update until the fresh response arrives',async()=>{
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const card=f.views()[0],status=card.children[0],station=card.children[1],report=card.children[4],events=f.statusEvents.length;
+ f.ids.get('myRadio').hidden=true;f.visibility();f.advance(60000);const check=deferred();f.answers.push(check.promise);f.ids.get('myRadio').hidden=false;f.visibility();
+ assert.equal(f.views()[0],card);assert.equal(status.textContent,'Updating status…');assert.equal(status.className,'radio-unknown');assert.equal(station.textContent,'Current station: Community Radio');assert.equal(report.hidden,true);assert.match(f.freshness.textContent,/^Last checked /);assert.equal(f.ids.get('radioConnectStatus').textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('linkedRadios').attributes['aria-busy'],'true');assert.equal(f.statusEvents.length,events);
+ check.resolve(response({online:false}));await f.flush();assert.equal(f.views()[0].children[0].textContent,'Radio offline. Check power and Wi-Fi.');assert.match(f.freshness.textContent,/^Checked /);assert.equal(f.ids.get('refreshRadios').hidden,true);
+});
+
+test('a refresh only reveals retry after failure and explicit retry clears old error feedback',async()=>{
+ const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],check=deferred();f.advance(60000);f.answers.push(check.promise);const request=f.load(true);
+ assert.equal(card.children[0].textContent,'Updating status…');assert.equal(f.ids.get('refreshRadios').hidden,true);check.reject(Error('Service unavailable'));await request;
+ assert.equal(card.children[0].textContent,'Status unavailable');assert.match(f.ids.get('radioConnectStatus').textContent,/Service unavailable.*Try again/);assert.equal(f.ids.get('refreshRadios').hidden,false);
+ const retry=deferred();f.answers.push(retry.promise);const retrying=f.load();assert.equal(card.children[0].textContent,'Updating status…');assert.equal(f.ids.get('radioConnectStatus').textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);retry.resolve(response());await retrying;assert.equal(card.children[0].textContent,'Online');
+});
+
 test('an unlinked radio page does not claim a device status was checked',async()=>{
  const f=fixture();f.answers.push({radios:[]});await f.load();assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');assert.equal(f.ids.get('connectRadioForm').hidden,false);
  f.answers.push(response());await f.load(true);assert.equal(f.freshness.hidden,false);assert.match(f.freshness.textContent,/^Checked /);
@@ -89,6 +103,10 @@ test('stale in-flight response after leaving and returning is discarded in favor
 
 test('silent status polling pauses while physical pairing is in progress',async()=>{
  const f=fixture();f.ids.get('connectRadioForm').button.disabled=true;await f.load(true);assert.equal(f.calls.length,0);assert.equal(f.freshness.hidden,true);
+});
+
+test('stale radio refresh does not replace an active physical pairing prompt',async()=>{
+ const f=fixture();f.answers.push({radios:[]});await f.load();f.advance(60000);f.ids.get('connectRadioForm').button.disabled=true;f.ids.get('radioConnectStatus').textContent='1234 — Match this number and tap Allow on your radio.';const before=f.calls.length;f.visibility();await f.flush();assert.equal(f.calls.length,before);assert.match(f.ids.get('radioConnectStatus').textContent,/1234/);assert.equal(f.freshness.hidden,true);
 });
 
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}

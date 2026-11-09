@@ -93,6 +93,8 @@ async function inspectRegistrationLogo(file){
  finally{if(url)URL.revokeObjectURL(url);}
 }
 function registrationLogoInspection(file){if(!file)return Promise.resolve(registrationLogoResult('registration.logoRequired','Choose a station logo.'));if(!coverInspections.has(file))coverInspections.set(file,inspectRegistrationLogo(file));return coverInspections.get(file);}
+// Shared inspection has no form-specific effects; owner replacement uses the same limits.
+window.inspectStationLogo=registrationLogoInspection;
 async function updateRegistrationLogo(){
  const generation=++coverGeneration,file=coverInput.files[0];clearRegistrationLogoUrl();coverPreview.src='/assets/logo-placeholder.svg';coverPreview.alt='No logo uploaded yet';registrationLogoStatus(null);registrationLogoControls();
  if(!file)return;

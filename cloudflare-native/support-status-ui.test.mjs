@@ -4,11 +4,24 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 function fixture({human}={}){
  const events={},calls=[],answers=[],ids=new Map(),observers=[];
- function element(tag='div'){const node={tag,children:[],dataset:{},hidden:false,attributes:{},textContent:'',value:'',setAttribute(k,v){this.attributes[k]=v;},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},addEventListener(name,fn){this[name+'Listener']=fn;},showModal(){this.open=true;},close(){this.open=false;this.closeListener?.();},focus(){this.focused=true;},reset(){this.resetCalled=true;}};Object.defineProperty(node,'innerHTML',{set(){throw Error('Untrusted HTML insertion');}});return node;}
- const document={hidden:false,createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(){}};ids.set('supportTicketStatus',element());ids.set('support',element());
- const ctx={document,window:{addEventListener(name,fn){events[name]=fn;},dispatchEvent(){},appI18n:{language:'en'}},$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(){return 1;},clearTimeout(){},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
+ function element(tag='div'){
+  const node={tag,nodeType:1,children:[],dataset:{},hidden:false,attributes:{},textContent:'',value:'',isConnected:true,replacements:0,
+   setAttribute(k,v){this.attributes[k]=v;},
+   append(...children){for(const child of children){child.remove?.();child.parent=this;this.children.push(child);}},
+   insertBefore(child,before){child.remove?.();child.parent=this;const index=this.children.indexOf(before);this.children.splice(index<0?this.children.length:index,0,child);},
+   remove(){if(this.parent){const index=this.parent.children.indexOf(this);if(index>=0)this.parent.children.splice(index,1);this.parent=null;}},
+   replaceChildren(...children){this.replacements++;for(const child of this.children)child.parent=null;this.children=[];this.append(...children);},
+   contains(child){return child===this||this.children.some(node=>node.contains?.(child));},
+   querySelectorAll(selector){const tags=selector.split(',');return this.children.flatMap(child=>[...(tags.includes(child.tag)?[child]:[]),...(child.querySelectorAll?.(selector)||[])]);},
+   getBoundingClientRect(){return {top:0,bottom:0,height:0};},
+   addEventListener(name,fn){this[name+'Listener']=fn;},showModal(){this.open=true;},close(){this.open=false;this.closeListener?.();},focus(){this.focused=true;document.activeElement=this;},reset(){this.resetCalled=true;}};
+  Object.defineProperty(node,'innerHTML',{set(){throw Error('Untrusted HTML insertion');}});return node;
+ }
+ const document={hidden:false,activeElement:null,selection:null,getSelection(){return this.selection;},createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(){}};ids.set('supportTicketStatus',element());ids.set('support',element());
+ const window={innerHeight:720,scrollX:0,scrollY:0,scrolls:[],scrollTo(x,y){this.scrolls.push({x,y});this.scrollX=x;this.scrollY=y;},addEventListener(name,fn){events[name]=fn;},dispatchEvent(){},appI18n:{language:'en'}};
+ const ctx={document,window,$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(){return 1;},clearTimeout(){},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
  runInNewContext(readFileSync(new URL('./public/assets/support-status.js',import.meta.url),'utf8'),ctx);
- return {events,calls,answers,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
+ return {events,calls,answers,document,window,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
 }
 function text(node){return node.textContent+(node.children||[]).map(text).join('');}
 const reference='b'.repeat(32);
@@ -22,6 +35,38 @@ test('private ticket content is rendered as untranslated text, never executable 
 
 test('a station problem ticket keeps its selected station visible as literal text',async()=>{
  const f=fixture();f.answers.push({...result,ticket:{...result.ticket,station_code:'13',station_name:'<b>Test station</b>'}});await f.open(reference);assert.match(text(f.get('statusPrivate')),/<b>Test station<\/b> #13/);
+});
+
+test('unchanged automatic ticket checks preserve content and focused controls without rebuilding the panel',async()=>{
+ const f=fixture();f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView'),panel=f.get('statusPrivate'),children=[...panel.children],reply=[...view.replyViews.values()][0],replacements=panel.replacements;
+ view.refresh.focus();f.window.scrollY=340;f.answers.push(structuredClone(result));await f.open(reference,true);
+ assert.equal(f.get('supportTicketView'),view);assert.deepEqual(panel.children,children);assert.equal(panel.replacements,replacements);assert.equal([...view.replyViews.values()][0],reply);assert.equal(f.document.activeElement,view.refresh);assert.equal(f.window.scrollY,340);assert.equal(f.window.scrolls.length,0);
+});
+
+test('new ticket replies and status patch in place while preserving focused actions, selected text and the reading position',async()=>{
+ const f=fixture();f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView'),oldReply=[...view.replyViews.values()][0];view.close.focus();f.window.scrollY=200;
+ const selection={rangeCount:1,isCollapsed:false,anchorNode:oldReply.body,anchorOffset:0,focusNode:oldReply.body,focusOffset:0,restored:[],setBaseAndExtent(...values){this.restored.push(values);}};f.document.selection=selection;
+ oldReply.body.getBoundingClientRect=()=>{const top=300+(view.state.dataset.i18n==='supportStatus.closed'?24:0)-f.window.scrollY;return {top,bottom:top+80,height:80};};
+ const next={...result,ticket:{...result.ticket,state:'closed'},replies:[...result.replies,{created_at:1800000030,body:'Try the updated radio software.'}]};f.answers.push(next);await f.open(reference,true);
+ assert.equal(f.get('supportTicketView'),view);assert.equal(view.state.textContent,'Closed');assert.equal(view.replyViews.size,2);assert.equal([...view.replyViews.values()][0],oldReply);assert.equal(f.document.activeElement,view.close);assert.equal(selection.restored.length,1);assert.deepEqual(selection.restored[0],[oldReply.body,0,oldReply.body,0]);assert.equal(oldReply.body.getBoundingClientRect().top,100);assert.equal(f.window.scrollY,224);assert.match(text(view.replies),/Try the updated radio software/);
+});
+
+test('a rolling reply list removes old entries without detaching surviving replies or replacing its buttons',async()=>{
+ const f=fixture(),first={...result,replies:[{created_at:1800000000,body:'First reply'},{created_at:1800000030,body:'Keep reading this reply'}]};f.answers.push(first);await f.open(reference);const view=f.get('supportTicketView'),old=[...view.replyViews.values()],refresh=view.refresh;
+ f.answers.push({...first,replies:[first.replies[1],{created_at:1800000060,body:'Newest reply'}]});await f.open(reference,true);
+ assert.equal(view.replyViews.size,2);assert.equal(view.replies.children[1],old[1].card);assert.equal(old[0].card.parent,null);assert.equal(view.refresh,refresh);assert.doesNotMatch(text(view.replies),/First reply/);assert.match(text(view.replies),/Newest reply/);
+});
+
+test('language refresh updates ticket dates while retaining the same private content and controls',async()=>{
+ const f=fixture(),dated={...result,ticket:{...result.ticket,created_at:1800000000}};f.answers.push(dated);await f.open(reference);const view=f.get('supportTicketView'),body=view.message,reply=[...view.replyViews.values()][0];f.window.appI18n.language='ht';f.answers.push(dated);await f.open(reference,true);
+ assert.equal(view.created.textContent,new Date(1800000000*1000).toLocaleString('fr-HT',{dateStyle:'medium',timeStyle:'short'}));assert.equal(view.message,body);assert.equal([...view.replyViews.values()][0],reply);assert.equal(body.textContent,result.ticket.message);
+});
+
+test('temporary automatic-check errors and recovery keep the focused ticket at its reading position',async()=>{
+ const f=fixture();f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView'),notice=f.get('statusNotice');f.window.scrollY=200;view.refresh.focus();
+ view.refresh.getBoundingClientRect=()=>{const top=300+(notice.textContent?48:0)-f.window.scrollY;return {top,bottom:top+48,height:48};};
+ f.answers.push(Error('Connection interrupted'));await f.open(reference,true);assert.equal(view.refresh.getBoundingClientRect().top,100);assert.equal(f.document.activeElement,view.refresh);assert.match(notice.textContent,/Connection interrupted/);
+ f.answers.push(result);await f.open(reference,true);assert.equal(view.refresh.getBoundingClientRect().top,100);assert.equal(f.document.activeElement,view.refresh);assert.equal(notice.textContent,'');assert.equal(f.window.scrollY,200);
 });
 test('email lookup requires its private challenge and verification before displaying a ticket',async()=>{
  const f=fixture();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push({verification_id:'c'.repeat(32)});await f.get('statusLookup').onsubmit({preventDefault(){}});assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.calls[0].body.turnstile_token,'bot-proof');

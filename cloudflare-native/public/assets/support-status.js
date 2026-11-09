@@ -40,25 +40,66 @@ async function loadSupportTicketRecent(){
  try{const result=await api('/api/support/status/recent');statusRecent.replaceChildren();for(const ticket of result.tickets||[]){const button=document.createElement('button');button.type='button';button.className='secondary';button.append(supportPrivateText('span',ticket.subject),supportTicketStateNode(ticket.state));button.onclick=()=>openSupportTicket(ticket.reference);statusRecent.append(button);}supportStatusChanged();}catch{}
 }
 function scheduleSupportTicketRefresh(){clearTimeout(supportStatusTimer);if(!supportStatusReference||document.hidden||$('support').hidden||!statusDetails.open)return;supportStatusTimer=setTimeout(()=>openSupportTicket(supportStatusReference,true),30000);}
+let supportTicketView;
+function supportTicketText(node,value){const text=String(value??'');if(node.textContent!==text)node.textContent=text;}
+function supportTicketReadingPosition(){
+ const selection=document.getSelection?.(),inside=node=>!!node&&statusPrivate.contains(node),selected=selection?.rangeCount&&!selection.isCollapsed&&(inside(selection.anchorNode)||inside(selection.focusNode));
+ const saved=selected?{selection,anchor:selection.anchorNode,anchorOffset:selection.anchorOffset,focus:selection.focusNode,focusOffset:selection.focusOffset}:null;
+ const selectedElement=selected?(selection.focusNode.nodeType===1?selection.focusNode:selection.focusNode.parentElement):null;
+ const candidates=[selectedElement,document.activeElement,...statusPrivate.querySelectorAll('h3,p,h4,button')];
+ const anchor=candidates.find(node=>{if(!inside(node)||!node.getBoundingClientRect)return false;const box=node.getBoundingClientRect();return box.height>0&&box.bottom>0&&box.top<(window.innerHeight||0);});
+ return {saved,anchor,top:anchor?.getBoundingClientRect().top};
+}
+function restoreSupportTicketReadingPosition(position){
+ const saved=position?.saved;
+ if(saved?.anchor?.isConnected&&saved.focus?.isConnected)try{saved.selection.setBaseAndExtent(saved.anchor,saved.anchorOffset,saved.focus,saved.focusOffset);}catch{}
+ if(position?.anchor?.isConnected){const shift=position.anchor.getBoundingClientRect().top-position.top;if(shift&&typeof window.scrollTo==='function')window.scrollTo(window.scrollX||0,(window.scrollY||0)+shift);}
+}
+function createSupportTicketView(reference){
+ const title=supportPrivateText('h3',''),state=supportTicketStateNode('new'),created=supportPrivateText('p','','small');
+ const referenceLine=document.createElement('p');referenceLine.className='support-ticket-reference';referenceLine.append(supportStatusNode('span','supportStatus.reference','Ticket reference'),document.createTextNode(': '),supportPrivateText('span',reference));
+ const station=supportPrivateText('span','');station.hidden=true;referenceLine.append(station);
+ const original=supportStatusNode('h4','supportStatus.original','Your message'),message=supportPrivateText('p','','support-ticket-body'),repliesTitle=supportStatusNode('h4','supportStatus.replies','Support replies'),replies=document.createElement('div');
+ const noReplies=supportStatusNode('p','supportStatus.noReplies','No reply yet. Your ticket status will update here.');replies.append(noReplies);
+ const checked=document.createElement('p');checked.className='small';const checkedTime=document.createTextNode('');checked.append(supportStatusNode('span','supportStatus.checked','Checked'),checkedTime);
+ const actions=document.createElement('div');actions.className='support-ticket-actions';const refresh=supportStatusNode('button','supportStatus.refresh','Refresh status','secondary');refresh.type='button';refresh.onclick=()=>openSupportTicket(reference);
+ const close=supportStatusNode('button','supportStatus.closePrivate','Close private ticket','secondary');close.type='button';close.onclick=async()=>{close.disabled=true;try{await api('/api/support/status/logout',{reference});clearSupportTicket();loadSupportTicketRecent();}catch(e){statusNotice.textContent=e.message;}finally{close.disabled=false;}};
+ actions.append(refresh,close);statusPrivate.replaceChildren(title,state,created,referenceLine,original,message,repliesTitle,replies,checked,actions);
+ return {reference,title,state,created,station,message,replies,noReplies,checkedTime,refresh,close,replyViews:new Map(),stateValue:null,snapshot:''};
+}
+function renderSupportTicket(reference,result,silent,previousReading=null){
+ const sameTicket=supportTicketView?.reference===reference,view=sameTicket?supportTicketView:(supportTicketView=createSupportTicketView(reference)),ticket=result.ticket,replies=result.replies||[],language=window.appI18n?.language||'en';
+ const snapshot=JSON.stringify([ticket.subject,ticket.state,ticket.created_at,ticket.message,ticket.station_code,ticket.station_name,replies,language]);
+ const checkedText=' '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),reading=previousReading||(sameTicket&&silent&&(snapshot!==view.snapshot||view.checkedTime.textContent!==checkedText)?supportTicketReadingPosition():null);
+ if(snapshot!==view.snapshot){
+  supportTicketText(view.title,ticket.subject);supportTicketText(view.created,supportStatusDate(ticket.created_at));supportTicketText(view.message,ticket.message);
+  view.station.hidden=!ticket.station_code;supportTicketText(view.station,ticket.station_code?' · '+(ticket.station_name||'Station')+' #'+ticket.station_code:'');
+  if(view.stateValue!==ticket.state){const [key,label]=supportStatusLabels[ticket.state]||supportStatusLabels.new;view.state.dataset.i18n=key;view.state.textContent=window.appI18n?.t?.(key)||label;view.stateValue=ticket.state;}
+  const occurrences=new Map(),next=replies.map(reply=>{const value=JSON.stringify([reply.created_at,reply.body]),count=occurrences.get(value)||0;occurrences.set(value,count+1);return {key:value+':'+count,reply};}),keys=new Set(next.map(item=>item.key));
+  // Remove expired entries before reconciling order, so the usual append-only
+  // response never detaches a reply the visitor is selecting or reading.
+  for(const [key,item] of view.replyViews)if(!keys.has(key)){item.card.remove();view.replyViews.delete(key);}
+  view.noReplies.hidden=!!next.length;
+  for(let index=0;index<next.length;index++){
+   const {key,reply}=next[index];let item=view.replyViews.get(key);
+   if(!item){const card=document.createElement('article');card.className='support-ticket-reply';const created=supportPrivateText('p','','small'),body=supportPrivateText('p',reply.body,'support-ticket-body');card.append(created,body);item={card,created,body};view.replyViews.set(key,item);}
+   supportTicketText(item.created,supportStatusDate(reply.created_at));const existing=view.replies.children[index+1];if(existing!==item.card)view.replies.insertBefore(item.card,existing||null);
+  }
+  view.snapshot=snapshot;
+ }
+ supportTicketText(view.checkedTime,checkedText);restoreSupportTicketReadingPosition(reading);
+}
 async function openSupportTicket(reference,silent=false){
  const generation=++supportStatusGeneration;
  if(!silent){statusDetails.open=true;statusNotice.dataset.i18n='supportStatus.loading';statusNotice.textContent='Checking ticket status…';}
  try{
   const result=await api('/api/support/status/ticket?reference='+encodeURIComponent(reference));if(generation!==supportStatusGeneration)return;
-  supportStatusReference=reference;statusPrivate.replaceChildren();statusLookup.hidden=true;statusIntro.hidden=true;statusRecent.hidden=true;statusPrivate.hidden=false;statusNotice.textContent='';delete statusNotice.dataset.i18n;
-  const title=supportPrivateText('h3',result.ticket.subject),state=supportTicketStateNode(result.ticket.state),created=supportPrivateText('p',supportStatusDate(result.ticket.created_at),'small');
-  const referenceLine=document.createElement('p');referenceLine.className='support-ticket-reference';referenceLine.append(supportStatusNode('span','supportStatus.reference','Ticket reference'),document.createTextNode(': '),supportPrivateText('span',result.ticket.reference));
-  if(result.ticket.station_code)referenceLine.append(document.createTextNode(' · '),supportPrivateText('span',(result.ticket.station_name||'Station')+' #'+result.ticket.station_code));
-  const original=supportStatusNode('h4','supportStatus.original','Your message'),message=supportPrivateText('p',result.ticket.message,'support-ticket-body');
-  const replies=supportStatusNode('h4','supportStatus.replies','Support replies');statusPrivate.append(title,state,created,referenceLine,original,message,replies);
-  if(!(result.replies||[]).length)statusPrivate.append(supportStatusNode('p','supportStatus.noReplies','No reply yet. Your ticket status will update here.'));
-  for(const reply of result.replies||[]){const card=document.createElement('article');card.className='support-ticket-reply';card.append(supportPrivateText('p',supportStatusDate(reply.created_at),'small'),supportPrivateText('p',reply.body,'support-ticket-body'));statusPrivate.append(card);}
-  const checked=document.createElement('p');checked.className='small';checked.append(supportStatusNode('span','supportStatus.checked','Checked'),document.createTextNode(' '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})));statusPrivate.append(checked);
-  const actions=document.createElement('div');actions.className='support-ticket-actions';const refresh=supportStatusNode('button','supportStatus.refresh','Refresh status','secondary');refresh.type='button';refresh.onclick=()=>openSupportTicket(reference);const close=supportStatusNode('button','supportStatus.closePrivate','Close private ticket','secondary');close.type='button';close.onclick=async()=>{close.disabled=true;try{await api('/api/support/status/logout',{reference});clearSupportTicket();loadSupportTicketRecent();}catch(e){statusNotice.textContent=e.message;}finally{close.disabled=false;}};actions.append(refresh,close);statusPrivate.append(actions);
+  const reading=silent&&supportTicketView?.reference===reference&&statusNotice.textContent?supportTicketReadingPosition():null;
+  supportStatusReference=reference;statusLookup.hidden=true;statusIntro.hidden=true;statusRecent.hidden=true;statusPrivate.hidden=false;statusNotice.textContent='';delete statusNotice.dataset.i18n;renderSupportTicket(reference,result,silent,reading);
   supportStatusChanged();scheduleSupportTicketRefresh();
- }catch(e){if(generation!==supportStatusGeneration)return;if(e.status===401||e.status===403)clearSupportTicket();delete statusNotice.dataset.i18n;statusNotice.textContent=e.message;scheduleSupportTicketRefresh();}
+ }catch(e){if(generation!==supportStatusGeneration)return;const expired=e.status===401||e.status===403,reading=!expired&&silent&&supportTicketView?.reference===reference?supportTicketReadingPosition():null;if(expired)clearSupportTicket();delete statusNotice.dataset.i18n;statusNotice.textContent=e.message;restoreSupportTicketReadingPosition(reading);scheduleSupportTicketRefresh();}
 }
-function clearSupportTicket(){++supportStatusGeneration;supportStatusReference='';clearTimeout(supportStatusTimer);statusPrivate.replaceChildren();statusPrivate.hidden=true;statusLookup.hidden=false;statusIntro.hidden=false;statusRecent.hidden=false;statusNotice.textContent='';}
+function clearSupportTicket(){++supportStatusGeneration;supportStatusReference='';supportTicketView=null;clearTimeout(supportStatusTimer);statusPrivate.replaceChildren();statusPrivate.hidden=true;statusLookup.hidden=false;statusIntro.hidden=false;statusRecent.hidden=false;statusNotice.textContent='';}
 statusLookup.onsubmit=async event=>{
  event.preventDefault();if(supportStatusLookupBusy||statusVerify.open||$('support').hidden)return;
  const generation=++supportStatusChallengeGeneration,reference=statusReference.value.trim().toLowerCase(),email=statusEmail.value;
