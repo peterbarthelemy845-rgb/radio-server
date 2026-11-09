@@ -10,7 +10,7 @@ function fixture(){
    setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){},
    querySelector(selector){if(selector==='button')return this.button;return null;},reset(){}};
  }
- for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','radioConnectStatus','refreshRadios','navRadio'])ids.set(id,node());
+ for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','radioConnectStatus','refreshRadios','navRadio','openWifiSetup'])ids.set(id,node());ids.get('openWifiSetup').hidden=true;
  ids.get('connectRadioForm').button=node('button');ids.get('connectRadioForm').elements={device_code:{value:'3961',focus(){}}};
  const navigator={onLine:true},document={hidden:false,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
@@ -30,6 +30,16 @@ test('radio checks show a timestamp and unchanged polls preserve card nodes with
  const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],status=card.children[0],station=card.children[1],count=f.ids.get('linkedRadios').replacements;
  assert.equal(status.textContent,'Online');assert.equal(status.className,'radio-online');assert.equal(station.textContent,'Current station: Community Radio');assert.match(f.freshness.textContent,/^Checked /);assert.equal(f.freshness.hidden,false);assert.equal(f.ids.get('linkedRadios').attributes['aria-busy'],'false');
  f.advance(60000);f.answers.push(response());await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,count);assert.match(f.freshness.textContent,/^Checked /);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
+});
+
+test('Wi-Fi help is shown only for the selected radio when it is reported offline',async()=>{
+ const f=fixture(),help=f.ids.get('openWifiSetup');assert.equal(help.hidden,true);
+ for(const [answer,visible] of [[response(),false],[response({online:false}),true],[response({online:false}),true],[Error('Status failed'),false],[response({online:false}),true],[response(),false],[{radios:[]},false]]){f.answers.push(answer);await f.load(true);assert.equal(!help.hidden,visible);}
+ f.answers.push(response({online:false}));await f.load();assert.equal(help.hidden,false);f.navigator.onLine=false;f.windowEvents.offline();assert.equal(help.hidden,true);
+});
+
+test('another offline radio cannot show Wi-Fi help for the selected online radio',async()=>{
+ const f=fixture();f.answers.push({radios:[radio,{...radio,id:'two',online:false}]});await f.load();assert.equal(f.ids.get('openWifiSetup').hidden,true);
 });
 
 test('failed silent checks replace green Online and successful unchanged data restores it in place',async()=>{

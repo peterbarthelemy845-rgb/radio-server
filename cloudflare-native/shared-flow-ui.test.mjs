@@ -46,7 +46,7 @@ test('a cancelled add acknowledgment cannot display success or refresh radio inv
 test('a station tap adds to the selected radio without extra prompts and waits for its acknowledgment',async()=>{
  const ack=deferred(),f=fixture();f.answers.push({name:'First station',listener_code:'10'},{radios:[{id:'one',device_code:'3961',online:true}]},{command_id:'command'},ack.promise);
  const opening=f.open('10',true,true);await until(()=>f.calls.length===4);assert.equal(f.dialogs.length,0);assert.equal(f.id('shared').dataset.adding,'1');assert.equal(f.calls[2].path,'/api/phone/add');assert.equal(f.calls[2].body.radio_id,'one');assert.equal(f.calls[2].body.station_code,'10');
- ack.resolve({state:'added'});await opening;assert.deepEqual(f.dialogs.map(d=>d[0]),['Station added']);assert.match(f.id('shareStatus').textContent,/success/i);assert.deepEqual(f.refreshes,['one']);assert.equal(f.id('shared').dataset.adding,undefined);
+ ack.resolve({state:'added'});await opening;assert.deepEqual(f.dialogs.map(d=>d[0]),['Station added']);assert.equal(f.dialogs[0][1],'');assert.equal(f.id('shareStatus').textContent,'Station added');assert.deepEqual(f.refreshes,['one']);assert.equal(f.id('shared').dataset.adding,undefined);
 });
 
 test('opening a shared URL or a restored station panel never adds automatically',async()=>{

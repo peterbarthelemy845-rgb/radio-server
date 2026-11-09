@@ -6,7 +6,7 @@ const source=readFileSync(new URL('./public/assets/listener-usability.js',import
 const dialogSource=source.slice(source.indexOf('const listenerDialog='),source.indexOf('const draftForms='));
 function fixture(){
  const nodes=[],events=[];let showCount=0;
- function createElement(tag){const handlers=new Map(),node={tag,children:[],open:false,hidden:false,textContent:'',setAttribute(){},append(...items){this.children.push(...items);},addEventListener(name,fn,options){const list=handlers.get(name)||[];list.push({fn,once:options?.once});handlers.set(name,list);},removeEventListener(name,fn){handlers.set(name,(handlers.get(name)||[]).filter(item=>item.fn!==fn));},showModal(){if(this.failShow)throw Error('Cannot open dialog');if(!this.open){showCount++;this.open=true;}},close(value){if(!this.open)return;this.open=false;this.returnValue=value;events.push(()=>{for(const handler of [...(handlers.get('close')||[])]){if(handler.once)this.removeEventListener('close',handler.fn);handler.fn();}});},focus(){}};nodes.push(node);return node;}
+ function createElement(tag){const handlers=new Map(),node={tag,children:[],open:false,hidden:false,textContent:'',attributes:{},setAttribute(name,value){this.attributes[name]=value;},removeAttribute(name){delete this.attributes[name];},append(...items){this.children.push(...items);},addEventListener(name,fn,options){const list=handlers.get(name)||[];list.push({fn,once:options?.once});handlers.set(name,list);},removeEventListener(name,fn){handlers.set(name,(handlers.get(name)||[]).filter(item=>item.fn!==fn));},showModal(){if(this.failShow)throw Error('Cannot open dialog');if(!this.open){showCount++;this.open=true;}},close(value){if(!this.open)return;this.open=false;this.returnValue=value;events.push(()=>{for(const handler of [...(handlers.get('close')||[])]){if(handler.once)this.removeEventListener('close',handler.fn);handler.fn();}});},focus(){}};nodes.push(node);return node;}
  const context={document:{createElement,body:{append(){}}}};runInNewContext(dialogSource,context);
  return {open:runInNewContext('listenerActionDialog',context),dialog:nodes[0],get:expression=>runInNewContext(expression,context),close(value){nodes[0].close(value);},flush(){while(events.length)events.shift()();},showCount:()=>showCount};
 }
@@ -23,4 +23,9 @@ test('a close event queued by the browser cannot be consumed by a newer prompt',
 test('failed opening releases the prompt lock and leaves no old close handler',async()=>{
  const f=fixture();f.dialog.failShow=true;await assert.rejects(f.open('Notice','Message'),/Cannot open dialog/);f.dialog.failShow=false;
  const next=f.open('Retry','Message');f.close('confirmed');f.flush();assert.equal(await next,true);
+});
+
+test('short notices have one Done button and no empty description while confirmations retain their choice',async()=>{
+ const f=fixture(),notice=f.open('Radio connected','');assert.equal(f.get('listenerDialogText').hidden,true);assert.equal(f.dialog.attributes['aria-describedby'],undefined);assert.equal(f.get('listenerDialogCancel').hidden,true);assert.equal(f.get('listenerDialogConfirm').textContent,'Done');f.close('confirmed');f.flush();await notice;
+ const confirmation=f.open('Unlink radio?','Device code 3961 will be disconnected from this phone.','Unlink radio',true);assert.equal(f.get('listenerDialogText').hidden,false);assert.equal(f.dialog.attributes['aria-describedby'],'listenerActionText');assert.equal(f.get('listenerDialogCancel').hidden,false);assert.equal(f.get('listenerDialogConfirm').textContent,'Unlink radio');f.close('cancelled');f.flush();assert.equal(await confirmation,false);
 });

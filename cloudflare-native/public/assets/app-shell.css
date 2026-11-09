@@ -84,6 +84,7 @@ body.app-keyboard-open.app-listener-page nav[aria-label="Main navigation"]{displ
 
 /* Wi-Fi onboarding opens the existing local radio portal; credentials stay there. */
 #myRadio .radio-wifi-link{display:inline-flex;align-items:center;gap:7px;min-height:48px;margin-top:6px;color:#1d59a0;font-size:.9375rem;font-weight:650;text-decoration:none}
+#myRadio .radio-wifi-link[hidden]{display:none}
 .radio-wifi-link svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 #wifiSetup .wifi-setup-intro{margin:0 0 14px;color:#536782;font-size:.9375rem;line-height:1.5}
 .wifi-setup-steps{list-style:none;counter-reset:wifi-step;padding:0;margin:0}

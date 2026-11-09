@@ -108,6 +108,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #78
 #listenerActionDialog::backdrop{background:#071329aa;backdrop-filter:blur(3px)}
 #listenerActionDialog h2{margin:0 0 12px;font-size:25px;line-height:1.2;color:#142b50}
 #listenerActionDialog p{font-size:16px;line-height:1.5;margin:0 0 22px;overflow-wrap:anywhere}
+#listenerActionDialog p[hidden]{display:none}
 #listenerActionDialog .listener-dialog-actions{display:flex;gap:10px;flex-wrap:wrap}
 #listenerActionDialog button{flex:1 1 120px;min-height:54px;padding:13px 16px;margin:0;font-size:17px;border-radius:12px}
 #listenerActionDialog button[hidden]{display:none}

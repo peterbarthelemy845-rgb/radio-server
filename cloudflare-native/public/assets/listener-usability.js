@@ -44,7 +44,7 @@ function listenerActionDialog(title,text,confirmLabel='Done',allowCancel=false){
  if(listenerDialogPending)return Promise.resolve(false);listenerDialogPending=true;
  return new Promise((resolve,reject)=>{
   const closed=()=>{listenerDialogPending=false;resolve(listenerDialog.returnValue==='confirmed');};
-  listenerDialogTitle.textContent=title;listenerDialogText.textContent=text;listenerDialogCancel.hidden=!allowCancel;listenerDialogConfirm.textContent=confirmLabel;listenerDialogConfirm.className=allowCancel?'listener-dialog-confirm':'listener-dialog-done';listenerDialog.returnValue='';listenerDialog.addEventListener('close',closed,{once:true});
+  listenerDialogTitle.textContent=title;listenerDialogText.textContent=text;listenerDialogText.hidden=!text;if(text)listenerDialog.setAttribute('aria-describedby','listenerActionText');else listenerDialog.removeAttribute('aria-describedby');listenerDialogCancel.hidden=!allowCancel;listenerDialogConfirm.textContent=confirmLabel;listenerDialogConfirm.className=allowCancel?'listener-dialog-confirm':'listener-dialog-done';listenerDialog.returnValue='';listenerDialog.addEventListener('close',closed,{once:true});
   try{listenerDialog.showModal();(allowCancel?listenerDialogCancel:listenerDialogConfirm).focus();}catch(error){listenerDialog.removeEventListener('close',closed);listenerDialogPending=false;reject(error);}
  });
 }
