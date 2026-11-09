@@ -70,7 +70,7 @@ function appShowPage(pageId,{push=false,replace=false,focus=null}={}){
  if(pageId==='support')appEnsureSupport();else if(pageId==='myRadio')loadMyRadios(true);
 }
 function appCloseStationPanel(){
- if(shareRunning){setSharedStatus('Please wait for the current request to finish before closing.');return;}
+ if(shareRunning&&typeof stopWaitingForSharedStation==='function')stopWaitingForSharedStation();
  if(history.state?.radioLocalsApp?.panel==='station')history.back();else stationPopup.close();
 }
 // Station reports stay in the existing Help form. Context is submitted as a
@@ -124,8 +124,7 @@ window.addEventListener('radio-controls-closed',()=>{
 window.addEventListener('popstate',event=>{
  const next=event.state?.radioLocalsApp;
  if(window.radioControlsDialog?.open&&window.radioControlsBusy&&next?.panel!=='controls'){history.go(1);window.closeRadioControls();return;}
- if(stationPopup.open&&shareRunning&&next?.panel!=='station'){history.go(1);setSharedStatus('Please wait for the current request to finish before closing.');return;}
- if(!next)return;
+ if(!next){if(stationPopup.open){if(typeof stopWaitingForSharedStation==='function')stopWaitingForSharedStation();stationPopup.close();}return;}
  appRestoring=true;
  try{
   const origin=appPanelOrigin||appControlOrigin,returningFromWifi=appCurrentPage==='wifiSetup'&&next.page==='myRadio';

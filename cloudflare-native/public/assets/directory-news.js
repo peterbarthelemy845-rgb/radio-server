@@ -31,7 +31,7 @@ function renderStationSlider(track,found,emptyText,saved=false){
  for(const station of found){
   const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — add again to your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
   const image=document.createElement('img');image.onerror=()=>{image.onerror=null;image.src='/assets/logo-placeholder.svg';};image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
-  tile.append(image);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:true});const item=document.createElement('div');item.className='station-slider-item';const name=document.createElement('p');name.className='station-tile-name';name.textContent=station.name;item.append(tile,name);track.append(item);
+  const name=document.createElement('span');name.className='station-tile-name';name.textContent=station.name;tile.append(image,name);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:true});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);track.append(item);
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=emptyText;track.append(empty);}
 }

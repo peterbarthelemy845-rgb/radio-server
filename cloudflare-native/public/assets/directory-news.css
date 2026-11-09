@@ -74,8 +74,8 @@ nav #navLibrary[hidden]{display:none!important}
 #library.radio-library #search::placeholder{color:#718099}
 #library.radio-library #stations{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding:3px 0 7px;margin:0;overscroll-behavior-x:contain;align-items:flex-start;scrollbar-width:thin;scrollbar-color:#b9c9e4 transparent}
 #library.radio-library .station-slider-item{flex:0 0 96px;width:96px;min-width:0;scroll-snap-align:start}
-#library.radio-library .station-logo-tile{display:block;width:96px;height:96px;min-height:96px;margin:0;padding:0;border:0;border-radius:14px;background:#eaf0fa;overflow:hidden;box-shadow:0 2px 6px #162c4d12}
-#library.radio-library .station-logo-tile img{display:block;width:100%;height:100%;object-fit:cover;border:0;border-radius:0}
+#library.radio-library .station-logo-tile{display:block;width:96px;height:auto;min-height:96px;margin:0;padding:0;border:0;border-radius:14px;background:transparent;box-shadow:none;text-align:center;color:inherit;white-space:normal}
+#library.radio-library .station-logo-tile img{display:block;width:96px;height:96px;object-fit:contain;border:0;border-radius:14px;background:#eaf0fa;box-shadow:0 2px 6px #162c4d12}
 #library.radio-library .station-logo-tile:focus-visible{outline:3px solid #2377ff;outline-offset:2px}
 #library.radio-library .station-tile-name{margin:6px 0 0;color:#20314f;font-size:12px;font-weight:600;line-height:1.3;text-align:center;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 #library.radio-library .station-slider-empty{font-size:13px;color:#65748b;margin:8px 0}

@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);let state,verificationId,stations=[],humanLoading,sitePageGeneration=0;
-function page(id){sitePageGeneration++;if(id==='library')id='myRadio';if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
+function page(id){sitePageGeneration++;if(id==='library')id='myRadio';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
 function message(text){$('message').textContent=text;}
 async function api(path,body,options={}){
  if(!navigator.onLine)throw new Error('No internet. Check your connection and try again.');
@@ -18,11 +18,25 @@ async function api(path,body,options={}){
  return result;
 }
 const formBusyStates=new WeakMap();
-function busy(form,on,freezeFields=false){
- if(on){if(formBusyStates.has(form))return;const controls=[...form.querySelectorAll(freezeFields?'button,input,select,textarea':'button')];formBusyStates.set(form,controls.map(control=>[control,control.disabled]));form.dataset.busy='1';form.setAttribute('aria-busy','true');for(const control of controls)control.disabled=true;}
- else{const previous=formBusyStates.get(form);if(!previous)return;formBusyStates.delete(form);delete form.dataset.busy;form.removeAttribute('aria-busy');for(const [control,disabled] of previous)control.disabled=disabled;form.dispatchEvent(new Event('form-busy-changed',{bubbles:true}));}
+const busyWords={checking:'Checking…',sending:'Sending…',saving:'Saving…',deleting:'Deleting…',connecting:'Connecting…',adding:'Adding…',working:'Working…'};
+function setBusyButtonLabel(button,key){
+ const previous={text:button.textContent,nodes:button.childNodes?[...button.childNodes]:null,i18n:button.dataset.i18n,skip:button.dataset.i18nSkip};
+ const translation='busy.'+key,value=window.appI18n?.t(translation);button.dataset.i18n=translation;delete button.dataset.i18nSkip;button.textContent=value&&value!==translation?value:busyWords[key]||busyWords.working;
+ return ()=>{if(previous.nodes&&button.replaceChildren)button.replaceChildren(...previous.nodes);else button.textContent=previous.text;if(previous.i18n===undefined)delete button.dataset.i18n;else button.dataset.i18n=previous.i18n;if(previous.skip===undefined)delete button.dataset.i18nSkip;else button.dataset.i18nSkip=previous.skip;};
+}
+function busy(form,on,freezeFields=false,label){
+ if(on){
+  if(formBusyStates.has(form))return;
+  const controls=[...form.querySelectorAll(freezeFields?'button,input,select,textarea':'button')],submit=controls.find(control=>control.tagName==='BUTTON'&&(control.type==='submit'||control.getAttribute?.('type')===null));
+  const labels={registerForm:'saving',editForm:'saving',loginForm:'sending',verification:'checking',verifyForm:'checking',deleteVerifyForm:'deleting',ticketForm:'sending',advertiseForm:'sending',legalForm:'sending',stationCodeRecoveryForm:'sending',supportStatusLookup:'sending',adminLogin:'sending',adminVerify:'checking',adminMfa:'checking',connectRadioForm:'connecting',shareForm:'adding'};
+  const snapshot={controls:controls.map(control=>[control,control.disabled]),restoreLabel:submit?setBusyButtonLabel(submit,label||labels[form.id]||'checking'):null};
+  formBusyStates.set(form,snapshot);form.dataset.busy='1';form.setAttribute('aria-busy','true');for(const control of controls)control.disabled=true;
+ }else{
+  const previous=formBusyStates.get(form);if(!previous)return;formBusyStates.delete(form);delete form.dataset.busy;form.removeAttribute('aria-busy');for(const [control,disabled] of previous.controls)control.disabled=disabled;previous.restoreLabel?.();form.dispatchEvent(new Event('form-busy-changed',{bubbles:true}));
+ }
 }
 function formIsBusy(form){return formBusyStates.has(form);}
+
 function loadHuman(){if(window.turnstile)return Promise.resolve();if(!humanLoading)humanLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';let timer;const failed=()=>{clearTimeout(timer);script.remove();humanLoading=null;reject(new Error('Security check could not load. Refresh and try again.'));};script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=failed;document.head.append(script);timer=setTimeout(failed,15000);});return humanLoading;}
 async function human(container,action){await ensureOwnerSession();await loadHuman();return new Promise((resolve,reject)=>{let widget,settled=false;const area=container.querySelector('.human');area.replaceChildren();function finish(error,token){if(settled)return;settled=true;clearTimeout(timer);if(widget!==undefined)window.turnstile.remove(widget);if(error)reject(error);else resolve(token);}const timer=setTimeout(()=>finish(new Error('Security check timed out. Please try again.')),90000);widget=window.turnstile.render(area,{sitekey:state.turnstile_site_key,action,theme:'light',size:'flexible',retry:'never',callback:token=>finish(null,token),'error-callback':code=>{finish(new Error('Security check could not complete ('+String(code).replace(/[^0-9]/g,'').slice(0,8)+'). Refresh and try again. If it continues, open this page in your regular browser.'));return true;},'expired-callback':()=>finish(new Error('Security check expired. Please try again.'))});});}
 async function fileData(file){if(!file?.size)return undefined;if(file.size>3*1024*1024)throw new Error('Choose an image under 3 MB.');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return {name:file.name,base64:btoa(binary)};}
@@ -173,15 +187,71 @@ $('adminLogin').onsubmit=async event=>{event.preventDefault();const form=event.t
 $('adminVerify').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{const result=await api('/api/admin/verify',{verification_id:adminVerification,code:form.elements.code.value});adminMfaId=result.mfa_id;form.reset();form.hidden=true;$('adminMfa').hidden=false;$('adminMfa').elements.authenticator_code.focus();$('adminMessage').textContent='Email verified. Enter your authenticator code.';}catch(e){$('adminMessage').textContent=e.message;}finally{busy(form,false);}};
 $('adminMfa').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{await api('/api/admin/mfa',{mfa_id:adminMfaId,authenticator_code:form.elements.authenticator_code.value});$('adminMessage').textContent='';form.reset();form.hidden=true;await adminList();}catch(e){$('adminMessage').textContent=e.message;}finally{busy(form,false);}};
 $('adminLogout').onclick=async()=>{try{await api('/api/admin/logout',{});$('adminStations').replaceChildren();$('adminStations').hidden=true;$('adminLogout').hidden=true;$('adminLogin').hidden=false;$('adminMessage').textContent='Signed out.';}catch(e){$('adminMessage').textContent=e.message;}};
-let deleteVerificationId;
-$('deleteStation').onclick=async()=>{const button=$('deleteStation');button.disabled=true;try{const result=await api('/api/owner/delete',{});deleteVerificationId=result.verification_id;$('deleteVerifyForm').reset();$('deleteVerifyMessage').textContent='';$('deleteVerification').showModal();}catch(e){message(e.message);}finally{button.disabled=false;}};
-$('cancelDelete').onclick=()=>$('deleteVerification').close();
-$('deleteVerifyForm').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{await api('/api/owner/delete',{confirm:true,verification_id:deleteVerificationId,code:form.elements.code.value});void refreshStationDirectory(true);$('deleteVerification').close();state.owner_station=null;page('login');message('Station removed from the directory.');}catch(e){$('deleteVerifyMessage').textContent=e.message;}finally{busy(form,false);}};
+let deleteVerificationId,deleteGeneration=0,deleteCodeBusy=false,deleteCommitBusy=false;
+function invalidateStationDeletion(){deleteGeneration++;deleteVerificationId=null;if($('deleteVerification').open)$('deleteVerification').close();}
+function currentStationDeletion(generation,id,view){return generation===deleteGeneration&&id===deleteVerificationId&&view===sitePageGeneration&&!$('editor').hidden&&$('deleteVerification').open;}
+$('deleteStation').onclick=async()=>{
+ const button=$('deleteStation');if(deleteCodeBusy||deleteCommitBusy||button.disabled||$('editor').hidden||$('deleteVerification').open||formIsBusy($('editForm')))return;
+ const view=sitePageGeneration,generation=++deleteGeneration;deleteCodeBusy=true;button.disabled=true;const restore=setBusyButtonLabel(button,'sending');
+ try{const result=await api('/api/owner/delete',{});if(view!==sitePageGeneration||generation!==deleteGeneration||$('editor').hidden)return;deleteVerificationId=result.verification_id;$('deleteVerifyForm').reset();delete $('deleteVerifyMessage').dataset.i18n;$('deleteVerifyMessage').textContent='';$('deleteVerification').showModal();$('deleteVerifyForm').elements.code.focus();}
+ catch(e){if(view===sitePageGeneration&&generation===deleteGeneration&&!$('editor').hidden)message(e.message);}
+ finally{deleteCodeBusy=false;button.disabled=false;restore();}
+};
+$('cancelDelete').onclick=()=>{if(!deleteCommitBusy)$('deleteVerification').close();};
+$('deleteVerification').addEventListener('cancel',event=>{if(deleteCommitBusy)event.preventDefault();});
+$('deleteVerification').addEventListener('close',()=>{if(!$('deleteVerification').open){deleteGeneration++;deleteVerificationId=null;}});
+$('deleteVerifyForm').onsubmit=async event=>{
+ event.preventDefault();const form=event.target;if(deleteCommitBusy||formIsBusy(form)||!deleteVerificationId||!$('deleteVerification').open||$('editor').hidden)return;
+ const id=deleteVerificationId,generation=deleteGeneration,view=sitePageGeneration,code=form.elements.code.value,targetStation=String(state?.owner_station||$('editForm').dataset.stationCode||'');
+ deleteCommitBusy=true;busy(form,true,true,'deleting');$('cancelDelete').disabled=true;$('deleteVerifyMessage').dataset.i18n='delete.deleting';$('deleteVerifyMessage').textContent=ownerText('delete.deleting','Deleting station…');
+ try{
+  await api('/api/owner/delete',{confirm:true,verification_id:id,code});void refreshStationDirectory(true);
+  if(String(state?.owner_station||'')===targetStation){ownerSessionGeneration++;state.owner_station=null;}
+  if(currentStationDeletion(generation,id,view)){$('deleteVerification').close();page('login');message('Station removed from the directory.');}
+ }catch(e){if(currentStationDeletion(generation,id,view)){delete $('deleteVerifyMessage').dataset.i18n;$('deleteVerifyMessage').textContent=e.status>=400&&e.status<500?e.message:ownerText('delete.uncertain','Could not confirm deletion. Check your station before trying again.');}}
+ finally{deleteCommitBusy=false;$('cancelDelete').disabled=false;busy(form,false);}
+};
 
 let sharedOpenGeneration=0;
-function setSharedStatus(text,kind='progress'){const target=$('shareStatus');target.dataset.status=kind;target.textContent=text;}
+function renderSharedWaitButton(){const close=$('stationAddPopup')?.querySelector?.('.station-popup-close');if(close)close.textContent=shareRunning?'Stop waiting':'Close';}
+function setSharedStatus(text,kind='progress'){const target=$('shareStatus');target.dataset.status=kind;target.textContent=text;renderSharedWaitButton();}
+const stationDeliveries=new Map();let stationDeliveryLastNotice=null;
+function renderStationDeliveryStatus(){
+ const host=$('stationDeliveryStatus');if(!host)return;
+ const active=[...stationDeliveries.values()],latest=active[active.length-1],notice=latest?{name:latest.name,message:latest.state==='sending'?'Sending station request…':latest.state==='pending'?'Adding station…':'Your radio has not confirmed yet. Check it before trying again.',kind:latest.state==='unconfirmed'?'error':'progress'}:stationDeliveryLastNotice;
+ host.hidden=!notice;host.dataset.status=notice?.kind||'progress';
+ if(!notice){host.replaceChildren();return;}
+ const name=document.createElement('span');name.dataset.i18nSkip='1';name.textContent=notice.name+' — ';
+ const message=document.createElement('span');message.textContent=notice.message;host.replaceChildren(name,message);
+}
+function finishStationDelivery(record,state,message){
+ record.state=state;record.message=message;
+ if(state!=='unconfirmed'){stationDeliveries.delete(record.key);stationDeliveryLastNotice={name:record.name,message,kind:state==='added'?'success':'error'};}
+ if(state==='added')void Promise.resolve().then(()=>refreshRadioInventory(record.radioId)).catch(()=>{});
+ renderStationDeliveryStatus();return {state,message};
+}
+async function monitorStationDelivery(record){
+ record.state='pending';renderStationDeliveryStatus();
+ try{
+  do{await delay();const result=await api('/api/phone/command/status',{command_id:record.commandId});
+   if(result.state==='added')return finishStationDelivery(record,'added','Station added');
+   if(['failed','expired'].includes(result.state))return finishStationDelivery(record,'failed','Station could not be added. Check your radio and try again.');
+  }while(Date.now()<record.deadline);
+ }catch{}
+ return finishStationDelivery(record,'unconfirmed','Your radio has not confirmed yet. Check it before trying again.');
+}
+function requestStationDelivery(radioId,stationCode,name){
+ const key=String(radioId)+'|'+String(stationCode),previous=stationDeliveries.get(key);
+ if(previous){if(previous.state==='unconfirmed'&&previous.commandId){previous.deadline=Date.now()+300000;previous.promise=monitorStationDelivery(previous);}return previous.promise;}
+ const record={key,radioId:String(radioId),stationCode:String(stationCode),name:String(name||'Station').slice(0,120),state:'sending',commandId:'',deadline:0,promise:null};stationDeliveries.set(key,record);renderStationDeliveryStatus();
+ record.promise=(async()=>{
+  try{const command=await api('/api/phone/add',{radio_id:radioId,station_code:stationCode});if(!command.command_id)throw Error('Missing command');record.commandId=command.command_id;record.deadline=Date.now()+300000;return await monitorStationDelivery(record);}
+  catch(error){const rejected=error.status>=400&&error.status<500;return finishStationDelivery(record,rejected?'failed':'unconfirmed',rejected?error.message:'Your radio has not confirmed yet. Check it before trying again.');}
+ })();return record.promise;
+}
 let sharedOfflineRadios=new Set();
-function invalidateSharedView(){sharedOpenGeneration++;setSharedStatus('');delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}}
+function invalidateSharedView(){sharedOpenGeneration++;delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}setSharedStatus('');}
+function stopWaitingForSharedStation(){invalidateSharedView();renderStationDeliveryStatus();}
 async function openShared(code,inPopup=false,autoAdd=false){
  const generation=++sharedOpenGeneration;
  try{
@@ -220,15 +290,17 @@ async function submitSharedStation(form){
   if(!radioId)throw new Error('Choose a radio to add this station.');rememberSelectedRadio(radioId);
   if(sharedOfflineRadios.has(String(radioId))){const radios=await api('/api/phone/radios');if(!current())return;const radio=radios.radios.find(r=>String(r.id)===String(radioId));if(!radio)throw new Error('Connect your radio again.');if(!radio.online)throw new Error('Radio offline. Check power and Wi-Fi.');sharedOfflineRadios.delete(String(radioId));}
   if(!current())return;
-  const command=await api('/api/phone/add',{radio_id:radioId,station_code:stationCode});if(!current())return;setSharedStatus('Adding station…');
-  const deadline=Date.now()+300000;let added=false;
-  while(Date.now()<deadline){await delay();if(!current())return;const result=await api('/api/phone/command/status',{command_id:command.command_id});if(!current())return;if(result.state==='added'){added=true;break;}if(['failed','expired'].includes(result.state))throw new Error('Station could not be added. Check your radio and try again.');}
-  if(!added)throw new Error('Your radio has not confirmed yet. Check it before trying again.');
-  form.hidden=true;$('otherRadio').hidden=true;setSharedStatus('Station added','success');refreshRadioInventory(radioId);
-  await listenerActionDialog('Station added','');
-  if(current()&&typeof stationPopup!=='undefined'&&stationPopup.open)stationPopup.close();
+  // Delivery belongs to the dispatched command, not to this popup's lifetime.
+  // Reopening the same station attaches to its existing request instead of sending twice.
+  const delivery=await requestStationDelivery(radioId,stationCode,$('shareName').textContent);if(!current())return;
+  if(delivery.state!=='added')throw Error(delivery.message);
+  form.hidden=true;$('otherRadio').hidden=true;setSharedStatus('Station added','success');
+  if(!document.hidden&&(!document.querySelector?.('dialog[open]')||$('stationAddPopup')?.open)){
+   await listenerActionDialog('Station added','');
+   if(current()&&typeof stationPopup!=='undefined'&&stationPopup.open)stationPopup.close();
+  }
  }catch(e){if(current())setSharedStatus(e.message,'error');}
- finally{if(generation===sharedOpenGeneration){shareRunning=false;delete $('shared').dataset.adding;busy(form,false);}}
+ finally{if(generation===sharedOpenGeneration){shareRunning=false;delete $('shared').dataset.adding;busy(form,false);renderSharedWaitButton();}}
 }
 $('shareForm').onsubmit=event=>{event.preventDefault();return submitSharedStation(event.target);};
 async function initializeSite(){

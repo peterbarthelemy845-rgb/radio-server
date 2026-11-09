@@ -19,7 +19,7 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  const stationPopup=node('stationAddPopup','DIALOG'),stationPopupClose=node('stationPopupClose','BUTTON');
  const window={scrollX:0,scrollY:0,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
  const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:()=>({matches:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,
-  page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0});
+  page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0,stopWaitingForSharedStation(){context.shareRunning=false;context.sharedOpenGeneration++;},invalidateSharedView(){context.shareRunning=false;context.sharedOpenGeneration++;}});
  if(ownerLifecycle){
   const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
   vm.runInContext('let sitePageGeneration=0,verificationId=null,verificationGeneration=0,verificationPageGeneration=0,verificationResendDeadline=0,verificationBusy=false;function setVerificationBusy(value){verificationBusy=value;}',context);
@@ -66,8 +66,11 @@ test('station Close and browser Back dismiss the panel, preserve the Radio posit
  f.history.forward();await f.settle();assert.equal(f.stationPopup.open,true);assert.equal(f.entries.length,2);f.stationPopupClose.onclick();await f.settle();assert.equal(f.stationPopup.open,false);assert.equal(f.history.state.radioLocalsApp.panel,null);
 });
 
-test('pending radio actions cannot be dismissed with Close or hardware Back and do not claim success',async()=>{
- const f=fixture();await vm.runInContext("openStationPopup('13'); shareRunning=true",f.context);f.stationPopupClose.onclick();assert.equal(f.stationPopup.open,true);assert.match(f.nodes.get('shareStatus').textContent,/wait/i);f.history.back();await f.settle();assert.equal(f.stationPopup.open,true);assert.equal(f.history.state.radioLocalsApp.panel,'station');assert.doesNotMatch(f.nodes.get('shareStatus').textContent,/success/i);
+test('pending station adds can stop waiting with Close, Escape or browser Back without claiming cancellation',async()=>{
+ for(const method of ['close','escape','back']){const f=fixture();await vm.runInContext("openStationPopup('13'); shareRunning=true",f.context);const generation=f.context.sharedOpenGeneration;
+  if(method==='close')f.stationPopupClose.onclick();else if(method==='escape'){let prevented=false;f.stationPopup.dispatch('cancel',{preventDefault(){prevented=true;}});assert.equal(prevented,true);}else f.history.back();
+  await f.settle();assert.equal(f.stationPopup.open,false);assert.equal(f.context.shareRunning,false);assert.ok(f.context.sharedOpenGeneration>generation);assert.equal(f.history.state.radioLocalsApp.panel,null);assert.doesNotMatch(f.nodes.get('shareStatus').textContent,/success|cancelled|canceled/i);
+ }
 });
 
 test('a station tap passes automatic add intent but browser Forward only restores its panel',async()=>{
@@ -137,4 +140,9 @@ test('Clear station and form reset remove the association without replacing the 
 test('browser Back leaves owner verification through the real core page lifecycle',async()=>{
  const f=fixture({ownerLifecycle:true});f.click(f.supportLink);vm.runInContext("page('login');verificationId='owner-challenge';verificationPageGeneration=sitePageGeneration;verificationBusy=true;verificationResendDeadline=Date.now()+60000;",f.context);f.nodes.get('verification').showModal();const generation=vm.runInContext('verificationGeneration',f.context);assert.equal(vm.runInContext("currentVerification(verificationGeneration,'owner-challenge')",f.context),true);
  f.history.back();await f.settle();assert.equal(f.nodes.get('verification').open,false);assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('login').hidden,true);assert.equal(vm.runInContext('verificationId',f.context),null);assert.equal(vm.runInContext('verificationBusy',f.context),false);assert.equal(vm.runInContext('verificationResendDeadline',f.context),0);assert.ok(vm.runInContext('verificationGeneration',f.context)>generation);assert.equal(vm.runInContext("currentVerification("+generation+",'owner-challenge')",f.context),false);
+});
+
+
+test('Back with no app state still dismisses a pending station popup',async()=>{
+ const f=fixture();f.history.replaceState(null,'',f.context.location.href);await vm.runInContext("openStationPopup('13'); shareRunning=true",f.context);f.entries[0].state=null;f.history.back();await f.settle();assert.equal(f.stationPopup.open,false);assert.equal(f.context.shareRunning,false);
 });

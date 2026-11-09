@@ -7,3 +7,7 @@ body.app-listener-page #listenerTextSize::after{content:'Aa';font-size:1.125rem;
 .app-update-banner p{line-height:1.5;margin:8px 0}.app-update-banner>div{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.app-update-banner button{font-size:.9375rem;min-height:48px;flex:1 1 130px}.app-update-banner .secondary{margin:0}
 #supportTicketStatus{margin:18px 0}
 @media(max-width:360px){body.app-listener-page #listenerAppHeader{gap:8px}#appLanguage{width:74px}.app-header-tools{gap:4px}#listenerAppHeader p{font-size:.75rem}}
+
+#stationDeliveryStatus{margin:12px 0 0;padding:10px 12px;border:1px solid #bed6f4;border-radius:10px;background:#edf5ff;color:#174a76;font-size:.9375rem;line-height:1.5;overflow-wrap:anywhere}
+#stationDeliveryStatus[data-status="success"]{border-color:#b3dfca;background:#edf9f2;color:#17603c}
+#stationDeliveryStatus[data-status="error"]{border-color:#eac6c6;background:#fff3f2;color:#8b3030}
