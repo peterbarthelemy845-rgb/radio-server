@@ -33,19 +33,20 @@
     "duration": 33,
     "width": 960,
     "height": 540,
-    "description": "A silent illustrated guide to linking a phone with the radio's Device Code and adding a station. Example numbers are not real device credentials.",
+    "description": "A silent illustrated guide to tapping a station to add it automatically, with Device Code linking for a new phone. Example numbers are not real device credentials.",
     "silent": true,
     "steps": [
-      "Keep your radio on and connected to Wi-Fi. Tap a station in Library.",
-      "Enter the Device Code from your radio, then select Add station.",
-      "Check that the confirmation numbers on the phone and radio match.",
-      "On the physical radio, tap Allow. Use Deny for a request you did not start.",
-      "On the website, confirm Add station to send the station to your radio.",
-      "Wait for Station added successfully! Linked phones can choose their radio directly."
+      "Keep your radio on and connected to Wi-Fi. Open Radio and tap a station.",
+      "If your phone is not linked, enter the Device Code and tap Add station.",
+      "For a new phone, match the confirmation numbers on the phone and radio.",
+      "Tap Allow on the physical radio. Deny requests you did not start.",
+      "The station is added automatically. No extra confirmation is needed.",
+      "Wait for Station added, then tap Done. Linked phones skip the linking steps."
     ],
     "sources": [
-      "Website: public/index.html \u2014 Library and shared station form",
-      "Website: public/assets/site.js \u2014 openShared and shareForm submit",
+      "Website: public/index.html \u2014 Radio and shared station form",
+      "Website: public/assets/directory-news.js \u2014 station tile and openStationPopup",
+      "Website: public/assets/site.js \u2014 openShared and submitSharedStation",
       "Firmware: waveshare_radio/radio_link.h \u2014 drawRadioApprovalPopup and tapRadioApprovalPopup"
     ]
   },

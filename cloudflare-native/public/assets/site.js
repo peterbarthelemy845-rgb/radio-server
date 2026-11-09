@@ -104,40 +104,46 @@ $('cancelDelete').onclick=()=>$('deleteVerification').close();
 $('deleteVerifyForm').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{await api('/api/owner/delete',{confirm:true,verification_id:deleteVerificationId,code:form.elements.code.value});void refreshStationDirectory(true);$('deleteVerification').close();state.owner_station=null;page('login');message('Station removed from the directory.');}catch(e){$('deleteVerifyMessage').textContent=e.message;}finally{busy(form,false);}};
 
 let sharedOpenGeneration=0;
-function invalidateSharedView(){sharedOpenGeneration++;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}}
-async function openShared(code,inPopup=false){
+let sharedOfflineRadios=new Set();
+function invalidateSharedView(){sharedOpenGeneration++;delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}}
+async function openShared(code,inPopup=false,autoAdd=false){
  const generation=++sharedOpenGeneration;
  try{
  const station=await api('/api/stations/'+code);if(generation!==sharedOpenGeneration)return;sharedCode=code;
  if(!inPopup)page('shared');$('shared').hidden=false;$('shareForm').hidden=false;$('shareStatus').textContent='';$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
  if(station.logo_url){$('shareArt').src=station.logo_url;$('shareArt').hidden=false;}
  const result=await api('/api/phone/radios');if(generation!==sharedOpenGeneration)return;
- const select=$('shareForm').elements.radio_id,selected=reconcileSelectedRadio(result.radios);select.replaceChildren();
+ const select=$('shareForm').elements.radio_id,selected=reconcileSelectedRadio(result.radios);sharedOfflineRadios=new Set(result.radios.filter(r=>r.online===false).map(r=>String(r.id)));select.replaceChildren();
  if(result.radios.length>1){const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a radio';placeholder.disabled=true;select.append(placeholder);}
  for(const radio of result.radios){const option=document.createElement('option');option.value=String(radio.id);option.textContent='Device code '+(radio.device_code||'—')+(radio.online?' · Online':' · Offline');select.append(option);}
  select.value=selected;select.required=!!result.radios.length;$('shareForm').elements.device_code.required=!result.radios.length;$('radioLabel').hidden=!result.radios.length;$('deviceLabel').hidden=!!result.radios.length;$('otherRadio').hidden=!result.radios.length;
- await updateStationConfirmation();
+ // Only an intentional tile tap can start an addition. Restored history and
+ // incoming shared URLs must wait for the visitor to press Add station.
+ if(autoAdd&&selected){
+  if(sharedOfflineRadios.has(String(selected))){$('shareStatus').textContent='Radio offline. Check power and Wi-Fi.';return;}
+  await submitSharedStation($('shareForm'));
+ }else await updateStationConfirmation();
  }catch(error){if(generation===sharedOpenGeneration)throw error;}
 }
 $('otherRadio').onclick=()=>{$('radioLabel').hidden=true;$('deviceLabel').hidden=false;$('otherRadio').hidden=true;$('shareForm').elements.radio_id.required=false;$('shareForm').elements.device_code.required=true;$('shareForm').elements.device_code.focus();};
 const delay=()=>new Promise(resolve=>setTimeout(resolve,2500));
-$('shareForm').onsubmit=async event=>{
- event.preventDefault();if(shareRunning)return;shareRunning=true;const form=event.target,stationCode=sharedCode,stationName=$('shareName').textContent,generation=sharedOpenGeneration,current=()=>generation===sharedOpenGeneration&&!$('shared').hidden;busy(form,true,true);
+async function submitSharedStation(form){
+ if(shareRunning)return;shareRunning=true;const stationCode=sharedCode,stationName=$('shareName').textContent,generation=sharedOpenGeneration,current=()=>generation===sharedOpenGeneration&&!$('shared').hidden;busy(form,true,true);$('shared').dataset.adding='1';$('shareStatus').textContent='Adding station…';
  try{
-  let radioId=form.elements.radio_id.value,radioLabel=form.elements.radio_id.selectedOptions[0]?.textContent.split(' · ')[0]||'your linked radio',linkedNow=false;
+  let radioId=form.elements.radio_id.value,radioLabel=form.elements.radio_id.selectedOptions[0]?.textContent.split(' · ')[0]||'your linked radio';
   if(!$('deviceLabel').hidden){
    const deviceCode=form.elements.device_code.value,turnstile_token=await human(form,'radio-link');if(!current())return;const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token});if(!current())return;
    $('shareStatus').textContent=claim.confirmation_code+' — Match this number and tap Allow on your radio.';
    const deadline=Date.now()+180000;let approved=false;
    while(Date.now()<deadline){await delay();if(!current())return;const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(!current())return;if(result.state==='approved'){radioId=result.radio_id;approved=true;break;}if(result.state!=='waiting')throw new Error('Connection was not approved. Please try again.');}
    if(!approved)throw new Error('Connection timed out. Please try again.');
-   radioLabel='Device code '+deviceCode;linkedNow=true;rememberSelectedRadio(radioId);$('shareStatus').textContent='Radio connected. Ready to add this station.';
+   radioLabel='Device code '+deviceCode;sharedOfflineRadios.delete(String(radioId));rememberSelectedRadio(radioId);$('shareStatus').textContent='Adding station…';
    const select=form.elements.radio_id;if(![...select.options].some(option=>option.value===String(radioId))){const option=document.createElement('option');option.value=String(radioId);option.textContent=radioLabel;select.append(option);}select.value=String(radioId);select.required=true;form.elements.device_code.required=false;$('deviceLabel').hidden=true;$('radioLabel').hidden=false;$('otherRadio').hidden=false;
    if(!$('myRadio').hidden)loadMyRadios(true);
-   await listenerActionDialog('Radio connected',radioLabel+' is now linked to this phone.');if(!current())return;
   }
   if(!radioId)throw new Error('Choose a radio to add this station.');rememberSelectedRadio(radioId);
-  const confirmed=await listenerActionDialog('Add station?', 'Add '+stationName+' to '+radioLabel+'?','Add station',true);if(!current())return;if(!confirmed){$('shareStatus').textContent=linkedNow?'Radio connected. Station was not added.':'Station was not added.';return;}
+  if(sharedOfflineRadios.has(String(radioId))){const radios=await api('/api/phone/radios');if(!current())return;const radio=radios.radios.find(r=>String(r.id)===String(radioId));if(!radio)throw new Error('Connect your radio again.');if(!radio.online)throw new Error('Radio offline. Check power and Wi-Fi.');sharedOfflineRadios.delete(String(radioId));}
+  if(!current())return;
   const command=await api('/api/phone/add',{radio_id:radioId,station_code:stationCode});if(!current())return;$('shareStatus').textContent='Adding station…';
   const deadline=Date.now()+300000;let added=false;
   while(Date.now()<deadline){await delay();if(!current())return;const result=await api('/api/phone/command/status',{command_id:command.command_id});if(!current())return;if(result.state==='added'){added=true;break;}if(['failed','expired'].includes(result.state))throw new Error('Station could not be added. Check your radio and try again.');}
@@ -146,8 +152,9 @@ $('shareForm').onsubmit=async event=>{
   await listenerActionDialog('Station added',stationName+' was added to '+radioLabel+'.');
   if(current()&&typeof stationPopup!=='undefined'&&stationPopup.open)stationPopup.close();
  }catch(e){if(current())$('shareStatus').textContent=e.message;}
- finally{if(generation===sharedOpenGeneration){shareRunning=false;busy(form,false);}}
-};
+ finally{if(generation===sharedOpenGeneration){shareRunning=false;delete $('shared').dataset.adding;busy(form,false);}}
+}
+$('shareForm').onsubmit=event=>{event.preventDefault();return submitSharedStation(event.target);};
 async function initializeSite(){
  page(location.pathname==='/wifi-setup'?'wifiSetup':location.hash==='#radio'?'myRadio':['/support','/device'].includes(location.pathname)?'support':location.pathname==='/add-station'||location.hash==='#add-station'?'login':location.pathname==='/admin'?'admin':location.pathname==='/station-edit'?'login':'library');
  const initial=await Promise.allSettled([loadOwnerSession(),refreshStationDirectory()]);

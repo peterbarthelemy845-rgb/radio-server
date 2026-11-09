@@ -57,11 +57,11 @@ function appCloseStationPanel(){
  if(history.state?.radioLocalsApp?.panel==='station')history.back();else stationPopup.close();
 }
 const appOriginalOpenStation=openStationPopup;
-openStationPopup=async function(code){
+openStationPopup=async function(code,options={}){
  if(shareRunning||stationPopup.open)return;
  if(typeof radioPairingBusy!=='undefined'&&radioPairingBusy){$('radioConnectStatus').textContent='Finish connecting your radio before adding a station.';return;}
  appRememberPosition();appPanelOrigin={page:appCurrentPage,focus:document.activeElement};
- const opened=appOriginalOpenStation(code);
+ const opened=appOriginalOpenStation(code,options);
  if(stationPopup.open&&!appRestoring){appReplaceHistory(appHistoryValue());history.pushState({radioLocalsApp:appHistoryValue(appCurrentPage,'station',String(code))},'',location.href);}
  await opened;
 };

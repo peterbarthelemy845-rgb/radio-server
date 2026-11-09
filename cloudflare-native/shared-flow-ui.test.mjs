@@ -8,14 +8,21 @@ const pageSource=source.slice(source.indexOf('function page('),source.indexOf('f
 const busySource=source.slice(source.indexOf('const formBusyStates='),source.indexOf('function loadHuman('));
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 async function until(check){for(let i=0;i<50&&!check();i++)await new Promise(setImmediate);assert.ok(check(),'Async checkpoint was not reached');}
-function fixture({human=async()=> 'checked',dialog=async()=>true,useDeviceCode=false}={}){
+function fixture({human=async()=> 'checked',dialog=async()=>true,useDeviceCode=false,selectedId='one',confirmation=async()=>{}}={}){
  const ids=new Map(),calls=[],answers=[],dialogs=[],selected=[],refreshes=[];
  function node(tag='div'){return {tag,children:[],dataset:{},attributes:{},hidden:false,disabled:false,textContent:'',value:'',elements:{},setAttribute(k,v){this.attributes[k]=v;},removeAttribute(k){delete this.attributes[k];},dispatchEvent(){},querySelectorAll(selector){return selector==='button'?[this.button]:[...Object.values(this.elements),this.button];},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},focus(){},reset(){}};}
- const $=id=>{if(!ids.has(id))ids.set(id,node());return ids.get(id);},form=$('shareForm');form.button=node('button');const select=node('select');select.value='one';select.selectedOptions=[{textContent:'Device code 3961 · Online'}];select.options=[{value:'one'}];form.elements.radio_id=select;form.elements.device_code=Object.assign(node('input'),{value:'3961'});$('deviceLabel').hidden=!useDeviceCode;$('radioLabel').hidden=useDeviceCode;$('shared').hidden=false;$('shareName').textContent='First station';
- const ctx={document:{createElement:node},$: $,Event:class{constructor(type){this.type=type;}},Promise,Date,queueMicrotask,setTimeout(fn){queueMicrotask(fn);},api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('No fixture response');const result=answers.shift();if(result instanceof Error)throw result;return await result;},human,listenerActionDialog:async(...args)=>{dialogs.push(args);return await dialog(...args);},reconcileSelectedRadio:radios=>radios[0]?.id||'',rememberSelectedRadio:id=>selected.push(id),updateStationConfirmation:async()=>{},loadMyRadios:async()=>{},refreshRadioInventory:id=>refreshes.push(id)};
+ const $=id=>{if(!ids.has(id))ids.set(id,node());return ids.get(id);},form=$('shareForm');form.button=node('button');const select=node('select');select.value='one';select.children=[{value:'one',textContent:'Device code 3961 · Online'}];Object.defineProperties(select,{options:{get(){return this.children;}},selectedOptions:{get(){return this.children.filter(option=>option.value===this.value);}}});form.elements.radio_id=select;form.elements.device_code=Object.assign(node('input'),{value:'3961'});$('deviceLabel').hidden=!useDeviceCode;$('radioLabel').hidden=useDeviceCode;$('shared').hidden=false;$('shareName').textContent='First station';
+ const ctx={document:{createElement:node},$: $,Event:class{constructor(type){this.type=type;}},Promise,Date,queueMicrotask,setTimeout(fn){queueMicrotask(fn);},api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('No fixture response');const result=answers.shift();if(result instanceof Error)throw result;return await result;},human,listenerActionDialog:async(...args)=>{dialogs.push(args);return await dialog(...args);},reconcileSelectedRadio:radios=>radios.length===1?String(radios[0].id):radios.some(r=>String(r.id)===selectedId)?selectedId:'',rememberSelectedRadio:id=>selected.push(id),updateStationConfirmation:confirmation,loadMyRadios:async()=>{},refreshRadioInventory:id=>refreshes.push(id)};
  runInNewContext('let sharedCode="10",shareRunning=false,sitePageGeneration=0;',ctx);runInNewContext(busySource,ctx);runInNewContext(pageSource,ctx);runInNewContext(sharedSource,ctx);
  return {ctx,ids,form,calls,answers,dialogs,selected,refreshes,id:$,get:expression=>runInNewContext(expression,ctx),open:runInNewContext('openShared',ctx),page:runInNewContext('page',ctx),submit:()=>form.onsubmit({preventDefault(){},target:form}),cancel(){runInNewContext('invalidateSharedView()',ctx);$('shared').hidden=true;},next(code='11'){runInNewContext('sharedCode='+JSON.stringify(code),ctx);$('shared').hidden=false;form.hidden=false;}};
 }
+
+test('station rendering is read-only and only a tile tap passes automatic add intent',()=>{
+ const directory=readFileSync(new URL('./public/assets/directory-news.js',import.meta.url),'utf8'),calls=[];
+ function node(){return {children:[],setAttribute(){},append(...items){this.children.push(...items);},replaceChildren(){this.children=[];}};}
+ const context={document:{createElement:node},openStationPopup:(...args)=>calls.push(args)},render=runInNewContext(directory.slice(directory.indexOf('function renderStationSlider('),directory.indexOf('list=function()'))+';renderStationSlider;',context),track=node();
+ render(track,[{name:'First station',listener_code:'10'}],'No stations');assert.equal(calls.length,0);track.children[0].children[0].onclick();assert.equal(calls.length,1);assert.equal(calls[0][0],'10');assert.equal(calls[0][1].autoAdd,true);
+});
 test('a direct shared-link response cannot reopen Shared after the user selects another page',async()=>{
  const f=fixture(),pending=deferred();f.answers.push(pending.promise);const opening=f.open('10');f.page('myRadio');pending.resolve({name:'Old station',listener_code:'10'});await opening;assert.equal(f.id('shared').hidden,true);assert.equal(f.id('myRadio').hidden,false);assert.equal(f.id('shareName').textContent,'First station');assert.equal(f.calls.length,1);
 });
@@ -29,11 +36,48 @@ test('cancelling a shared pairing stops polling and never adds after a late appr
  const pending=deferred(),f=fixture({useDeviceCode:true});f.answers.push({claim_id:'claim',confirmation_code:'5831'},pending.promise);const adding=f.submit();await until(()=>f.calls.length===2);f.cancel();pending.resolve({state:'approved',radio_id:'one'});await adding;
  assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,0);assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim/status').length,1);assert.equal(f.selected.length,0);assert.equal(f.dialogs.length,0);assert.equal(f.get('shareRunning'),false);
 });
-test('a confirmation belonging to a closed station cannot send an add command',async()=>{
- const confirmation=deferred(),f=fixture({dialog:()=>confirmation.promise});const adding=f.submit();await until(()=>f.dialogs.length===1);f.cancel();confirmation.resolve(true);await adding;assert.equal(f.calls.length,0);assert.equal(f.get('shareRunning'),false);
+test('closing a tapped station while its linked radios load cannot send an add command',async()=>{
+ const radios=deferred(),f=fixture();f.answers.push({name:'First station',listener_code:'10'},radios.promise);const opening=f.open('10',true,true);await until(()=>f.calls.length===2);f.cancel();radios.resolve({radios:[{id:'one',device_code:'3961',online:true}]});await opening;assert.equal(f.calls.length,2);assert.equal(f.get('shareRunning'),false);
 });
 test('a cancelled add acknowledgment cannot display success or refresh radio inventory',async()=>{
- const acknowledgment=deferred(),f=fixture();f.answers.push({command_id:'command'},acknowledgment.promise);const adding=f.submit();await until(()=>f.calls.length===2);f.cancel();acknowledgment.resolve({state:'added'});await adding;assert.equal(f.refreshes.length,0);assert.equal(f.dialogs.length,1);assert.doesNotMatch(f.id('shareStatus').textContent,/success/i);assert.equal(f.get('shareRunning'),false);
+ const acknowledgment=deferred(),f=fixture();f.answers.push({command_id:'command'},acknowledgment.promise);const adding=f.submit();await until(()=>f.calls.length===2);f.cancel();acknowledgment.resolve({state:'added'});await adding;assert.equal(f.refreshes.length,0);assert.equal(f.dialogs.length,0);assert.doesNotMatch(f.id('shareStatus').textContent,/success/i);assert.equal(f.get('shareRunning'),false);
+});
+
+test('a station tap adds to the selected radio without extra prompts and waits for its acknowledgment',async()=>{
+ const ack=deferred(),f=fixture();f.answers.push({name:'First station',listener_code:'10'},{radios:[{id:'one',device_code:'3961',online:true}]},{command_id:'command'},ack.promise);
+ const opening=f.open('10',true,true);await until(()=>f.calls.length===4);assert.equal(f.dialogs.length,0);assert.equal(f.id('shared').dataset.adding,'1');assert.equal(f.calls[2].path,'/api/phone/add');assert.equal(f.calls[2].body.radio_id,'one');assert.equal(f.calls[2].body.station_code,'10');
+ ack.resolve({state:'added'});await opening;assert.deepEqual(f.dialogs.map(d=>d[0]),['Station added']);assert.match(f.id('shareStatus').textContent,/success/i);assert.deepEqual(f.refreshes,['one']);assert.equal(f.id('shared').dataset.adding,undefined);
+});
+
+test('opening a shared URL or a restored station panel never adds automatically',async()=>{
+ for(const inPopup of [false,true]){const f=fixture();f.answers.push({name:'First station',listener_code:'10'},{radios:[{id:'one',online:true}]});await f.open('10',inPopup);assert.equal(f.calls.length,2);assert.equal(f.dialogs.length,0);assert.equal(f.form.hidden,false);}
+});
+
+test('a first-time station addition waits for physical approval then adds without another confirmation',async()=>{
+ const approval=deferred(),f=fixture({useDeviceCode:true});f.answers.push({claim_id:'claim',confirmation_code:'5831'},approval.promise,{command_id:'command'},{state:'added'});const adding=f.submit();await until(()=>f.calls.length===2);assert.equal(f.calls.some(c=>c.path==='/api/phone/add'),false);assert.match(f.id('shareStatus').textContent,/5831/);approval.resolve({state:'approved',radio_id:'new-radio'});await adding;
+ assert.deepEqual(f.dialogs.map(d=>d[0]),['Station added']);assert.equal(f.calls.find(c=>c.path==='/api/phone/add').body.radio_id,'new-radio');
+});
+
+test('a rejected radio approval never sends a station or shows Done',async()=>{
+ const f=fixture({useDeviceCode:true});f.answers.push({claim_id:'claim',confirmation_code:'5831'},{state:'denied'});await f.submit();assert.equal(f.calls.some(c=>c.path==='/api/phone/add'),false);assert.equal(f.dialogs.length,0);assert.match(f.id('shareStatus').textContent,/not approved/i);
+});
+
+test('rapid repeated submits create only one add request',async()=>{
+ const pending=deferred(),f=fixture();f.answers.push(pending.promise,{state:'added'});const first=f.submit();await f.submit();await f.submit();assert.equal(f.calls.length,1);pending.resolve({command_id:'command'});await first;assert.equal(f.calls.filter(c=>c.path==='/api/phone/add').length,1);assert.equal(f.dialogs.length,1);
+});
+
+test('an offline tapped radio waits for a successful online retry before sending a station',async()=>{
+ const offline={radios:[{id:'one',online:false}]},f=fixture();f.answers.push({name:'First station',listener_code:'10'},offline);await f.open('10',true,true);assert.equal(f.calls.length,2);assert.match(f.id('shareStatus').textContent,/offline/i);assert.equal(f.form.hidden,false);
+ f.answers.push(offline);await f.submit();assert.equal(f.calls.some(c=>c.path==='/api/phone/add'),false);assert.equal(f.dialogs.length,0);
+ f.answers.push({radios:[{id:'one',online:true}]},{command_id:'command'},{state:'added'});await f.submit();assert.equal(f.calls.filter(c=>c.path==='/api/phone/add').length,1);assert.equal(f.dialogs.length,1);
+});
+
+test('unlinked phones and multiple radios without a selection still need a destination',async()=>{
+ for(const radios of [[],[{id:'one',online:true},{id:'two',online:true}]]){const f=fixture({selectedId:''});f.answers.push({name:'First station',listener_code:'10'},{radios});await f.open('10',true,true);assert.equal(f.calls.length,2);assert.equal(f.dialogs.length,0);assert.equal(f.form.hidden,false);assert.equal(f.id('deviceLabel').hidden,radios.length>0);}
+});
+
+test('a failed device acknowledgment never reports station added',async()=>{
+ const f=fixture();f.answers.push({command_id:'command'},{state:'failed'});await f.submit();assert.equal(f.dialogs.length,0);assert.equal(f.refreshes.length,0);assert.match(f.id('shareStatus').textContent,/could not be added/i);assert.equal(f.form.hidden,false);
 });
 test('an old add request cannot unlock a new station request or replace its message',async()=>{
  const old=deferred(),fresh=deferred(),f=fixture();f.answers.push(old.promise);const first=f.submit();await until(()=>f.calls.length===1);f.cancel();f.next();f.answers.push(fresh.promise);const second=f.submit();await until(()=>f.calls.length===2);old.reject(Error('Old request failed'));await first;

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
 function fixture({app=false,standalone=false,path='/',initial='myRadio'}={}){
- const events=new Map(),frames=[],mediaEvents={},nodes=new Map();let loads=0,supportLoads=0,sharedGeneration=0;
+ const events=new Map(),frames=[],mediaEvents={},nodes=new Map(),stationOpenings=[];let loads=0,supportLoads=0,sharedGeneration=0;
  function node(id='',tag='DIV'){
   const listeners={};const n={id,tagName:tag,hidden:false,dataset:{},children:[],scrollLeft:0,isConnected:true,textContent:'',attrs:{},classList:{values:new Set(),toggle(name,on){if(on)this.values.add(name);else this.values.delete(name);}},setAttribute(key,value){this.attrs[key]=value;},addEventListener(key,fn){(listeners[key]??=[]).push(fn);},append(...items){this.children.push(...items);},before(){},focus(){document.activeElement=this;},querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;queueMicrotask(()=>{for(const fn of listeners.close||[])fn({});});},dispatch(name,event={}){for(const fn of listeners[name]||[])fn(event);}};if(id)nodes.set(id,n);return n;
  }
@@ -19,12 +19,12 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio'}={}){
  const stationPopup=node('stationAddPopup','DIALOG'),stationPopupClose=node('stationPopupClose','BUTTON');
  const window={scrollX:0,scrollY:0,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
  const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:()=>({matches:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,
-  page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async()=>{stationPopup.open=true;nodes.get('shared').hidden=false;},shareRunning:false,sharedOpenGeneration:0});
+  page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},shareRunning:false,sharedOpenGeneration:0});
  vm.runInContext(readFileSync(new URL('./public/assets/app-navigation.js',import.meta.url),'utf8'),context);
  function flush(){while(frames.length)frames.shift()();}
  async function settle(){await Promise.resolve();await Promise.resolve();flush();}
  function click(target){const event={target:{closest:()=>target},button:0,preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};for(const fn of events.get('click')||[])fn(event);flush();return event;}
- return {context,nodes,document,window,history,entries,supportLink,wifiLink,stationPopup,stationPopupClose,click,flush,settle,loads:()=>loads,supportLoads:()=>supportLoads};
+ return {context,nodes,document,window,history,entries,supportLink,wifiLink,stationPopup,stationPopupClose,stationOpenings,click,flush,settle,loads:()=>loads,supportLoads:()=>supportLoads};
 }
 
 test('listener installation uses Radio/Support while direct owner screens keep their navigation',()=>{
@@ -49,6 +49,18 @@ test('station Close and browser Back dismiss the panel, preserve the Radio posit
 
 test('pending radio actions cannot be dismissed with Close or hardware Back and do not claim success',async()=>{
  const f=fixture();await vm.runInContext("openStationPopup('13'); shareRunning=true",f.context);f.stationPopupClose.onclick();assert.equal(f.stationPopup.open,true);assert.match(f.nodes.get('shareStatus').textContent,/wait/i);f.history.back();await f.settle();assert.equal(f.stationPopup.open,true);assert.equal(f.history.state.radioLocalsApp.panel,'station');assert.doesNotMatch(f.nodes.get('shareStatus').textContent,/success/i);
+});
+
+test('a station tap passes automatic add intent but browser Forward only restores its panel',async()=>{
+ const f=fixture();await vm.runInContext("openStationPopup('13',{autoAdd:true})",f.context);
+ assert.equal(f.stationOpenings.length,1);assert.equal(f.stationOpenings[0].code,'13');assert.equal(f.stationOpenings[0].options?.autoAdd,true);assert.equal(f.history.state.radioLocalsApp.code,'13');assert.equal(f.history.state.radioLocalsApp.autoAdd,undefined);
+ f.history.back();await f.settle();assert.equal(f.stationPopup.open,false);
+ f.history.forward();await f.settle();assert.equal(f.stationPopup.open,true);assert.equal(f.stationOpenings.length,2);assert.equal(f.stationOpenings[1].code,'13');assert.equal(!!f.stationOpenings[1].options?.autoAdd,false);
+});
+
+test('rapid repeated station taps open only one automatic add flow',async()=>{
+ const f=fixture();await vm.runInContext("Promise.all([openStationPopup('13',{autoAdd:true}),openStationPopup('13',{autoAdd:true}),openStationPopup('14',{autoAdd:true})])",f.context);
+ assert.equal(f.stationOpenings.length,1);assert.equal(f.stationOpenings[0].code,'13');assert.equal(f.stationOpenings[0].options?.autoAdd,true);assert.equal(f.entries.length,2);assert.equal(f.history.state.radioLocalsApp.code,'13');
 });
 
 test('owner, legal and modified-click navigation are left to their existing behavior',()=>{

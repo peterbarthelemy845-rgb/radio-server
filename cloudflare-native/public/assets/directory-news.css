@@ -84,6 +84,12 @@ nav #navLibrary[hidden]{display:none!important}
 #stationAddPopup .station-popup-close{display:block;margin:0 0 4px auto;min-height:36px;padding:6px 12px;background:#edf2f9;color:#233956;border-radius:9px;font-size:13px}
 #stationAddPopup #shared h1{font-size:23px;margin:8px 0}
 #stationAddPopup .station-popup-share{display:block;margin:10px 6px 0;min-height:40px;padding:8px 12px;font-size:13px}
+/* A station tap needs only progress and the radio's final confirmation. */
+#stationAddPopup #shared[data-quick-add="1"]>.small,#stationAddPopup #shared[data-quick-add="1"] #shareStationCode,#stationAddPopup #shared[data-quick-add="1"] #shareStationBio{display:none}
+#stationAddPopup #shared[data-quick-add="1"] #shareArt{width:56px;height:56px;object-fit:contain;border-radius:10px}
+#stationAddPopup #shared[data-adding="1"] #shareForm label,#stationAddPopup #shared[data-adding="1"] #shareSubmit,#stationAddPopup #shared[data-adding="1"] #otherRadio{display:none}
+#stationAddPopup:has(#shared[data-adding="1"]) .station-popup-share{display:none}
+#stationAddPopup #shareStatus{font-size:16px;line-height:1.5;overflow-wrap:anywhere}
 /* Listener preview and keyboard access. */
 body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat(2,minmax(0,1fr))}
 .listener-app{font-size:17px}.listener-app #support{border-radius:20px;padding:18px}.support-help{width:100%;min-height:50px;margin-top:12px}
