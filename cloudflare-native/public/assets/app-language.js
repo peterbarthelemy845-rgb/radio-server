@@ -85,6 +85,8 @@ Object.assign(appCreole,{
  'expiredPhone':'Koneksyon telefòn ou ekspire. Antre kòd aparèy la pou rekonekte.',
  'recovery.open':'Ou bliye kòd estasyon an?','recovery.title':'Jwenn kòd estasyon ou','recovery.help':'Antre imèl ki anrejistre pou estasyon ou.','recovery.email':'Imèl ki anrejistre','recovery.send':'Voye kòd estasyon mwen pa imèl','recovery.sent':'Si gen yon estasyon ki anrejistre ak imèl sa a, w ap resevwa kòd estasyon an talè.','recovery.sending':'N ap mande kòd estasyon ou…'
 });
+Object.assign(appEnglish,{'owner.savedTitle':'Changes saved','owner.saved':'Changes saved successfully.','owner.review':'Changes saved for safety review.'});
+Object.assign(appCreole,{'owner.savedTitle':'Chanjman yo anrejistre','owner.saved':'Chanjman yo anrejistre avèk siksè.','owner.review':'Chanjman yo anrejistre pou verifikasyon sekirite.'});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';

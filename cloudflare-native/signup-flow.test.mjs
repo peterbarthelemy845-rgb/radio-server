@@ -19,13 +19,13 @@ function fixture(){
    showModal(){this.open=true;this.shown=true;},close(){this.open=false;this.closed=true;this.dispatchEvent(new UiEvent('close'));}
   };nodes.set(id,element);return element;
  }
- const document={activeElement:null,getElementById(id){return nodes.get(id)||node(id);}};
+ const document={activeElement:null,hidden:false,getElementById(id){return nodes.get(id)||node(id);},querySelector(selector){if(selector==='dialog[open]')return [...nodes.values()].find(item=>item.tagName==='DIALOG'&&item.open)||null;return null;}};
  function append(parent,child){parent.children.push(child);child.parent=parent;return child;}
  function form(id,fields){const target=node(id,'FORM');for(const [name,value] of Object.entries(fields)){const field=append(target,node(id+'-'+name,'INPUT'));field.name=name;field.value=value;target.elements[name]=field;}target.submit=append(target,node(id+'-submit','BUTTON'));return target;}
  const registration=form('registerForm',{name:'Sample Radio',stream_url:'http://stream.example.com:8000/live',bio:'Sample bio',email:'owner@example.com',artwork:'',rights_confirmed:'on'});registration.elements.artwork.type='file';registration.elements.artwork.files=[{name:'logo.png',size:5}];registration.elements.rights_confirmed.type='checkbox';registration.elements.rights_confirmed.checked=true;
  registration.copy=append(registration,node('copyGeneratedStream','BUTTON'));registration.copy.disabled=true;
  const login=form('loginForm',{email:'owner@example.com',code:'13'}),verification=node('verification','DIALOG'),verifyForm=form('verifyForm',{code:'123456'});append(verification,verifyForm);append(verification,node('resend','BUTTON'));append(verification,node('closeVerify','BUTTON'));
- const edit=form('editForm',{stream_url:'',bio:'',artwork:''});edit.elements.artwork.type='file';Object.defineProperty(edit.elements.artwork,'value',{get(){return this.files[0]?.name||'';},set(value){if(value==='')this.files=[];}});for(const id of ['openLogin','openRegister','navAdd','navLibrary','registerMessage','message','verifyText','verifyMessage','registrationHuman','stationSuccessTitle','stationSuccessText','stationSuccessMessage','retryOwnerEditor'])document.getElementById(id);node('stationSuccess','DIALOG');nodes.get('retryOwnerEditor').hidden=true;
+ const edit=form('editForm',{stream_url:'',bio:'',artwork:''});edit.elements.artwork.type='file';Object.defineProperty(edit.elements.artwork,'value',{get(){return this.files[0]?.name||'';},set(value){if(value==='')this.files=[];}});for(const id of ['openLogin','openRegister','navAdd','navLibrary','registerMessage','message','verifyText','verifyMessage','registrationHuman','stationSuccessTitle','stationSuccessText','stationSuccessMessage','retryOwnerEditor'])document.getElementById(id);node('stationSuccess','DIALOG');node('ownerSaveSuccess','DIALOG');for(const id of ['ownerSaveSuccessTitle','ownerSaveSuccessText','ownerSaveSuccessDone'])document.getElementById(id);nodes.get('retryOwnerEditor').hidden=true;
  class FormDataFixture{constructor(target){this.entries=Object.values(target.elements).filter(field=>!field.disabled&&(field.type!=='checkbox'||field.checked)).map(field=>[field.name,field.type==='file'?field.files[0]:field.value]);}[Symbol.iterator](){return this.entries[Symbol.iterator]();}}
  const context=vm.createContext({document,window:{},Event:UiEvent,FormData:FormDataFixture,TextEncoder,crypto:webcrypto,Date:ClockDate,setTimeout:(fn,delay)=>{const id=++nextTimer;timers.set(id,{fn,at:clock+delay});return id;},clearTimeout:id=>timers.delete(id),navigator:{onLine:true},history:{replaceState(){}},location:{search:''},
   __api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(answer!==undefined)return await answer;return {verification_id:'new-challenge',verification_email:'o***@example.com'};},
@@ -174,4 +174,17 @@ test('failed resend leaves verification available and can be retried without rep
 
 test('resend countdown rerenders through the selected language and ignores an older timer',()=>{
  const f=fixture();f.verify();const oldTimer=[...f.timers.values()][0].fn;f.context.window.appI18n={t:(key,params)=>key==='verification.resendCountdown'?'Voye ankò nan '+params.seconds+' segonn':'Voye imèl la ankò'};vm.runInContext('renderVerificationResend()',f.context);assert.equal(f.nodes.get('resend').textContent,'Voye ankò nan 60 segonn');f.verify({verification_id:'challenge-next'});assert.equal(f.timers.size,1);oldTimer();assert.equal(f.timers.size,1);f.advance(60000);assert.equal(f.nodes.get('resend').textContent,'Voye imèl la ankò');
+});
+
+
+test('a saved station opens a focused confirmation and preserves safety-review wording',async()=>{
+ for(const text of ['Changes saved successfully.','Changes saved for safety review.']){const f=fixture(),form=f.nodes.get('editForm');vm.runInContext("page('editor')",f.context);f.answers.push({message:text});await f.submit(form);assert.equal(f.nodes.get('ownerSaveSuccess').open,true);assert.equal(f.nodes.get('ownerSaveSuccessText').textContent,text);assert.equal(f.document.activeElement,f.nodes.get('ownerSaveSuccessDone'));assert.equal(f.nodes.get('message').textContent,'');f.nodes.get('ownerSaveSuccessDone').onclick();assert.equal(f.nodes.get('ownerSaveSuccess').open,false);}
+});
+
+test('save confirmation does not interrupt a background tab or another active dialog',async()=>{
+ for(const condition of ['background','dialog']){const f=fixture(),form=f.nodes.get('editForm');vm.runInContext("page('editor')",f.context);if(condition==='background')f.document.hidden=true;else f.nodes.get('verification').showModal();f.answers.push({message:'Changes saved for safety review.'});await f.submit(form);assert.equal(f.nodes.get('ownerSaveSuccess').open,false);assert.equal(f.nodes.get('message').textContent,'Changes saved for safety review.');if(condition==='dialog')assert.equal(f.nodes.get('verification').open,true);}
+});
+
+test('a station save whose editor refresh is superseded does not show a confirmation',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm');vm.runInContext("page('editor')",f.context);f.editor(false);f.answers.push({message:'Changes saved successfully.'});await f.submit(form);assert.equal(f.nodes.get('ownerSaveSuccess').open,false);assert.equal(f.nodes.get('message').textContent,'');
 });

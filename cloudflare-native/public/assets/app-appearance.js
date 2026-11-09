@@ -9,6 +9,7 @@ let keyboardWasOpen=false;
 function measureAppViewport(){
  const viewport=window.visualViewport,height=viewport?.height||window.innerHeight;
  document.documentElement.style.setProperty('--app-visible-height',Math.round(height)+'px');
+ document.documentElement.style.setProperty('--app-visible-bottom',Math.max(0,Math.round(window.innerHeight-height-(viewport?.offsetTop||0)))+'px');
  const focused=document.activeElement,editing=focused&&/^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName),keyboardOpen=!!editing&&window.innerHeight-height>150;
  document.body.classList.toggle('app-keyboard-open',keyboardOpen);
  if(keyboardOpen&&!keyboardWasOpen)focused.scrollIntoView({block:'nearest',behavior:'auto'});
