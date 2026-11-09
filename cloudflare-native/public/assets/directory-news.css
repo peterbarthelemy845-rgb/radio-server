@@ -102,7 +102,7 @@ nav #navLibrary[hidden]{display:none!important}
 /* Listener preview and keyboard access. */
 body.listener-app nav[aria-label="Main navigation"]{grid-template-columns:repeat(2,minmax(0,1fr))}
 .listener-app{font-size:17px}.listener-app #support{border-radius:20px;padding:18px}.support-help{width:100%;min-height:50px;margin-top:12px}
-.listener-app #ticketForm label{font-size:14px}.listener-app #ticketForm input,.listener-app #ticketForm select{min-height:44px}.listener-app #shared form>button{min-height:50px}.listener-app #shareStatus{font-size:18px;line-height:1.5}.listener-app #shared #shareStatus{color:#176238}.listener-app #support>h1{font-size:28px}.listener-app summary{min-height:44px;padding:10px 0;cursor:pointer}
+.listener-app #ticketForm label{font-size:14px}.listener-app #ticketForm input,.listener-app #ticketForm select{min-height:44px}.listener-app #shared form>button{min-height:50px}.listener-app #shareStatus{font-size:18px;line-height:1.5}#shared #shareStatus{color:#20314f}#shared #shareStatus[data-status="success"]{color:#176238}#shared #shareStatus[data-status="error"]{color:#922338;background:#fff0f3;border:1px solid #e7b2be;border-radius:10px;padding:10px 12px}.listener-app #support>h1{font-size:28px}.listener-app summary{min-height:44px;padding:10px 0;cursor:pointer}
 .listener-app button,.listener-app select,.listener-app input{min-height:48px}.listener-app .linked-radio-card{overflow-wrap:anywhere}
 button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #78cfff;outline-offset:4px}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}

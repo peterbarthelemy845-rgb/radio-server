@@ -22,11 +22,11 @@ function refreshRadioInventory(id){const pending=radioInventoryRequests.get(Stri
 async function updateStationConfirmation(){
  const select=$('shareForm').elements.radio_id,id=select.value,code=String(sharedCode);
  $('shareSubmit').textContent='Add station';
- if(!id){$('shareStatus').textContent=$('radioLabel').hidden?'':'Choose a radio to add this station.';return;}
+ if(!id){setSharedStatus($('radioLabel').hidden?'':'Choose a radio to add this station.');return;}
  rememberSelectedRadio(id);const inventory=await loadRadioInventory(id);
  if(select.value!==id||String(sharedCode)!==code||shareRunning)return;
- if(inventory?.known&&inventory.codes.has(code)){$('shareStatus').textContent='On your radio. You can add it again if needed.';$('shareSubmit').textContent='Add again';}
- else $('shareStatus').textContent=inventory?.known?'':inventory?.unavailable?'Saved stations could not be checked. You can still add this station.':'Check your radio for its saved stations. The saved list updates after a radio software update.';
+ if(inventory?.known&&inventory.codes.has(code)){setSharedStatus('On your radio. You can add it again if needed.','success');$('shareSubmit').textContent='Add again';}
+ else setSharedStatus(inventory?.known?'':inventory?.unavailable?'Saved stations could not be checked. You can still add this station.':'Check your radio for its saved stations. The saved list updates after a radio software update.');
 }
 $('shareForm').elements.radio_id.addEventListener('change',updateStationConfirmation);
 
@@ -49,8 +49,6 @@ function listenerActionDialog(title,text,confirmLabel='Done',allowCancel=false){
  });
 }
 const draftForms=['registerForm','editForm','ticketForm','advertiseForm'];for(const id of draftForms){const form=$(id);form.addEventListener('input',()=>form.dataset.dirty='1');form.addEventListener('reset',()=>delete form.dataset.dirty);}
-function visibleDrafts(){return draftForms.map($).filter(form=>form.dataset.dirty&&form.getClientRects().length);}
 // Internal tabs retain their hidden forms. A real reload or departure discards
 // all in-memory drafts, including those on a page that is no longer visible.
 window.addEventListener('beforeunload',event=>{if(draftForms.some(id=>$(id).dataset.dirty)){event.preventDefault();event.returnValue='';}});
-document.addEventListener('click',event=>{const navigation=event.target.closest('nav button,nav a,a[href]');if(!navigation||navigation.target==='_blank')return;const drafts=visibleDrafts();if(drafts.length&&!confirm('Leave this form? Your unsaved changes will be lost.')){event.preventDefault();event.stopImmediatePropagation();}},true);

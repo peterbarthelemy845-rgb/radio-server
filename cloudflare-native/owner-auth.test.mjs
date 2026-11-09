@@ -18,7 +18,7 @@ async function fixture(){
     EMAIL:{async send(message){mail.push(message);return {messageId:'test'};}}};
   const response=await authRoutes(new Request(host+'/api/session'),env,now);
   const state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
-  async function post(path,body,changes={},time=now){return authRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf,...changes},body:JSON.stringify(body)}),env,time,{human:async()=>{}});}
+  async function post(path,body,changes={},time=now,deps={human:async()=>{}}){return authRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf,...changes},body:JSON.stringify(body)}),env,time,deps);}
   const registration={request_id:'1'.repeat(32),name:'Test station',email:'owner@example.com',stream_url:'https://example.com/live',bio:'Test bio',rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
   return {env,sqlite,state,cookie,post,registration,mail,objects,imageReads:()=>imageReads};
 }
@@ -29,6 +29,72 @@ function pauseOwnerBatch(f){const batch=f.env.DB.batch;let release,arrived,pause
 test('fresh session uses secure host-only cookie; absent server key fails closed',async()=>{
   const f=await fixture();assert.match(f.cookie,/^__Host-rl_session=/);assert.equal(f.state.csrf.length,64);
   await assert.rejects(authRoutes(new Request(host+'/api/session'),{...f.env,DATA_ENCRYPTION_KEY:''},now),e=>e.status===503);
+});
+
+test('station-code recovery emails only the registered verified active owner and does not grant access',async()=>{
+  const f=await fixture(),insert=f.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,email_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)');
+  for(const [name,email,status,verified] of [['First station','owner@example.com','published',now],['Awaiting review','owner@example.com','pending_review',now],['Other owner','other@example.com','published',now],['Unverified','owner@example.com','pending_email',null],['Removed','owner@example.com','deleted',now],['Suspended','owner@example.com','suspended',now]])
+    insert.run(name,'https://example.com/live',email,status,verified,now,now);
+  const before=f.sqlite.prepare('SELECT * FROM sessions').get();let requestedAction;
+  const response=await f.post('/api/owner/recover-code',{email:'  OWNER@EXAMPLE.COM  ',turnstile_token:'test'}, {},now,{human:async(_request,_env,token,action)=>{assert.equal(token,'test');requestedAction=action;}});
+  assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(requestedAction,'station-code-recovery');
+  assert.deepEqual(await response.json(),{status:'ok',message:'If this email has a registered station, its station code will arrive shortly.'});
+  const jobs=f.sqlite.prepare('SELECT * FROM mail_outbox').all();assert.equal(jobs.length,1);const job=jobs[0];
+  assert.equal(job.recipient,'owner@example.com');assert.equal(job.subject,'Your Radio Locals station code');assert.equal(job.expires,now+900);assert.ok(!job.encrypted_payload.includes('First station'));
+  const payload=JSON.parse(await decrypt(f.env,job.encrypted_payload));assert.match(payload.text,/First station: station code #10/);assert.match(payload.text,/Awaiting review: station code #11/);
+  for(const forbidden of ['Other owner','Unverified','Removed','Suspended'])assert.ok(!payload.text.includes(forbidden));
+  assert.match(payload.text,/still requires a new private email verification code/);assert.deepEqual(f.sqlite.prepare('SELECT * FROM sessions').get(),before);
+  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM email_verifications').get().n,0);assert.equal(f.mail.length,0);
+  await processMail(f.env,now);assert.equal(f.mail.length,1);assert.equal(f.mail[0].to,'owner@example.com');assert.equal(f.mail[0].text,payload.text);
+});
+
+test('station-code recovery has identical responses for unknown, unverified and active email addresses',async()=>{
+  const bodies=[];
+  for(const kind of ['unknown','unverified','active']){
+    const f=await fixture();if(kind!=='unknown')f.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,email_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run('Test station','https://example.com/live','owner@example.com',kind==='active'?'published':'pending_email',kind==='active'?now:null,now,now);
+    const response=await f.post('/api/owner/recover-code',{email:'owner@example.com'});bodies.push({status:response.status,body:await response.json()});
+    assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,kind==='active'?1:0);
+  }
+  assert.deepEqual(bodies[0],bodies[1]);assert.deepEqual(bodies[1],bodies[2]);
+});
+
+test('station-code recovery requires same-origin session, CSRF and valid email before sending anything',async()=>{
+  const f=await fixture();let humanCalls=0;const deps={human:async()=>{humanCalls++;}};
+  for(const changes of [{Origin:'https://attacker.example'},{'X-CSRF-Token':''},{Cookie:''}])
+    await assert.rejects(f.post('/api/owner/recover-code',{email:'owner@example.com'},changes,now,deps),e=>e.status===401||e.status===403);
+  for(const email of ['not-an-email','owner@example.com\r\nBcc: other@example.com','a'.repeat(255)+'@example.com'])
+    await assert.rejects(f.post('/api/owner/recover-code',{email},{},now,deps),e=>e.status===400);
+  assert.equal(humanCalls,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);
+  await assert.rejects(authRoutes(new Request(host+'/api/owner/recover-code'),f.env,now),e=>e.status===405);
+});
+
+test('repeated failed recovery bot checks stop before contacting the provider again',async()=>{
+  const f=await fixture();let humanCalls=0;const deps={human:async()=>{humanCalls++;throw new Error('Rejected bot check');}};
+  for(let attempt=0;attempt<3;attempt++)await assert.rejects(f.post('/api/owner/recover-code',{email:'owner@example.com'},{},now,deps),/Rejected bot check/);
+  await assert.rejects(f.post('/api/owner/recover-code',{email:'another@example.com'},{},now,deps),e=>e.status===429);
+  assert.equal(humanCalls,3);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);
+});
+
+test('recovery email cooldown is shared across sessions and does not invalidate pending login codes',async()=>{
+  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+  const challenge=await ownerLoginChallenge(f),session=f.sqlite.prepare('SELECT * FROM sessions').get();
+  await f.post('/api/owner/recover-code',{email:f.registration.email});
+  const response=await authRoutes(new Request(host+'/api/session'),f.env,now),state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
+  await assert.rejects(f.post('/api/owner/recover-code',{email:f.registration.email},{Cookie:cookie,'X-CSRF-Token':state.csrf}),e=>e.status===429);
+  assert.deepEqual(f.sqlite.prepare('SELECT * FROM sessions WHERE token_hash=?').get(session.token_hash),session);
+  assert.equal(f.sqlite.prepare('SELECT consumed_at FROM email_verifications WHERE id=?').get(challenge.verification_id).consumed_at,null);
+  await f.post('/api/owner/verify',{verification_id:challenge.verification_id,code:challenge.code});
+  const later=await f.post('/api/owner/recover-code',{email:f.registration.email},{Cookie:cookie,'X-CSRF-Token':state.csrf},now+60);assert.equal(later.status,200);
+  assert.equal(f.sqlite.prepare("SELECT count(*) n FROM mail_outbox WHERE subject='Your Radio Locals station code'").get().n,2);
+});
+
+test('station-code recovery bounds one email even for an owner with many stations',async()=>{
+  const f=await fixture(),insert=f.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,email_verified_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?)');
+  for(let i=0;i<103;i++)insert.run('Station '+i,'https://example.com/live','owner@example.com','published',now,now,now);
+  await f.post('/api/owner/recover-code',{email:'owner@example.com'});
+  const jobs=f.sqlite.prepare('SELECT * FROM mail_outbox').all();assert.equal(jobs.length,1);const text=JSON.parse(await decrypt(f.env,jobs[0].encrypted_payload)).text;
+  assert.equal((text.match(/: station code #/g)||[]).length,100);assert.match(text,/first 100 stations/);assert.ok(!text.includes('Station 100:'));
 });
 test('cross-origin and missing CSRF cannot create stations',async()=>{
   const f=await fixture();await assert.rejects(f.post('/api/owner/register',f.registration,{Origin:'https://attacker.example'}),e=>e.status===403);

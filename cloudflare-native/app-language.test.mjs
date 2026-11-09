@@ -74,3 +74,8 @@ test('language selection works with blocked storage and persists only the prefer
  const blocked=fixture({blocked:true});blocked.api.setLanguage('ht');assert.equal(blocked.status.textContent,'Konekte');assert.equal(blocked.root.lang,'ht');assert.equal(blocked.writes.length,0);
  const f=fixture();f.api.setLanguage('ht');assert.deepEqual(f.writes,[['radioLocalsLanguage','ht']]);assert.equal(f.dispatched.at(-1).type,'app-language-changed');assert.equal(f.dispatched.at(-1).detail.language,'ht');assert.equal(fixture({saved:'invalid'}).api.language,'en');assert.equal(fixture({saved:'',locale:'ht-HT'}).api.language,'ht');
 });
+
+
+test('code recovery, resend guidance and reconnection messages have matching Creole translations',()=>{
+ const f=fixture();const keys=['verification.resendCountdown','verification.newestCode','verification.resent','expiredPhone','recovery.open','recovery.title','recovery.help','recovery.email','recovery.send','recovery.sent','recovery.sending'];for(const key of keys){const english=f.api.t(key,{seconds:42});assert.notEqual(english,key);f.api.setLanguage('ht');const creole=f.api.t(key,{seconds:42});assert.notEqual(creole,key);assert.notEqual(creole,english);f.api.setLanguage('en');}assert.match(f.api.t('expiredPhone'),/Enter the Device Code/);f.api.setLanguage('ht');assert.match(f.api.t('verification.resendCountdown',{seconds:42}),/42/);
+});

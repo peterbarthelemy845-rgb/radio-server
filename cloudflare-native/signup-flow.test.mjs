@@ -7,7 +7,8 @@ import {webcrypto} from 'node:crypto';
 const source=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8').split('function list(){}')[0];
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 function fixture(){
- const nodes=new Map(),calls=[],humans=[],files=[],logoFiles=[],answers=[];let humanResult='checked-token',editorResult,editorCalls=0,logoResult=true;
+ const nodes=new Map(),calls=[],humans=[],files=[],logoFiles=[],answers=[];let humanResult='checked-token',editorResult,editorCalls=0,logoResult=true,clock=1700000000000,nextTimer=0;const timers=new Map();class ClockDate extends Date{static now(){return clock;}}
+ function advance(milliseconds){clock+=milliseconds;for(let count=0;count<100;count++){const due=[...timers].find(([,timer])=>timer.at<=clock);if(!due)return;timers.delete(due[0]);due[1].fn();}throw Error('Timer loop');}
  class UiEvent{constructor(type,options={}){this.type=type;this.bubbles=!!options.bubbles;this.defaultPrevented=false;}preventDefault(){this.defaultPrevented=true;}}
  function node(id,tagName='DIV'){
   const listeners={};const element={id,tagName,children:[],elements:{},dataset:{},attrs:{},disabled:false,hidden:false,open:false,textContent:'',value:'',defaultValue:'',files:[],checked:false,type:'text',
@@ -26,14 +27,14 @@ function fixture(){
  const login=form('loginForm',{email:'owner@example.com',code:'13'}),verification=node('verification','DIALOG'),verifyForm=form('verifyForm',{code:'123456'});append(verification,verifyForm);append(verification,node('resend','BUTTON'));append(verification,node('closeVerify','BUTTON'));
  const edit=form('editForm',{stream_url:'',bio:'',artwork:''});edit.elements.artwork.type='file';Object.defineProperty(edit.elements.artwork,'value',{get(){return this.files[0]?.name||'';},set(value){if(value==='')this.files=[];}});for(const id of ['openLogin','openRegister','navAdd','navLibrary','registerMessage','message','verifyText','verifyMessage','registrationHuman','stationSuccessTitle','stationSuccessText','stationSuccessMessage','retryOwnerEditor'])document.getElementById(id);node('stationSuccess','DIALOG');nodes.get('retryOwnerEditor').hidden=true;
  class FormDataFixture{constructor(target){this.entries=Object.values(target.elements).filter(field=>!field.disabled&&(field.type!=='checkbox'||field.checked)).map(field=>[field.name,field.type==='file'?field.files[0]:field.value]);}[Symbol.iterator](){return this.entries[Symbol.iterator]();}}
- const context=vm.createContext({document,window:{},Event:UiEvent,FormData:FormDataFixture,TextEncoder,crypto:webcrypto,setTimeout,clearTimeout,navigator:{onLine:true},history:{replaceState(){}},location:{search:''},
+ const context=vm.createContext({document,window:{},Event:UiEvent,FormData:FormDataFixture,TextEncoder,crypto:webcrypto,Date:ClockDate,setTimeout:(fn,delay)=>{const id=++nextTimer;timers.set(id,{fn,at:clock+delay});return id;},clearTimeout:id=>timers.delete(id),navigator:{onLine:true},history:{replaceState(){}},location:{search:''},
   __api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(answer!==undefined)return await answer;return {verification_id:'new-challenge',verification_email:'o***@example.com'};},
   __human:async(container,action)=>{humans.push({container,action});return await humanResult;},__fileData:async file=>{files.push(file);return file?{name:file.name,base64:'c2FtcGxl'}:undefined;},
   __editor:async()=>{editorCalls++;if(editorResult instanceof Error)throw editorResult;return await editorResult;},__logo:async file=>{logoFiles.push(file);return await logoResult;}
  });
  vm.runInContext(source,context);vm.runInContext("const actualEditor=editor,actualHuman=human;state={csrf:'test-csrf',agreement_version:'test-terms',turnstile_site_key:'test-site-key'};api=__api;human=__human;fileData=__fileData;editor=__editor;window.validateRegistrationLogo=__logo;",context);
  async function submit(target){return target.onsubmit({preventDefault(){},target});}
- return {nodes,document,registration,login,verifyForm,calls,humans,files,logoFiles,context,submit,answers,verify(result={}){context.result={verification_id:'challenge-a',verification_email:'o***@example.com',...result};vm.runInContext('verify(result)',context);},id(){return vm.runInContext('verificationId',context);},human(value){humanResult=value;},editor(value){editorResult=value;},editorCalls:()=>editorCalls,logo(value){logoResult=value;},event:type=>new UiEvent(type),busy(target,on,fields=false){context.target=target;context.on=on;context.fields=fields;vm.runInContext('busy(target,on,fields)',context);}};
+ return {advance,timers,nodes,document,registration,login,verifyForm,calls,humans,files,logoFiles,context,submit,answers,verify(result={}){context.result={verification_id:'challenge-a',verification_email:'o***@example.com',...result};vm.runInContext('verify(result)',context);},id(){return vm.runInContext('verificationId',context);},human(value){humanResult=value;},editor(value){editorResult=value;},editorCalls:()=>editorCalls,logo(value){logoResult=value;},event:type=>new UiEvent(type),busy(target,on,fields=false){context.target=target;context.on=on;context.fields=fields;vm.runInContext('busy(target,on,fields)',context);}};
 }
 async function until(check){for(let i=0;i<100&&!check();i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(check(),'Expected async checkpoint');}
 
@@ -125,11 +126,11 @@ test('signing back into an unchanged editor refreshes saved details rather than 
 });
 
 test('verification and resend share one lock, preventing double requests and accidental close',async()=>{
- const f=fixture(),pending=deferred();f.verify();f.answers.push(pending.promise);const first=f.submit(f.verifyForm);await until(()=>f.calls.length===1);await f.submit(f.verifyForm);await f.nodes.get('resend').onclick();f.nodes.get('closeVerify').onclick();const cancel=f.event('cancel');f.nodes.get('verification').dispatchEvent(cancel);assert.equal(cancel.defaultPrevented,true);assert.equal(f.nodes.get('verification').open,true);assert.equal(f.nodes.get('resend').disabled,true);assert.equal(f.calls.length,1);pending.reject(new Error('Incorrect code'));await first;assert.equal(f.nodes.get('verifyMessage').textContent,'Incorrect code');assert.equal(f.nodes.get('resend').disabled,false);assert.equal(f.verifyForm.submit.disabled,false);
+ const f=fixture(),pending=deferred();f.verify();f.answers.push(pending.promise);const first=f.submit(f.verifyForm);await until(()=>f.calls.length===1);await f.submit(f.verifyForm);await f.nodes.get('resend').onclick();f.nodes.get('closeVerify').onclick();const cancel=f.event('cancel');f.nodes.get('verification').dispatchEvent(cancel);assert.equal(cancel.defaultPrevented,true);assert.equal(f.nodes.get('verification').open,true);assert.equal(f.nodes.get('resend').disabled,true);assert.equal(f.calls.length,1);pending.reject(new Error('Incorrect code'));await first;assert.equal(f.nodes.get('verifyMessage').textContent,'Incorrect code');assert.equal(f.nodes.get('resend').disabled,true);assert.equal(f.verifyForm.submit.disabled,false);
 });
 
 test('an older resend response cannot replace a newer challenge or its controls',async()=>{
- const f=fixture(),pending=deferred();f.verify();f.answers.push(pending.promise);const first=f.nodes.get('resend').onclick();await until(()=>f.calls.length===1);assert.equal(f.calls[0].body.verification_id,'challenge-a');f.verify({verification_id:'challenge-b'});pending.resolve({verification_id:'stale-resend'});await first;assert.equal(f.id(),'challenge-b');assert.equal(f.nodes.get('verifyMessage').textContent,'');assert.equal(f.nodes.get('resend').disabled,false);assert.equal(f.nodes.get('verification').open,true);
+ const f=fixture(),pending=deferred();f.verify();f.advance(60000);f.answers.push(pending.promise);const first=f.nodes.get('resend').onclick();await until(()=>f.calls.length===1);assert.equal(f.calls[0].body.verification_id,'challenge-a');f.verify({verification_id:'challenge-b'});pending.resolve({verification_id:'stale-resend'});await first;assert.equal(f.id(),'challenge-b');assert.equal(f.nodes.get('verifyMessage').textContent,'');assert.equal(f.nodes.get('resend').disabled,true);assert.equal(f.nodes.get('verification').open,true);
 });
 test('a late Add Station session response cannot reopen its route after leaving',async()=>{
  const f=fixture(),pending=deferred();f.answers.push(pending.promise);const opening=f.nodes.get('navAdd').onclick();await until(()=>f.calls.length===1);vm.runInContext("page('myRadio')",f.context);pending.resolve({csrf:'fresh',owner_station:'13'});await opening;assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('login').hidden,true);assert.equal(f.editorCalls(),0);
@@ -157,4 +158,20 @@ test('a station save freezes its captured fields and ignores a second submission
 
 test('a failed station save keeps its draft and chosen cover available for retry',async()=>{
  const f=fixture(),form=f.nodes.get('editForm'),cover={name:'retry.png',size:5};form.elements.stream_url.value='https://retry.example/live';form.elements.bio.value='Keep this draft';form.elements.artwork.files=[cover];f.answers.push(Error('Save connection interrupted'));vm.runInContext("page('editor')",f.context);await f.submit(form);assert.equal(f.editorCalls(),0);assert.equal(form.elements.stream_url.value,'https://retry.example/live');assert.equal(form.elements.bio.value,'Keep this draft');assert.equal(form.elements.artwork.files[0],cover);assert.equal(form.elements.bio.disabled,false);assert.equal(form.submit.disabled,false);assert.equal(f.nodes.get('message').textContent,'Save connection interrupted');
+});
+
+
+test('email resend countdown blocks repeated requests, starts again for a new code and clears on close',async()=>{
+ const f=fixture();f.verify();const button=f.nodes.get('resend');assert.equal(button.disabled,true);assert.equal(button.textContent,'Resend in 60 seconds');await button.onclick();assert.equal(f.humans.length,0);assert.equal(f.calls.length,0);
+ f.advance(1000);assert.equal(button.textContent,'Resend in 59 seconds');f.advance(59000);assert.equal(button.disabled,false);assert.equal(button.textContent,'Resend email');assert.equal(f.timers.size,0);
+ f.answers.push({verification_id:'challenge-new'});await button.onclick();assert.equal(f.id(),'challenge-new');assert.equal(f.calls[0].path,'/api/owner/resend');assert.equal(button.disabled,true);assert.equal(button.textContent,'Resend in 60 seconds');assert.match(f.nodes.get('verifyMessage').textContent,/newest email code/);assert.equal(f.verifyForm.elements.code.value,'');
+ f.nodes.get('closeVerify').onclick();assert.equal(f.timers.size,0);assert.equal(button.textContent,'Resend email');f.advance(60000);assert.equal(f.timers.size,0);assert.equal(f.nodes.get('verification').open,false);
+});
+
+test('failed resend leaves verification available and can be retried without replacing the challenge',async()=>{
+ const f=fixture();f.verify();f.advance(60000);f.answers.push(Error('Could not connect. Please try again.'));await f.nodes.get('resend').onclick();assert.equal(f.id(),'challenge-a');assert.equal(f.nodes.get('resend').disabled,false);assert.match(f.nodes.get('verifyMessage').textContent,/Could not connect/);assert.equal(f.verifyForm.submit.disabled,false);
+});
+
+test('resend countdown rerenders through the selected language and ignores an older timer',()=>{
+ const f=fixture();f.verify();const oldTimer=[...f.timers.values()][0].fn;f.context.window.appI18n={t:(key,params)=>key==='verification.resendCountdown'?'Voye ankò nan '+params.seconds+' segonn':'Voye imèl la ankò'};vm.runInContext('renderVerificationResend()',f.context);assert.equal(f.nodes.get('resend').textContent,'Voye ankò nan 60 segonn');f.verify({verification_id:'challenge-next'});assert.equal(f.timers.size,1);oldTimer();assert.equal(f.timers.size,1);f.advance(60000);assert.equal(f.nodes.get('resend').textContent,'Voye imèl la ankò');
 });

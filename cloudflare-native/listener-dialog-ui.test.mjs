@@ -38,7 +38,7 @@ function draftFixture(){
  }
  const context={$:id=>forms.get(id),window:{addEventListener(type,fn){events.set(type,fn);}},document:{addEventListener(type,fn){events.set(type,fn);}},confirm(){confirms++;return false;}};runInNewContext(draftSource,context);
  function event(){return {preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};}
- return {forms,confirms:()=>confirms,unload(){const attempt=event();events.get('beforeunload')(attempt);return attempt;},navigate(target={tagName:'BUTTON'}){const attempt=event();attempt.target={closest:()=>target};events.get('click')(attempt);return attempt;}};
+ return {forms,confirms:()=>confirms,unload(){const attempt=event();events.get('beforeunload')(attempt);return attempt;},navigate(target={tagName:'BUTTON'}){const attempt=event();attempt.target={closest:()=>target};events.get('click')?.(attempt);return attempt;}};
 }
 
 test('real reload or departure protects hidden drafts on every editable page until reset',()=>{
@@ -49,9 +49,9 @@ test('real reload or departure protects hidden drafts on every editable page unt
  }
 });
 
-test('hidden drafts do not add confirmation prompts to internal tab navigation',()=>{
+test('visible and hidden drafts survive internal tabs without misleading discard prompts',()=>{
  const f=draftFixture(),form=f.forms.get('registerForm');form.dispatch('input');
  const navigation=f.navigate();assert.equal(navigation.prevented,undefined);assert.equal(f.confirms(),0);assert.equal(form.dataset.dirty,'1');assert.equal(f.unload().prevented,true);
- form.visible=true;const leavingVisible=f.navigate();assert.equal(f.confirms(),1);assert.equal(leavingVisible.prevented,true);assert.equal(leavingVisible.stopped,true);assert.equal(form.dataset.dirty,'1');
- const newTab=f.navigate({target:'_blank'});assert.equal(newTab.prevented,undefined);assert.equal(f.confirms(),1);
+ form.visible=true;const leavingVisible=f.navigate();assert.equal(f.confirms(),0);assert.equal(leavingVisible.prevented,undefined);assert.equal(leavingVisible.stopped,undefined);assert.equal(form.dataset.dirty,'1');assert.equal(f.unload().prevented,true);
+ const newTab=f.navigate({target:'_blank'});assert.equal(newTab.prevented,undefined);assert.equal(f.confirms(),0);assert.equal(form.value,'Private unsaved text');
 });

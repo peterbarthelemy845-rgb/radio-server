@@ -85,7 +85,16 @@ test('unlinked phones and multiple radios without a selection still need a desti
 });
 
 test('a failed device acknowledgment never reports station added',async()=>{
- const f=fixture();f.answers.push({command_id:'command'},{state:'failed'});await f.submit();assert.equal(f.dialogs.length,0);assert.equal(f.refreshes.length,0);assert.match(f.id('shareStatus').textContent,/could not be added/i);assert.equal(f.form.hidden,false);
+ const f=fixture();f.answers.push({command_id:'command'},{state:'failed'});await f.submit();assert.equal(f.dialogs.length,0);assert.equal(f.refreshes.length,0);assert.match(f.id('shareStatus').textContent,/could not be added/i);assert.equal(f.id('shareStatus').dataset.status,'error');assert.equal(f.form.hidden,false);
+});
+
+test('pairing and delivery remain neutral until the physical radio confirms station addition',async()=>{
+ const approval=deferred(),ack=deferred(),f=fixture({useDeviceCode:true});f.answers.push({claim_id:'claim',confirmation_code:'5831'},approval.promise,{command_id:'command'},ack.promise);const adding=f.submit();await until(()=>f.calls.length===2);assert.match(f.id('shareStatus').textContent,/5831/);assert.equal(f.id('shareStatus').dataset.status,'progress');approval.resolve({state:'approved',radio_id:'new-radio'});await until(()=>f.calls.length===4);assert.equal(f.id('shareStatus').textContent,'Adding station…');assert.equal(f.id('shareStatus').dataset.status,'progress');ack.resolve({state:'added'});await adding;assert.equal(f.id('shareStatus').dataset.status,'success');
+});
+
+test('wrong codes and offline destinations have error styling that clears on another opening',async()=>{
+ const f=fixture({useDeviceCode:true});f.answers.push(Error('That Device Code is incorrect.'));await f.submit();assert.equal(f.id('shareStatus').dataset.status,'error');assert.match(f.id('shareStatus').textContent,/incorrect/);f.answers.push({name:'Another station',listener_code:'11'},{radios:[]});await f.open('11',true);assert.equal(f.id('shareStatus').dataset.status,'progress');assert.equal(f.id('shareStatus').textContent,'');
+ const offline=fixture();offline.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:false}]});await offline.open('10',true,true);assert.equal(offline.id('shareStatus').dataset.status,'error');offline.cancel();assert.equal(offline.id('shareStatus').dataset.status,'progress');assert.equal(offline.id('shareStatus').textContent,'');
 });
 test('an old add request cannot unlock a new station request or replace its message',async()=>{
  const old=deferred(),fresh=deferred(),f=fixture();f.answers.push(old.promise);const first=f.submit();await until(()=>f.calls.length===1);f.cancel();f.next();f.answers.push(fresh.promise);const second=f.submit();await until(()=>f.calls.length===2);old.reject(Error('Old request failed'));await first;

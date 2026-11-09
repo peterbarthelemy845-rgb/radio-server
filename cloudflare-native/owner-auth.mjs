@@ -101,7 +101,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!object||object.customMetadata?.sanitizer_version!=='1')throw new HttpError(404,'Artwork not found.');
     return new Response(object.body,{headers:{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}});
   }
-  if(!['/api/owner/register','/api/owner/login','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/delete'].includes(path))return null;
+  if(!['/api/owner/register','/api/owner/login','/api/owner/recover-code','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/delete'].includes(path))return null;
   if(path==='/api/owner/station'&&request.method==='GET'){
     const current=await session(request,env,now);
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -205,6 +205,26 @@ export async function authRoutes(request,env,now,deps={human}){
       try{await env.DB.prepare("UPDATE registration_requests SET lease_until=0 WHERE session_hash=? AND request_id=? AND lease_token=? AND state='pending'").bind(current.token_hash,requestId,lease).run();}catch{}
       throw error;
     }
+  }
+  if(path==='/api/owner/recover-code'){
+    // Bound invalid bot checks as well as email deliveries. Apply the same
+    // limits and response to unknown emails so this cannot identify owners.
+    await limit(env.DB,'owner-recovery-ip',request.headers.get('CF-Connecting-IP')||'unknown',10,900,now);
+    await limit(env.DB,'owner-recovery-session',current.token_hash,3,900,now);
+    const email=String(body.email||'').trim().toLowerCase();
+    if(email.length>254||!emailPattern.test(email))throw new HttpError(400,'Enter your registered email.');
+    await limit(env.DB,'owner-recovery-email',email,3,900,now);
+    await deps.human(request,env,body.turnstile_token,'station-code-recovery',now);
+    await limit(env.DB,'owner-recovery-cooldown',email,1,60,now);
+    const {results:stations}=await env.DB.prepare(`SELECT code,name FROM stations WHERE contact_email=?
+      AND email_verified_at IS NOT NULL AND status NOT IN ('deleted','suspended') ORDER BY code LIMIT 101`).bind(email).all();
+    if(stations.length){
+      const entries=stations.slice(0,100).map(station=>`${station.name}: station code #${station.code}`).join('\n');
+      const text=`Your registered Radio Locals stations:\n\n${entries}\n\n${stations.length>100?'Only the first 100 stations are shown. Contact support for help with additional stations.\n\n':''}Use your registered email and station code on the Radio Locals sign-in page. Sign-in still requires a new private email verification code.\n\nIf you did not request this email, you can ignore it.`;
+      await env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) VALUES (?,?,?,?,?,?)')
+        .bind(randomHex(16),email,'Your Radio Locals station code',await encrypt(env,JSON.stringify({text})),now,now+900).run();
+    }
+    return json({status:'ok',message:'If this email has a registered station, its station code will arrive shortly.'});
   }
   if(path==='/api/owner/login'){
     await deps.human(request,env,body.turnstile_token,'station-access',now);

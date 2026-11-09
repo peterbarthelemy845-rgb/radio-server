@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('./public/assets/my-radio.js',import.meta.url),'utf8');
 function fixture(){
- const ids=new Map(),windowEvents={},documentEvents={},observers=[],answers=[],calls=[],dialogs=[],dialogAnswers=[],reports=[];let clock=Date.UTC(2026,10,7,12,30);
+ const ids=new Map(),windowEvents={},documentEvents={},observers=[],answers=[],calls=[],dialogs=[],dialogAnswers=[],reports=[],selections=[],statusEvents=[];let clock=Date.UTC(2026,10,7,12,30),selectedRadio='one';
  function node(tag='div'){
   return {tag,children:[],hidden:false,textContent:'',className:'',attributes:{},replacements:0,disabled:false,
    setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){},
@@ -15,12 +15,12 @@ function fixture(){
  const navigator={onLine:true},document={hidden:false,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
  const context={document,navigator,Date:FakeDate,URLSearchParams,location:{search:'',hash:'#radio'},history:{replaceState(){}},
-  CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{openStationProblemReport:station=>reports.push(station),dispatchEvent(){},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
+  CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{openStationProblemReport:station=>reports.push(station),dispatchEvent(event){statusEvents.push(event);},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
   $:id=>ids.get(id),api:async path=>{calls.push(path);const next=answers.shift();if(next instanceof Error)throw next;if(typeof next==='function')return next();if(!next)throw Error('No fixture response');return next;},
-  reconcileSelectedRadio:radios=>radios[0]?.id||'',loadRadioInventory(){},readSelectedRadio(){return 'one';},rememberSelectedRadio(){},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(){return 1;},clearTimeout(){}};
+  reconcileSelectedRadio:radios=>selectedRadio=radios[0]?.id||'',loadRadioInventory(){},readSelectedRadio(){return selectedRadio;},rememberSelectedRadio(id){selectedRadio=id;selections.push(id);},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(){return 1;},clearTimeout(){}};
  runInNewContext(source,context);
  const load=runInNewContext('loadMyRadios',context),freshness=ids.get('radioConnectStatus').beforeNode;
- return {ids,load,answers,calls,dialogs,dialogAnswers,reports,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,
+ return {ids,load,answers,calls,dialogs,dialogAnswers,reports,selections,statusEvents,inventories:context.radioInventories,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,
   advance(ms){clock+=ms;},visibility(){observers[0].fn();},async flush(){await new Promise(resolve=>setImmediate(resolve));}};
 }
 const radio={id:'one',device_code:'3961',online:true,current_station:'Community Radio'};
@@ -39,10 +39,23 @@ test('an unlinked radio page does not claim a device status was checked',async()
  f.answers.push(Error('Status unavailable'));await f.load(true);assert.equal(f.freshness.hidden,false);assert.equal(f.ids.get('refreshRadios').hidden,false);
 });
 
-test('Wi-Fi help is shown only for the selected radio when it is reported offline',async()=>{
+test('Wi-Fi help is available before linking and for the selected offline radio',async()=>{
  const f=fixture(),help=f.ids.get('openWifiSetup');assert.equal(help.hidden,true);
- for(const [answer,visible] of [[response(),false],[response({online:false}),true],[response({online:false}),true],[Error('Status failed'),false],[response({online:false}),true],[response(),false],[{radios:[]},false]]){f.answers.push(answer);await f.load(true);assert.equal(!help.hidden,visible);}
+ for(const [answer,visible] of [[{radios:[]},true],[response(),false],[response({online:false}),true],[response({online:false}),true],[Error('Status failed'),false],[response({online:false}),true],[response(),false],[{radios:[]},true]]){f.answers.push(answer);await f.load(true);assert.equal(!help.hidden,visible);}
  f.answers.push(response({online:false}));await f.load();assert.equal(help.hidden,false);f.navigator.onLine=false;f.windowEvents.offline();assert.equal(help.hidden,true);
+});
+
+test('an expired phone session removes stale radio actions and opens reconnect without a reload',async()=>{
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const old=f.views()[0],unlink=old.children[3],report=old.children[4];f.inventories.set('one',{known:true,codes:new Set(['10'])});
+ f.answers.push(Object.assign(Error('Please reload this page.'),{status:401}));await f.load(true);
+ assert.equal(f.views().length,0);assert.equal(f.ids.get('connectRadioForm').hidden,false);assert.equal(f.ids.get('connectRadio').hidden,true);assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('openWifiSetup').hidden,false);assert.equal(f.freshness.hidden,true);assert.match(f.ids.get('radioConnectStatus').textContent,/Enter the Device Code to reconnect/);assert.equal(f.selections.at(-1),'');assert.equal(f.inventories.size,0);assert.equal(f.statusEvents.at(-1).detail.radios.length,0);
+ await unlink.onclick();report.onclick();assert.equal(f.dialogs.length,0);assert.equal(f.reports.length,0);assert.equal(f.calls.includes('/api/phone/unlink'),false);
+ f.answers.push({radios:[]});await f.load(true);assert.equal(f.ids.get('connectRadioForm').hidden,false);assert.equal(f.ids.get('openWifiSetup').hidden,false);
+});
+
+test('a late unauthorized check cannot replace another page with the reconnect form',async()=>{
+ const f=fixture();f.answers.push(response());await f.load();const check=deferred();f.answers.push(check.promise);const pending=f.load(true);f.ids.get('myRadio').hidden=true;f.visibility();check.reject(Object.assign(Error('Expired'),{status:401}));await pending;
+ assert.equal(f.ids.get('connectRadioForm').hidden,true);assert.equal(f.selections.length,0);assert.equal(f.views().length,1);assert.doesNotMatch(f.ids.get('radioConnectStatus').textContent,/expired/);
 });
 
 test('another offline radio cannot show Wi-Fi help for the selected online radio',async()=>{

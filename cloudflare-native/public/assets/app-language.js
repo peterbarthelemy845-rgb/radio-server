@@ -75,6 +75,16 @@ Object.assign(appCreole,{
  'registration.urlCopied':'Adrès difizyon an kopye.','registration.copyManually':'Chwazi epi kopye adrès difizyon ki parèt anlè a.','registration.checking':'N ap teste difizyon an. Pa gen son k ap jwe.','registration.audioResponse':'Difizyon an voye done odyo. Sa pa verifye si radyo a ka jwe li.','registration.notConfirmed':'Nou pa ka konfime difizyon an. Ou ka toujou anrejistre li.',
  'registration.validUrl':'Antre yon adrès HTTP oswa HTTPS piblik konplè, san fragman.','registration.completeUrl':'Antre yon adrès HTTP oswa HTTPS piblik konplè.','registration.noCredentials':'Sèvi ak yon adrès piblik san non itilizatè, modpas oswa fragman.','registration.publicHost':'Sèvi ak yon non sèvè piblik oswa yon adrès IPv4 piblik.','registration.publicIpv4':'Sèvi ak yon adrès IPv4 piblik, pa yon adrès lokal oswa rezève.','registration.noTokens':'Sèvi ak yon adrès piblik san jeton aksè prive ni modpas.','registration.hostOnly':'Antre sèlman non sèvè piblik la oswa adrès IPv4 li.','registration.chooseProtocol':'Chwazi HTTP oswa HTTPS.','registration.validPort':'Antre yon pò ant 1 ak 65535, oswa kite l vid.','registration.validPath':'Kòmanse chemen an ak yon sèl / epi pa mete fragman.'
 });
+Object.assign(appEnglish,{
+ 'verification.resendCountdown':'Resend in {seconds} seconds','verification.newestCode':'Use only the newest email code.','verification.resent':'A new code has been requested. Use only the newest email code.',
+ 'expiredPhone':'Your phone connection expired. Enter the Device Code to reconnect.',
+ 'recovery.open':'Forgot station code?','recovery.title':'Find your station code','recovery.help':'Enter the email registered to your station.','recovery.email':'Registered email','recovery.send':'Email my station code','recovery.sent':'If this email has a registered station, its station code will arrive shortly.','recovery.sending':'Requesting your station code…'
+});
+Object.assign(appCreole,{
+ 'verification.resendCountdown':'Voye ankò nan {seconds} segonn','verification.newestCode':'Sèvi sèlman ak dènye kòd ou resevwa pa imèl la.','verification.resent':'Nou mande yon nouvo kòd. Sèvi sèlman ak dènye kòd ou resevwa pa imèl la.',
+ 'expiredPhone':'Koneksyon telefòn ou ekspire. Antre kòd aparèy la pou rekonekte.',
+ 'recovery.open':'Ou bliye kòd estasyon an?','recovery.title':'Jwenn kòd estasyon ou','recovery.help':'Antre imèl ki anrejistre pou estasyon ou.','recovery.email':'Imèl ki anrejistre','recovery.send':'Voye kòd estasyon mwen pa imèl','recovery.sent':'Si gen yon estasyon ki anrejistre ak imèl sa a, w ap resevwa kòd estasyon an talè.','recovery.sending':'N ap mande kòd estasyon ou…'
+});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';
