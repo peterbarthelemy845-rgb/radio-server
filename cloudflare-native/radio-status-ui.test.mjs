@@ -32,6 +32,13 @@ test('radio checks show a timestamp and unchanged polls preserve card nodes with
  f.advance(60000);f.answers.push(response());await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,count);assert.match(f.freshness.textContent,/^Checked /);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
 });
 
+test('an unlinked radio page does not claim a device status was checked',async()=>{
+ const f=fixture();f.answers.push({radios:[]});await f.load();assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');assert.equal(f.ids.get('connectRadioForm').hidden,false);
+ f.answers.push(response());await f.load(true);assert.equal(f.freshness.hidden,false);assert.match(f.freshness.textContent,/^Checked /);
+ f.answers.push({radios:[]});await f.load(true);assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');
+ f.answers.push(Error('Status unavailable'));await f.load(true);assert.equal(f.freshness.hidden,false);assert.equal(f.ids.get('refreshRadios').hidden,false);
+});
+
 test('Wi-Fi help is shown only for the selected radio when it is reported offline',async()=>{
  const f=fixture(),help=f.ids.get('openWifiSetup');assert.equal(help.hidden,true);
  for(const [answer,visible] of [[response(),false],[response({online:false}),true],[response({online:false}),true],[Error('Status failed'),false],[response({online:false}),true],[response(),false],[{radios:[]},false]]){f.answers.push(answer);await f.load(true);assert.equal(!help.hidden,visible);}

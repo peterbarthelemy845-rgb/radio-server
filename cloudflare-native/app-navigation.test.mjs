@@ -27,6 +27,19 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio'}={}){
  return {context,nodes,document,window,history,entries,supportLink,wifiLink,stationPopup,stationPopupClose,stationOpenings,click,flush,settle,loads:()=>loads,supportLoads:()=>supportLoads};
 }
 
+test('leaving Support stops local and approved embedded tutorials, and Back restores a paused player',async()=>{
+ const f=fixture({path:'/support',initial:'support'}),track=f.nodes.get('supportVideos'),source='https://www.youtube-nocookie.com/embed/abC1234DEfg';let pauses=0;
+ const video={tagName:'VIDEO',pause(){pauses++;}},youtube={tagName:'IFRAME',src:source},unrelated={tagName:'IFRAME',src:'https://other.example/embed/example'};track.children.push(video,youtube,unrelated);track.querySelectorAll=tag=>track.children.filter(child=>child.tagName===tag.toUpperCase());
+ f.click(f.nodes.get('navRadio'));assert.equal(pauses,1);assert.equal(youtube.src,'about:blank');assert.equal(unrelated.src,'https://other.example/embed/example');assert.equal(f.nodes.get('myRadio').hidden,false);
+ f.history.back();await f.settle();assert.equal(f.nodes.get('support').hidden,false);assert.equal(youtube.src,source);assert.doesNotMatch(youtube.src,/autoplay/);assert.equal(f.supportLoads(),0);
+ f.click(f.nodes.get('navRadio'));assert.equal(pauses,2);assert.equal(youtube.src,'about:blank');
+});
+
+test('owner-page navigation also unloads a playing tutorial without touching the support draft',()=>{
+ const f=fixture({path:'/support',initial:'support'}),track=f.nodes.get('supportVideos'),frame={src:'https://www.youtube-nocookie.com/embed/abC1234DEfg'},form=f.nodes.get('ticketForm');track.querySelectorAll=tag=>tag==='iframe'?[frame]:[];form.elements.message.value='Keep this draft';form.dataset.dirty='1';
+ vm.runInContext("page('login')",f.context);assert.equal(frame.src,'about:blank');vm.runInContext("page('editor');page('support')",f.context);assert.equal(frame.src,'https://www.youtube-nocookie.com/embed/abC1234DEfg');assert.equal(form.elements.message.value,'Keep this draft');assert.equal(form.dataset.dirty,'1');
+});
+
 test('listener installation uses Radio/Support while direct owner screens keep their navigation',()=>{
  for(const options of [{app:true},{standalone:true}]){const f=fixture(options);assert.equal(f.nodes.get('navAdd').hidden,true);assert.equal(f.document.body.classList.values.has('listener-app'),true);vm.runInContext("page('editor')",f.context);assert.equal(f.nodes.get('navAdd').hidden,false);assert.equal(f.document.body.classList.values.has('app-listener-page'),false);}
  const browser=fixture();assert.equal(browser.nodes.get('navAdd').hidden,false);assert.equal(browser.document.body.classList.values.has('app-listener-page'),true);
@@ -68,11 +81,17 @@ test('owner, legal and modified-click navigation are left to their existing beha
 });
 
 
-test('Wi-Fi setup is a same-document listener route with its own title, no tutorial request and a true Back to Radio',async()=>{
+test('Wi-Fi setup is a same-document listener route with its own title and deterministic return to Radio',async()=>{
  const f=fixture({app:true});f.nodes.get('search').value='local';f.window.scrollY=260;f.nodes.get('stations').scrollLeft=140;f.wifiLink.focus();
  const event=f.click(f.wifiLink);assert.equal(event.prevented,true);assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.equal(f.nodes.get('myRadio').hidden,true);assert.equal(f.nodes.get('listenerAppTitle').textContent,'Wi-Fi setup');assert.equal(f.history.state.radioLocalsApp.page,'wifiSetup');assert.equal(f.entries.at(-1).url,'https://radio.example/wifi-setup?app=1');assert.equal(f.nodes.get('navRadio').attrs['aria-current'],'page');assert.equal(f.nodes.get('navAdd').hidden,true);assert.equal(f.supportLoads(),0);assert.equal(f.loads(),0);
  f.window.scrollY=85;f.click(f.nodes.get('wifiBackToRadio'));await f.settle();assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.window.scrollY,260);assert.equal(f.nodes.get('stations').scrollLeft,140);assert.equal(f.nodes.get('search').value,'local');assert.equal(f.document.activeElement,f.wifiLink);assert.equal(f.entries.length,2);assert.equal(f.history.state.radioLocalsApp.page,'myRadio');
- f.history.forward();await f.settle();assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.equal(f.window.scrollY,85);assert.equal(f.supportLoads(),0);
+ assert.equal(f.entries.at(-1).url,'https://radio.example/?app=1#radio');f.history.forward();await f.settle();assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.window.scrollY,260);assert.equal(f.supportLoads(),0);
+});
+
+test('Back to radio works when browser history.back is a no-op and keeps drafts and slider position',async()=>{
+ const f=fixture(),form=f.nodes.get('ticketForm');let backwards=0;f.history.back=()=>{backwards++;};form.elements.message.value='Keep this support draft';form.dataset.dirty='1';f.nodes.get('search').value='community';f.nodes.get('stations').scrollLeft=135;f.window.scrollY=220;
+ f.click(f.wifiLink);assert.equal(f.nodes.get('wifiSetup').hidden,false);f.window.scrollY=80;const event=f.click(f.nodes.get('wifiBackToRadio'));await f.settle();
+ assert.equal(event.prevented,true);assert.equal(backwards,0);assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('wifiSetup').hidden,true);assert.equal(f.history.state.radioLocalsApp.page,'myRadio');assert.equal(f.entries.at(-1).url,'https://radio.example/#radio');assert.equal(f.nodes.get('listenerAppTitle').textContent,'Radio');assert.equal(f.nodes.get('navRadio').attrs['aria-current'],'page');assert.equal(f.window.scrollY,220);assert.equal(f.nodes.get('stations').scrollLeft,135);assert.equal(f.nodes.get('search').value,'community');assert.equal(form.elements.message.value,'Keep this support draft');assert.equal(form.dataset.dirty,'1');
 });
 
 test('direct Wi-Fi setup keeps its route and header without a Radio fallback or support fetch',()=>{

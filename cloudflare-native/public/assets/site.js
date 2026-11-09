@@ -2,7 +2,21 @@
 const $=id=>document.getElementById(id);let state,verificationId,stations=[],humanLoading,sitePageGeneration=0;
 function page(id){sitePageGeneration++;if(id==='library')id='myRadio';if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
 function message(text){$('message').textContent=text;}
-async function api(path,body,options={}){if(!navigator.onLine)throw new Error('No internet. Check your connection and try again.');const response=await fetch(path,{method:body?'POST':'GET',credentials:'same-origin',signal:AbortSignal.timeout(20000),headers:body?{'Content-Type':'application/json','X-CSRF-Token':state?.csrf||''}:{},body:body?JSON.stringify(body):undefined,...(options.cache?{cache:options.cache}:{})});const result=await response.json();if(!response.ok){const error=new Error(result.message||'Please try again.');error.status=response.status;throw error;}return result;}
+async function api(path,body,options={}){
+ if(!navigator.onLine)throw new Error('No internet. Check your connection and try again.');
+ const request={method:body?'POST':'GET',credentials:'same-origin',signal:AbortSignal.timeout(20000),headers:body?{'Content-Type':'application/json','X-CSRF-Token':state?.csrf||''}:{},body:body?JSON.stringify(body):undefined,...(options.cache?{cache:options.cache}:{})};
+ const failure=(text,status)=>{const error=new Error(text);if(status!==undefined)error.status=status;return error;};
+ const timedOut=error=>error?.name==='TimeoutError'||error?.name==='AbortError';
+ let response;
+ try{response=await fetch(path,request);}
+ catch(error){if(timedOut(error))throw failure('Request timed out. Please try again.');if(error?.name==='TypeError')throw failure('Could not connect. Check your internet connection and try again.');throw error;}
+ let result;
+ try{result=await response.json();}
+ catch(error){if(timedOut(error))throw failure('Request timed out. Please try again.',response.status);if(error?.name==='SyntaxError')throw failure('The website is temporarily unavailable. Please try again.',response.status);throw error;}
+ if(result===null||typeof result!=='object')throw failure('The website is temporarily unavailable. Please try again.',response.status);
+ if(!response.ok)throw failure(typeof result.message==='string'&&result.message?result.message:'Please try again.',response.status);
+ return result;
+}
 const formBusyStates=new WeakMap();
 function busy(form,on,freezeFields=false){
  if(on){if(formBusyStates.has(form))return;const controls=[...form.querySelectorAll(freezeFields?'button,input,select,textarea':'button')];formBusyStates.set(form,controls.map(control=>[control,control.disabled]));form.dataset.busy='1';form.setAttribute('aria-busy','true');for(const control of controls)control.disabled=true;}
@@ -10,7 +24,7 @@ function busy(form,on,freezeFields=false){
 }
 function formIsBusy(form){return formBusyStates.has(form);}
 function loadHuman(){if(window.turnstile)return Promise.resolve();if(!humanLoading)humanLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';let timer;const failed=()=>{clearTimeout(timer);script.remove();humanLoading=null;reject(new Error('Security check could not load. Refresh and try again.'));};script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=failed;document.head.append(script);timer=setTimeout(failed,15000);});return humanLoading;}
-async function human(container,action){if(!state?.turnstile_site_key)throw new Error('Security check is not configured yet.');await loadHuman();return new Promise((resolve,reject)=>{let widget,settled=false;const area=container.querySelector('.human');area.replaceChildren();function finish(error,token){if(settled)return;settled=true;clearTimeout(timer);if(widget!==undefined)window.turnstile.remove(widget);if(error)reject(error);else resolve(token);}const timer=setTimeout(()=>finish(new Error('Security check timed out. Please try again.')),90000);widget=window.turnstile.render(area,{sitekey:state.turnstile_site_key,action,theme:'light',size:'flexible',retry:'never',callback:token=>finish(null,token),'error-callback':code=>{finish(new Error('Security check could not complete ('+String(code).replace(/[^0-9]/g,'').slice(0,8)+'). Refresh and try again. If it continues, open this page in your regular browser.'));return true;},'expired-callback':()=>finish(new Error('Security check expired. Please try again.'))});});}
+async function human(container,action){await ensureOwnerSession();await loadHuman();return new Promise((resolve,reject)=>{let widget,settled=false;const area=container.querySelector('.human');area.replaceChildren();function finish(error,token){if(settled)return;settled=true;clearTimeout(timer);if(widget!==undefined)window.turnstile.remove(widget);if(error)reject(error);else resolve(token);}const timer=setTimeout(()=>finish(new Error('Security check timed out. Please try again.')),90000);widget=window.turnstile.render(area,{sitekey:state.turnstile_site_key,action,theme:'light',size:'flexible',retry:'never',callback:token=>finish(null,token),'error-callback':code=>{finish(new Error('Security check could not complete ('+String(code).replace(/[^0-9]/g,'').slice(0,8)+'). Refresh and try again. If it continues, open this page in your regular browser.'));return true;},'expired-callback':()=>finish(new Error('Security check expired. Please try again.'))});});}
 async function fileData(file){if(!file?.size)return undefined;if(file.size>3*1024*1024)throw new Error('Choose an image under 3 MB.');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return {name:file.name,base64:btoa(binary)};}
 let verificationGeneration=0,verificationBusy=false,ownerAccessGeneration=0,registrationRequestFingerprint='',registrationRequestId='',ownerSessionPromise,ownerSessionGeneration=0;
 function setVerificationBusy(on){verificationBusy=on;busy($('verification'),on,true);}
@@ -18,11 +32,11 @@ function currentVerification(generation,id){return verificationGeneration===gene
 function verify(result){verificationGeneration++;setVerificationBusy(false);verificationId=result.verification_id;$('verifyText').textContent='Enter the private code sent to '+result.verification_email+'. It expires in 15 minutes.';$('verifyMessage').textContent='';$('verifyForm').reset();if(!$('verification').open)$('verification').showModal();}
 function registrationMessage(text){const target=$('registerMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
 function loadOwnerSession(){if(!ownerSessionPromise){const generation=ownerSessionGeneration;ownerSessionPromise=api('/api/session').then(result=>{if(generation===ownerSessionGeneration)state=result;return result;}).finally(()=>{ownerSessionPromise=null;});}return ownerSessionPromise;}
-async function ensureOwnerSession(){if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)await loadOwnerSession();if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)throw new Error('Sign-in setup is not ready. Please refresh and try again.');}
+async function ensureOwnerSession(){if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)await loadOwnerSession();if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)throw new Error('Website setup is not ready. Please refresh and try again.');}
 async function registrationRequest(data){const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');if(fingerprint!==registrationRequestFingerprint){registrationRequestFingerprint=fingerprint;registrationRequestId=crypto.randomUUID().replaceAll('-','');}return registrationRequestId;}
 function ownerAccessSuccess(result){$('stationSuccessTitle').textContent=result.registration_completed?(result.review_required?'Waiting for review':'Station added'):'Signed in';$('stationSuccessText').textContent=result.registration_completed?'Station code #'+result.station_code+'.':'You can edit your station.';if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='';if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=true;if(!$('stationSuccess').open)$('stationSuccess').showModal();}
 function ownerEditorUnavailable(result,error){ownerAccessSuccess(result);if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Your verification succeeded. Please try opening the editor again.';else message(error.message);if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=false;}
-async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;state.owner_station=result.station.code;page('editor');$('ownerName').textContent=result.station.name;showOwnerCover(result.station.artwork_url);$('ownerStatus').textContent='Station code #'+result.station.code+' · '+result.station.status.replaceAll('_',' ');const form=$('editForm');if(!preserveDraft||form.dataset.stationCode!==String(result.station.code)){form.elements.stream_url.value=result.station.stream_url;form.elements.bio.value=result.station.bio;}form.dataset.stationCode=String(result.station.code);return true;}
+async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;state.owner_station=result.station.code;page('editor');$('ownerName').textContent=result.station.name;const form=$('editForm'),sameStation=form.dataset.stationCode===String(result.station.code),keepDraft=preserveDraft&&sameStation&&!!(form.dataset.dirty||form.elements.artwork.files[0]);if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(result.station.artwork_url);$('ownerStatus').textContent='Station code #'+result.station.code+' · '+result.station.status.replaceAll('_',' ');if(!keepDraft){form.elements.stream_url.value=result.station.stream_url;form.elements.bio.value=result.station.bio;form.elements.artwork.value='';delete form.dataset.dirty;}form.dataset.stationCode=String(result.station.code);return true;}
 $('openLogin').onclick=()=>{page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await loadOwnerSession();if(generation!==sitePageGeneration)return;if(state?.owner_station)await editor(true,generation);else page('login');}catch(e){if(generation===sitePageGeneration)message(e.message);}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
 $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.preventDefault();});
 $('verification').addEventListener('close',()=>{verificationGeneration++;verificationId=null;setVerificationBusy(false);});
@@ -35,11 +49,11 @@ $('registerForm').onsubmit=async event=>{
 $('loginForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;const generation=++ownerAccessGeneration,view=sitePageGeneration,current=()=>generation===ownerAccessGeneration&&view===sitePageGeneration,data=Object.fromEntries(new FormData(form));busy(form,true,true);try{await ensureOwnerSession();if(!current())return;data.turnstile_token=await human(form,'station-access');if(!current())return;const result=await api('/api/owner/login',data);if(current())verify(result);}catch(e){if(current())message(e.message);}finally{busy(form,false);}};
 $('verifyForm').onsubmit=async event=>{
  event.preventDefault();if(verificationBusy||!verificationId||!$('verification').open)return;const form=event.target,generation=verificationGeneration,id=verificationId,code=form.elements.code.value;setVerificationBusy(true);
- try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;setVerificationBusy(false);$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{await editor();if(!result.registration_completed)message(result.message);}catch(e){ownerEditorUnavailable(result,e);}}
+ try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;setVerificationBusy(false);$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{await editor(!result.registration_completed);if(!result.registration_completed)message(result.message);}catch(e){ownerEditorUnavailable(result,e);}}
  catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}
 };
 $('resend').onclick=async()=>{if(verificationBusy||!verificationId||!$('verification').open)return;const generation=verificationGeneration,id=verificationId;setVerificationBusy(true);try{const token=await human($('verification'),'verification-resend');if(!currentVerification(generation,id))return;const result=await api('/api/owner/resend',{verification_id:id,turnstile_token:token});if(!currentVerification(generation,id))return;verificationId=result.verification_id;$('verifyForm').reset();$('verifyMessage').textContent='A new code has been requested.';}catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}};
-if($('retryOwnerEditor'))$('retryOwnerEditor').onclick=async()=>{const button=$('retryOwnerEditor');if(button.disabled)return;button.disabled=true;try{await editor();$('stationSuccess').close();}catch(e){if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Check your connection and try again.';else message(e.message);}finally{button.disabled=false;}};
+if($('retryOwnerEditor'))$('retryOwnerEditor').onclick=async()=>{const button=$('retryOwnerEditor');if(button.disabled)return;button.disabled=true;try{await editor(true);$('stationSuccess').close();}catch(e){if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Check your connection and try again.';else message(e.message);}finally{button.disabled=false;}};
 $('editForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;const generation=sitePageGeneration,data={stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];busy(form,true,true);try{data.artwork=await fileData(artwork);const result=await api('/api/owner/station',data);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);if(generation!==sitePageGeneration)return;delete form.dataset.dirty;form.elements.artwork.value='';if(await editor(false,generation)!==false)message(result.message);}catch(e){if(generation===sitePageGeneration)message(e.message);}finally{busy(form,false);}};
 $('logout').onclick=async()=>{try{await api('/api/owner/logout',{});ownerSessionGeneration++;if(state)state.owner_station=null;delete $('editForm').dataset.stationCode;page('login');}catch(e){message(e.message);}};
 function list(){}
@@ -156,9 +170,17 @@ async function submitSharedStation(form){
 }
 $('shareForm').onsubmit=event=>{event.preventDefault();return submitSharedStation(event.target);};
 async function initializeSite(){
- page(location.pathname==='/wifi-setup'?'wifiSetup':location.hash==='#radio'?'myRadio':['/support','/device'].includes(location.pathname)?'support':location.pathname==='/add-station'||location.hash==='#add-station'?'login':location.pathname==='/admin'?'admin':location.pathname==='/station-edit'?'login':'library');
- const initial=await Promise.allSettled([loadOwnerSession(),refreshStationDirectory()]);
+ const initialShared=location.pathname.match(/^\/station\/([0-9]{2,6})$/);
+ page(initialShared?'shared':location.pathname==='/wifi-setup'?'wifiSetup':location.hash==='#radio'?'myRadio':['/support','/device'].includes(location.pathname)?'support':location.pathname==='/add-station'||location.hash==='#add-station'?'login':location.pathname==='/admin'?'admin':location.pathname==='/station-edit'?'login':'library');
+ if(initialShared){$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';$('shareStatus').textContent='';}
+  // The public catalogue owns its loading/error state. A slow catalogue must
+  // not delay connecting a radio or opening another page's help form.
+  void refreshStationDirectory().catch(()=>{});
+  const initial=await Promise.allSettled([loadOwnerSession()]);
  if(initial[0].status==='rejected'){state=undefined;message(initial[0].reason.message);}
+ // Shared entry routes use helpers installed by later deferred scripts too.
+ // Bootstrap requests and the correct loading page are already in progress.
+ await siteOrderedScriptsReady;
  try{
   const shared=location.pathname.match(/^\/station\/([0-9]{2,6})$/);if(shared)await openShared(shared[1]);
   if(initial[0].status==='fulfilled'){
@@ -168,8 +190,19 @@ async function initializeSite(){
   }
  }catch(e){message(e.message);}
  try{await initCommunity();}catch(e){message(e.message);}
- finally{window.dispatchEvent(new Event('radio-locals-ready'));}
+ finally{await siteOrderedScriptsReady;window.dispatchEvent(new Event('radio-locals-ready'));}
 }
+// This is the first deferred script. Fast network responses can otherwise
+// announce readiness before the remaining deferred scripts install listeners.
+// A single latch also handles network completion after DOMContentLoaded.
+const siteOrderedScriptsReady=new Promise(resolve=>{
+ const navigation=typeof performance!=='undefined'?performance.getEntriesByType?.('navigation')?.[0]:null;
+ if(document.readyState==='complete'||navigation?.domContentLoadedEventStart>0){resolve();return;}
+ document.addEventListener('DOMContentLoaded',resolve,{once:true});
+ // Older browsers without navigation timing may already be interactive after
+ // DOMContentLoaded. The final load event is a safe fallback without a timer.
+ window.addEventListener?.('load',resolve,{once:true});
+});
 void initializeSite();
 
 let ownerCoverObjectUrl;
@@ -178,5 +211,17 @@ $('ownerCover').onerror=()=>{$('ownerCover').hidden=true;$('ownerCoverEmpty').hi
 $('editForm').elements.artwork.onchange=event=>{const file=event.target.files[0];if(!file)return;showOwnerCover('');ownerCoverObjectUrl=URL.createObjectURL(file);$('ownerCover').src=ownerCoverObjectUrl;$('ownerCover').hidden=false;$('ownerCoverEmpty').hidden=true;};
 $('stationSuccessDone').onclick=()=>$('stationSuccess').close();
 
-$('ticketForm').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);$('ticketMessage').textContent='';try{const data=Object.fromEntries(new FormData(form));data.turnstile_token=await human(form,'support-ticket');const result=await api('/api/support/ticket',data);form.reset();window.dispatchEvent(new CustomEvent('support-ticket-created',{detail:{reference:result.reference}}));$('ticketReference').textContent='Ticket reference: '+result.reference;$('ticketSuccess').querySelector('h2').textContent='Ticket sent';$('ticketSuccess').querySelector('p').hidden=true;$('ticketSuccess').showModal();}catch(e){$('ticketMessage').textContent=e.message;}finally{busy(form,false);}};
+$('ticketForm').onsubmit=async event=>{
+ event.preventDefault();const form=event.target;if(formIsBusy(form))return;
+ // Capture every field before disabling it. A pending security check or send
+ // must not accept a second submission or erase a newer, editable draft.
+ const data=Object.fromEntries(new FormData(form));busy(form,true,true);$('ticketMessage').textContent='';
+ try{
+  data.turnstile_token=await human(form,'support-ticket');const result=await api('/api/support/ticket',data);form.reset();window.dispatchEvent(new CustomEvent('support-ticket-created',{detail:{reference:result.reference}}));$('ticketReference').textContent='Ticket reference: '+result.reference;$('ticketMessage').textContent='Ticket sent. Reference: '+result.reference;
+  // A delayed receipt belongs to Support. Keep its reference there without
+  // opening a modal over another page, a background tab or an active dialog.
+  if(!$('support').hidden&&!document.hidden&&!document.querySelector('dialog[open]')){$('ticketSuccess').querySelector('h2').textContent='Ticket sent';$('ticketSuccess').querySelector('p').hidden=true;$('ticketSuccess').showModal();}
+ }
+ catch(e){$('ticketMessage').textContent=e.message;}finally{busy(form,false);}
+};
 $('closeTicketSuccess').onclick=()=>$('ticketSuccess').close();

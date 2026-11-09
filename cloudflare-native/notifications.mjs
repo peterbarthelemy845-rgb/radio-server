@@ -4,7 +4,7 @@ import {digest,encrypt,randomHex,HttpError} from './security.mjs';
 // URLs, artwork paths, sign-in codes and advertiser contact details stay out of mail.
 const messages={
  'station-approved':['Your Radio Locals station is approved','Your station is approved and published on Radio Locals.'],
- 'station-needs-changes':['Your Radio Locals station needs changes','Your station needs changes before it can be published. Sign in to update the station details and submit them for review.'],
+ 'station-needs-changes':['Your Radio Locals station needs changes','Your station needs changes and is currently suspended from Radio Locals. Station editing is unavailable while it is suspended.'],
  'station-removed':['Your Radio Locals station was removed','Your station has been removed from Radio Locals.'],
  'ad-cleared':['Your Radio Locals advertisement passed review','An advertisement for your station passed administrator safety review. Sign in to review and approve it before it can appear on radios.'],
  'ad-approved':['Your Radio Locals advertisement is approved','An advertisement for your station was approved by the station owner. It can appear on compatible radios during its scheduled dates.'],
@@ -21,7 +21,8 @@ export function decisionReason(value,fallback=''){
 export async function ownerNotification(env,{kind,stationCode,recipient,event,adId,reason=''}){
  const message=messages[kind];
  if(!message||!Number.isSafeInteger(stationCode)||stationCode<10||typeof recipient!=='string'||recipient.length>254||!/^[^\s@\r\n]+@[^\s@\r\n]+\.[^\s@\r\n]+$/.test(recipient)||adId!==undefined&&!/^[a-f0-9]{32}$/.test(adId))throw new Error('Invalid owner notification.');
- const explanation=decisionReason(reason),text=`${message[1]}\n\nStation code: ${stationCode}${adId?'\nAdvertisement reference: '+adId:''}${explanation?'\n\nReason: '+explanation:''}\n\nUse the Radio Locals website to sign in. Never share your sign-in code.`;
+ const nextStep=kind==='station-needs-changes'?'Contact Radio Locals Support for help: https://radiolocals.com/support':'Use the Radio Locals website to sign in.';
+ const explanation=decisionReason(reason),text=`${message[1]}\n\nStation code: ${stationCode}${adId?'\nAdvertisement reference: '+adId:''}${explanation?'\n\nReason: '+explanation:''}\n\n${nextStep} Never share your sign-in code.`;
  return {id:'owner-notice:'+await digest(JSON.stringify([kind,stationCode,event])),recipient,subject:message[0],encrypted_payload:await encrypt(env,JSON.stringify({text}))};
 }
 // A private operation marker gates every side effect of the optimistic update.

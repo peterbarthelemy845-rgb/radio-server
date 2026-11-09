@@ -1,11 +1,36 @@
 'use strict';
-function shareButton(label,name,url){const button=document.createElement('button');button.type='button';button.setAttribute('aria-label',label);button.title=label;button.textContent=label;button.onclick=async()=>{api('/api/events',{event_id:crypto.randomUUID().replaceAll('-',''),station_code:url.split('/').pop(),channel:'more'}).catch(()=>{});try{if(navigator.share)await navigator.share({title:name,url});else{await navigator.clipboard.writeText(url);button.textContent='Link copied';}}catch{}};return button;}
+function shareButton(label,name,url){
+ const button=document.createElement('button');button.type='button';button.setAttribute('aria-label',label);button.title=label;button.textContent=label;let running=false;
+ button.onclick=async()=>{
+  const popup=button.closest('dialog'),current=()=>button.isConnected&&popup?.open&&button.closest('dialog')===popup&&!shareRunning;
+  if(running||!current())return;
+  // Only public station links belong in either the system share sheet or the
+  // manual fallback. Pairing codes and query parameters never enter sharing.
+  let publicUrl;try{publicUrl=new URL(url,location.origin);if(publicUrl.origin!==location.origin||!/^\/station\/[1-9][0-9]{1,5}$/.test(publicUrl.pathname)||publicUrl.search||publicUrl.hash)return;}catch{return;}
+  running=true;button.disabled=true;popup.querySelector('.station-share-feedback')?.remove();
+  api('/api/events',{event_id:crypto.randomUUID().replaceAll('-',''),station_code:publicUrl.pathname.split('/').pop(),channel:'more'}).catch(()=>{});
+  try{
+   if(typeof navigator.share==='function')try{await navigator.share({title:name,url:publicUrl.href});return;}catch(error){if(error?.name==='AbortError'||!current())return;}
+   if(!current())return;
+   try{
+    if(typeof navigator.clipboard?.writeText!=='function')throw Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(publicUrl.href);if(!current())return;
+    const status=document.createElement('p');status.className='station-share-feedback';status.setAttribute('role','status');status.setAttribute('data-i18n','sharing.copied');status.textContent='Link copied';button.after(status);
+   }catch{
+    if(!current())return;
+    const feedback=document.createElement('div');feedback.className='station-share-feedback';const label=document.createElement('label'),help=document.createElement('span');help.setAttribute('role','status');help.setAttribute('data-i18n','sharing.copyHelp');help.textContent='Copy this link to share the station.';
+    const link=document.createElement('input');link.type='text';link.readOnly=true;link.value=publicUrl.href;link.setAttribute('data-i18n-skip','');link.onclick=()=>link.select();link.onfocus=()=>link.select();label.append(help,link);feedback.append(label);button.after(feedback);link.focus();
+   }
+  }finally{running=false;button.disabled=false;}
+ };
+ return button;
+}
 let stationListSnapshot='';
 function renderStationSlider(track,found,emptyText,saved=false){
  track.replaceChildren();
  for(const station of found){
   const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — add again to your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
-  const image=document.createElement('img');image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
+  const image=document.createElement('img');image.onerror=()=>{image.onerror=null;image.src='/assets/logo-placeholder.svg';};image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
   tile.append(image);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:true});const item=document.createElement('div');item.className='station-slider-item';const name=document.createElement('p');name.className='station-tile-name';name.textContent=station.name;item.append(tile,name);track.append(item);
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=emptyText;track.append(empty);}
@@ -16,7 +41,7 @@ list=function(){
  const savedCodes=known?inventory.codes:new Set(),matches=s=>(s.name+' '+s.listener_code).toLowerCase().includes(query);
  const saved=known?[...savedCodes].map(code=>stations.find(s=>String(s.listener_code)===code)||{listener_code:code,name:'Station '+code,logo_url:''}).filter(matches):[];
  const available=stations.filter(s=>!savedCodes.has(String(s.listener_code))&&matches(s));
- const hint=!radioId?'Connect or select a radio above to see its saved stations.':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
+ const hint=!radioId?'':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
  const snapshot=JSON.stringify([radioId,known,query,hint,saved,available]);if(snapshot===stationListSnapshot)return;stationListSnapshot=snapshot;
  $('stationCount').textContent='';$('savedStationsSection').hidden=!known;$('stationInventoryHelp').textContent=hint;$('stationInventoryHelp').hidden=!hint;
  renderStationSlider($('savedStations'),saved,query?'No matching saved stations.':'No saved stations reported.',true);
@@ -36,7 +61,7 @@ const coverInspections=new WeakMap();
 function registrationLogoText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
 function registrationLogoResult(key,message){return {valid:false,key,message};}
 function clearRegistrationLogoUrl(){if(coverPreviewUrl){URL.revokeObjectURL(coverPreviewUrl);coverPreviewUrl=null;}}
-function registrationLogoControls(){coverRemove.disabled=!coverInput.files[0]||$('registerForm').dataset.busy==='1';}
+function registrationLogoControls(){coverRemove.hidden=!coverInput.files[0];coverRemove.disabled=coverRemove.hidden||$('registerForm').dataset.busy==='1';}
 function registrationLogoStatus(result){
  coverCurrentResult=result;const key=result?.key||'registration.logoHelp',fallback=result?.message||'PNG, JPG or WebP, up to 3 MB.';
  coverHint.setAttribute('data-i18n',key);coverHint.textContent=registrationLogoText(key,fallback);coverHint.dataset.state=result&&!result.valid?'invalid':'';
@@ -88,6 +113,7 @@ $('registerForm').addEventListener('reset',()=>queueMicrotask(updateRegistration
 $('registerForm').addEventListener('form-busy-changed',registrationLogoControls);
 window.addEventListener('app-language-changed',()=>registrationLogoStatus(coverCurrentResult));
 window.addEventListener('pagehide',clearRegistrationLogoUrl);
+registrationLogoControls();
 
 function highlightMenu(){const active=(!$('myRadio').hidden||!$('wifiSetup').hidden)?'navRadio':!$('library').hidden?'navLibrary':!$('support').hidden?'support':'navAdd';for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > *')){if(tab.id===active||(active==='support'&&tab.getAttribute('href')==='/support'))tab.setAttribute('aria-current','page');else tab.removeAttribute('aria-current');}}
 new MutationObserver(highlightMenu).observe(document.querySelector('main'),{attributes:true,attributeFilter:['hidden'],subtree:true});highlightMenu();
@@ -99,4 +125,4 @@ for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > 
 const stationPopup=document.createElement('dialog');stationPopup.id='stationAddPopup';stationPopup.setAttribute('aria-label','Add station to your radio');
 const stationPopupClose=document.createElement('button');stationPopupClose.className='station-popup-close';stationPopupClose.textContent='Close';stationPopupClose.onclick=()=>stationPopup.close();stationPopup.append(stationPopupClose);document.body.append(stationPopup);
 stationPopup.addEventListener('close',()=>{$('shared').hidden=true;});
-async function openStationPopup(code,{autoAdd=false}={}){if(shareRunning)return;stationPopup.append($('shared'));$('shared').dataset.quickAdd=autoAdd?'1':'';$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';$('shareStationBio').hidden=true;$('shareStatus').textContent='';stationPopup.querySelector('.station-popup-share')?.remove();const selected=stations.find(s=>String(s.listener_code)===String(code));if(selected){const share=shareButton('Share station',selected.name,location.origin+'/station/'+code);share.className='station-popup-share secondary';share.textContent='Share station';stationPopup.append(share);}stationPopup.showModal();try{await openShared(code,true,autoAdd);}catch(e){if(stationPopup.open)$('shareStatus').textContent=e.message;}}
+async function openStationPopup(code,{autoAdd=false}={}){if(shareRunning)return;stationPopup.append($('shared'));$('shared').dataset.quickAdd=autoAdd?'1':'';$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';$('shareStationBio').hidden=true;$('shareStatus').textContent='';stationPopup.querySelector('.station-popup-share')?.remove();stationPopup.querySelector('.station-share-feedback')?.remove();const selected=stations.find(s=>String(s.listener_code)===String(code));if(selected){const share=shareButton('Share station',selected.name,location.origin+'/station/'+code);share.className='station-popup-share secondary';share.textContent='Share station';stationPopup.append(share);}stationPopup.showModal();try{await openShared(code,true,autoAdd);}catch(e){if(stationPopup.open)$('shareStatus').textContent=e.message;}}

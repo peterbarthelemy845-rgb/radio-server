@@ -40,6 +40,27 @@ test('directory excludes private fields and suspended stations',async()=>{
   assert.equal((await handle(new Request('https://native.example/api/stations/10'),env,now)).status,404);
 });
 
+test('HTTPS pages and APIs receive host-only transport security without changing their content or security headers',async()=>{
+ const env=await fixture(),html='<html><body>Support page</body></html>';env.MIGRATION_PREVIEW='false';env.ASSETS={fetch:async()=>new Response(html,{headers:{'Content-Type':'text/html'}})};
+ const page=await fetchHandler(new Request('https://native.example/support'),env);assert.equal(page.status,200);assert.equal(page.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.doesNotMatch(page.headers.get('Strict-Transport-Security'),/includeSubDomains|preload/i);assert.match(page.headers.get('Content-Security-Policy'),/frame-ancestors 'none'/);assert.equal(page.headers.get('Cache-Control'),'no-store');assert.equal(await page.text(),html);
+ const api=await fetchHandler(new Request('https://native.example/api/stations'),env);assert.equal(api.status,200);assert.equal(api.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.equal(api.headers.get('Content-Type'),'application/json; charset=utf-8');assert.equal((await api.json()).stations[0].listener_code,'10');
+});
+
+test('HTTPS transport security also covers errors while keeping status and private error handling intact',async()=>{
+ const env=await fixture(),denied=await fetchHandler(request('/api/radio/poll',{},'e'.repeat(64)),env);assert.equal(denied.status,401);assert.equal(denied.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.deepEqual(await denied.json(),{message:'Radio authentication required.'});
+ const failure=await fetchHandler(new Request('https://native.example/health'),{DB:{prepare(){throw Error('Private database detail');}}});assert.equal(failure.status,503);assert.equal(failure.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.deepEqual(await failure.json(),{message:'Service temporarily unavailable.'});
+});
+
+test('transport security preserves session cookies and redirect status without mutating immutable responses',async()=>{
+ const env=await fixture();env.DATA_ENCRYPTION_KEY='a'.repeat(64);const session=await fetchHandler(new Request('https://native.example/api/session'),env);assert.equal(session.status,200);assert.match(session.headers.get('Set-Cookie'),/^__Host-rl_session=[a-f0-9]{64}; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=2592000$/);assert.equal(session.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.match((await session.json()).csrf,/^[a-f0-9]{64}$/);
+ const immutable=Response.redirect('https://native.example/assets/new.js',302);env.ASSETS={fetch:async()=>immutable};const redirect=await fetchHandler(new Request('https://native.example/assets/old.js'),env);assert.equal(redirect.status,302);assert.equal(redirect.headers.get('Location'),'https://native.example/assets/new.js');assert.equal(redirect.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.equal(immutable.headers.get('Strict-Transport-Security'),null);
+});
+
+test('local HTTP requests are not redirected or assigned an HTTPS-only policy',async()=>{
+ const env=await fixture(),api=await fetchHandler(new Request('http://localhost:8787/api/stations'),env);assert.equal(api.status,200);assert.equal(api.headers.get('Strict-Transport-Security'),null);assert.equal((await api.json()).stations.length,1);
+ const missing=await fetchHandler(new Request('http://localhost:8787/not-found'),env);assert.equal(missing.status,404);assert.equal(missing.headers.get('Strict-Transport-Security'),null);
+});
+
 test('saved-station revision scans expose only requested published revisions and reflect approved changes',async()=>{
  const env=await fixture(),scan=()=>handle(new Request('https://native.example/api/device/station-revisions?codes=10,11,10'),env,now);
  env.DB.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('Unrequested','https://example.com/other','secret@example.com','published',now,now);

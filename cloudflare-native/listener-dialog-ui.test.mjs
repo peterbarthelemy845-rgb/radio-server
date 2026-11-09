@@ -29,3 +29,29 @@ test('short notices have one Done button and no empty description while confirma
  const f=fixture(),notice=f.open('Radio connected','');assert.equal(f.get('listenerDialogText').hidden,true);assert.equal(f.dialog.attributes['aria-describedby'],undefined);assert.equal(f.get('listenerDialogCancel').hidden,true);assert.equal(f.get('listenerDialogConfirm').textContent,'Done');f.close('confirmed');f.flush();await notice;
  const confirmation=f.open('Unlink radio?','Device code 3961 will be disconnected from this phone.','Unlink radio',true);assert.equal(f.get('listenerDialogText').hidden,false);assert.equal(f.dialog.attributes['aria-describedby'],'listenerActionText');assert.equal(f.get('listenerDialogCancel').hidden,false);assert.equal(f.get('listenerDialogConfirm').textContent,'Unlink radio');f.close('cancelled');f.flush();assert.equal(await confirmation,false);
 });
+
+const draftSource=source.slice(source.indexOf('const draftForms='));
+function draftFixture(){
+ const forms=new Map(),events=new Map();let confirms=0;
+ for(const id of ['registerForm','editForm','ticketForm','advertiseForm']){
+  const handlers=new Map(),form={dataset:{},visible:false,value:'Private unsaved text',addEventListener(type,fn){handlers.set(type,fn);},getClientRects(){return this.visible?[{}]:[];},dispatch(type){handlers.get(type)?.();}};forms.set(id,form);
+ }
+ const context={$:id=>forms.get(id),window:{addEventListener(type,fn){events.set(type,fn);}},document:{addEventListener(type,fn){events.set(type,fn);}},confirm(){confirms++;return false;}};runInNewContext(draftSource,context);
+ function event(){return {preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};}
+ return {forms,confirms:()=>confirms,unload(){const attempt=event();events.get('beforeunload')(attempt);return attempt;},navigate(target={tagName:'BUTTON'}){const attempt=event();attempt.target={closest:()=>target};events.get('click')(attempt);return attempt;}};
+}
+
+test('real reload or departure protects hidden drafts on every editable page until reset',()=>{
+ for(const id of ['registerForm','editForm','ticketForm','advertiseForm']){
+  const f=draftFixture(),form=f.forms.get(id);form.dispatch('input');assert.equal(form.visible,false);
+  const departure=f.unload();assert.equal(departure.prevented,true,id);assert.equal(departure.returnValue,'');assert.equal(form.value,'Private unsaved text');assert.equal(form.dataset.dirty,'1');
+  form.dispatch('reset');assert.equal(f.unload().prevented,undefined,id);
+ }
+});
+
+test('hidden drafts do not add confirmation prompts to internal tab navigation',()=>{
+ const f=draftFixture(),form=f.forms.get('registerForm');form.dispatch('input');
+ const navigation=f.navigate();assert.equal(navigation.prevented,undefined);assert.equal(f.confirms(),0);assert.equal(form.dataset.dirty,'1');assert.equal(f.unload().prevented,true);
+ form.visible=true;const leavingVisible=f.navigate();assert.equal(f.confirms(),1);assert.equal(leavingVisible.prevented,true);assert.equal(leavingVisible.stopped,true);assert.equal(form.dataset.dirty,'1');
+ const newTab=f.navigate({target:'_blank'});assert.equal(newTab.prevented,undefined);assert.equal(f.confirms(),1);
+});

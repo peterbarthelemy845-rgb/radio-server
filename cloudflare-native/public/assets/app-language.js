@@ -2,6 +2,8 @@
 // Translations are bundled locally. Station names, bios, messages and form values
 // are user content and are never sent to a translation service or rewritten.
 const appEnglish={
+ 'sharing.copied':'Link copied','sharing.copyHelp':'Copy this link to share the station.',
+ 'network.connect':'Could not connect. Check your internet connection and try again.','network.timeout':'Request timed out. Please try again.','network.unavailable':'The website is temporarily unavailable. Please try again.','network.setup':'Website setup is not ready. Please refresh and try again.',
  'auth.createTab':'Create your station','auth.account':'Station account','short.review':'Waiting for review','short.signedIn':'Signed in','short.ticketSent':'Ticket sent','short.editStation':'You can edit your station.','stationReport.open':'Report a station problem','stationReport.subject':'Station problem','stationReport.clear':'Clear station',
  'radio':'Radio','support':'Support','larger':'Larger text','standard':'Standard text','language':'Language',
  'device':'Device Code','connect':'Connect my radio','unlink':'Unlink radio','online':'Online','unavailable':'Status unavailable',
@@ -26,6 +28,8 @@ const appEnglish={
  'supportStatus.title':'My support ticket','supportStatus.intro':'View your ticket status and replies. Verify your email when using another browser.','supportStatus.reference':'Ticket reference','supportStatus.email':'Email used for this ticket','supportStatus.sendCode':'Email me a private code','supportStatus.verifyTitle':'Verify your email','supportStatus.verifyHelp':'If the email and ticket reference match, a private code will arrive shortly. Enter the 6-digit code here. It expires in 15 minutes.','supportStatus.emailCode':'6-digit email code','supportStatus.verifyButton':'Verify and open ticket','supportStatus.cancel':'Cancel','supportStatus.open':'Open','supportStatus.review':'In review','supportStatus.closed':'Closed','supportStatus.loading':'Checking ticket status…','supportStatus.original':'Your message','supportStatus.replies':'Support replies','supportStatus.noReplies':'No reply yet. Your ticket status will update here.','supportStatus.checked':'Checked','supportStatus.refresh':'Refresh status','supportStatus.closePrivate':'Close private ticket'
 };
 const appCreole={
+ 'sharing.copied':'Lyen an kopye','sharing.copyHelp':'Kopye lyen sa a pou pataje estasyon an.',
+ 'network.connect':'Nou pa ka konekte. Tcheke koneksyon entènèt ou epi eseye ankò.','network.timeout':'Demann nan pran twòp tan. Tanpri eseye ankò.','network.unavailable':'Sit la pa disponib pou yon ti tan. Tanpri eseye ankò.','network.setup':'Sit la poko pare. Tanpri rafrechi paj la epi eseye ankò.',
  'auth.createTab':'Kreye estasyon ou','auth.account':'Kont estasyon','short.review':'N ap egzamine li','short.signedIn':'Ou konekte','short.ticketSent':'Demann nan voye','short.editStation':'Ou ka modifye estasyon ou.','stationReport.open':'Rapòte yon pwoblèm estasyon','stationReport.subject':'Pwoblèm estasyon','stationReport.clear':'Retire estasyon',
  'radio':'Radyo','support':'Sipò','larger':'Pi gwo tèks','standard':'Tèks nòmal','language':'Lang',
  'device':'Kòd aparèy','connect':'Konekte radyo mwen','unlink':'Dekonekte radyo a','online':'Konekte','unavailable':'Estati a pa disponib',

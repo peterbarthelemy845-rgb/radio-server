@@ -162,14 +162,22 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   }
   return json({message:'Page or feature not found.'},404);
 }
+function transportSecurity(request,response){
+  if(new URL(request.url).protocol!=='https:')return response;
+  // Redirect and asset responses may have immutable headers. Preserve their
+  // status, cookies and body while applying this host's HTTPS policy.
+  const secured=new Response(response.body,response);
+  secured.headers.set('Strict-Transport-Security','max-age=15552000');
+  return secured;
+}
 export async function fetchHandler(request,env,ctx) {
   try{const response=await handle(request,env);
     if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|support\/(?:ticket|status\/request)$)/.test(new URL(request.url).pathname)&&response.ok)
       ctx.waitUntil(processMail(env));
-    return response;
+    return transportSecurity(request,response);
   }catch(error){
-    return json({message:error instanceof HttpError?error.message:'Service temporarily unavailable.'},
-      error instanceof HttpError?error.status:503);
+    return transportSecurity(request,json({message:error instanceof HttpError?error.message:'Service temporarily unavailable.'},
+      error instanceof HttpError?error.status:503));
   }
 }
 export async function cleanup(env,now=Math.floor(Date.now()/1000)) {

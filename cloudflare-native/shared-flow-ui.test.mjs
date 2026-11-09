@@ -53,6 +53,14 @@ test('opening a shared URL or a restored station panel never adds automatically'
  for(const inPopup of [false,true]){const f=fixture();f.answers.push({name:'First station',listener_code:'10'},{radios:[{id:'one',online:true}]});await f.open('10',inPopup);assert.equal(f.calls.length,2);assert.equal(f.dialogs.length,0);assert.equal(f.form.hidden,false);}
 });
 
+test('fast shared-link startup waits for deferred helpers and still requires one explicit add',async()=>{
+ const f=fixture(),startupSource=source.slice(source.indexOf('async function initializeSite()'),source.indexOf('void initializeSite();')),reconcile=f.ctx.reconcileSelectedRadio;let domReady;
+ f.ctx.document.readyState='interactive';f.ctx.document.addEventListener=(type,handler)=>{if(type==='DOMContentLoaded')domReady=handler;};f.ctx.window={dispatchEvent(){}};f.ctx.location={pathname:'/station/10',hash:''};f.ctx.refreshStationDirectory=()=>Promise.resolve([]);f.ctx.loadOwnerSession=async()=>{f.ctx.state={owner_station:null};return f.ctx.state;};f.ctx.initCommunity=async()=>{};f.ctx.reconcileSelectedRadio=undefined;
+ runInNewContext(startupSource,f.ctx);f.answers.push({name:'First station',listener_code:'10'},{radios:[{id:'one',online:true}]});const startup=runInNewContext('initializeSite()',f.ctx);await new Promise(setImmediate);assert.equal(f.id('shared').hidden,false);assert.equal(f.form.hidden,true);assert.equal(f.id('shareName').textContent,'Loading station…');assert.equal(f.calls.length,0);
+ f.ctx.reconcileSelectedRadio=reconcile;domReady(new Event('DOMContentLoaded'));await startup;assert.equal(f.calls.length,2);assert.equal(f.form.hidden,false);assert.equal(f.dialogs.length,0);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);
+ f.answers.push({command_id:'one-command'},{state:'added'});await f.submit();assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,1);assert.deepEqual(f.dialogs.map(dialog=>dialog[0]),['Station added']);
+});
+
 test('a first-time station addition waits for physical approval then adds without another confirmation',async()=>{
  const approval=deferred(),f=fixture({useDeviceCode:true});f.answers.push({claim_id:'claim',confirmation_code:'5831'},approval.promise,{command_id:'command'},{state:'added'});const adding=f.submit();await until(()=>f.calls.length===2);assert.equal(f.calls.some(c=>c.path==='/api/phone/add'),false);assert.match(f.id('shareStatus').textContent,/5831/);approval.resolve({state:'approved',radio_id:'new-radio'});await adding;
  assert.deepEqual(f.dialogs.map(d=>d[0]),['Station added']);assert.equal(f.calls.find(c=>c.path==='/api/phone/add').body.radio_id,'new-radio');

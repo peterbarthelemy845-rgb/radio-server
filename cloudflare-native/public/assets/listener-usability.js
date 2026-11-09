@@ -50,5 +50,7 @@ function listenerActionDialog(title,text,confirmLabel='Done',allowCancel=false){
 }
 const draftForms=['registerForm','editForm','ticketForm','advertiseForm'];for(const id of draftForms){const form=$(id);form.addEventListener('input',()=>form.dataset.dirty='1');form.addEventListener('reset',()=>delete form.dataset.dirty);}
 function visibleDrafts(){return draftForms.map($).filter(form=>form.dataset.dirty&&form.getClientRects().length);}
-window.addEventListener('beforeunload',event=>{if(visibleDrafts().length){event.preventDefault();event.returnValue='';}});
+// Internal tabs retain their hidden forms. A real reload or departure discards
+// all in-memory drafts, including those on a page that is no longer visible.
+window.addEventListener('beforeunload',event=>{if(draftForms.some(id=>$(id).dataset.dirty)){event.preventDefault();event.returnValue='';}});
 document.addEventListener('click',event=>{const navigation=event.target.closest('nav button,nav a,a[href]');if(!navigation||navigation.target==='_blank')return;const drafts=visibleDrafts();if(drafts.length&&!confirm('Leave this form? Your unsaved changes will be lost.')){event.preventDefault();event.stopImmediatePropagation();}},true);

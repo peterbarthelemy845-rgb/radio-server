@@ -29,11 +29,28 @@ function appApplyMode(){
  if(supportLink)supportLink.setAttribute('aria-current',appCurrentPage==='support'?'page':'false');
  $('navRadio').setAttribute('aria-current',['myRadio','wifiSetup'].includes(appCurrentPage)?'page':'false');
 }
+const appSupportPausedFrames=new WeakMap();
+function appPauseSupportMedia(){
+ for(const video of $('supportVideos').querySelectorAll('video'))video.pause();
+ for(const frame of $('supportVideos').querySelectorAll('iframe')){
+  // Hiding an iframe leaves its player running. Unload only our approved
+  // tutorial embeds, then restore their original non-autoplay URL on return.
+  if(/^https:\/\/www\.youtube-nocookie\.com\/embed\/[A-Za-z0-9_-]{11}$/.test(frame.src)){
+   appSupportPausedFrames.set(frame,frame.src);frame.src='about:blank';
+  }
+ }
+}
+function appRestoreSupportMedia(){
+ for(const frame of $('supportVideos').querySelectorAll('iframe')){
+  const source=appSupportPausedFrames.get(frame);if(!source)continue;
+  appSupportPausedFrames.delete(frame);frame.src=source;
+ }
+}
 const appOriginalPage=page;
 page=function(id){
  const next=id==='library'?'myRadio':id;
- if(next!==appCurrentPage){appRememberPosition();if(appCurrentPage==='support')for(const video of $('supportVideos').querySelectorAll('video'))video.pause();}
- appOriginalPage(id);appCurrentPage=next;appApplyMode();
+ if(next!==appCurrentPage){appRememberPosition();if(appCurrentPage==='support')appPauseSupportMedia();}
+ appOriginalPage(id);appCurrentPage=next;appApplyMode();if(next==='support')appRestoreSupportMedia();
 };
 const appOriginalList=list;
 list=function(){const positions=['stations','savedStations'].map(id=>[id,$(id)?.scrollLeft||0]);appOriginalList();for(const [id,left] of positions)if($(id))$(id).scrollLeft=left;};
@@ -129,10 +146,11 @@ window.addEventListener('click',event=>{
  const radio=['navRadio','navLibrary'].includes(target.id)||backToRadio;if(!support&&!radio&&!wifi)return;
  event.preventDefault();event.stopImmediatePropagation();if(shareRunning||window.radioControlsBusy)return;
  const next=wifi?'wifiSetup':support?'support':'myRadio';if(next===appCurrentPage){if(next==='myRadio')appShowPage(next,{replace:true});return;}
- if(backToRadio&&history.state?.radioLocalsApp?.from==='myRadio'){history.back();return;}
+ // The visible Back button always returns to Radio, even when a browser has
+ // no usable previous history entry. Keep in-memory drafts and positions.
+ if(backToRadio){appShowPage('myRadio',{replace:true,focus:$('openWifiSetup').hidden?$('navRadio'):$('openWifiSetup')});return;}
  appShowPage(next,{push:!backToRadio,replace:backToRadio,focus:next==='myRadio'?$('navRadio'):$('listenerAppTitle')});
 },true);
-window.addEventListener('beforeunload',event=>{if($('ticketForm').dataset.dirty){event.preventDefault();event.returnValue='';}});
 const appHelp=document.createElement('button');appHelp.id='listenerSupportHelp';appHelp.type='button';appHelp.className='support-help';appHelp.textContent='Get help';appHelp.setAttribute('aria-expanded','false');
 appHelp.onclick=()=>{const expanded=!appHelp.dataset.expanded;if(expanded)appHelp.dataset.expanded='1';else delete appHelp.dataset.expanded;$('ticketForm').hidden=!expanded;appHelp.setAttribute('aria-expanded',String(expanded));if(expanded)$('ticketForm').elements.name.focus();};$('ticketForm').before(appHelp);
 if('scrollRestoration' in history)history.scrollRestoration='manual';

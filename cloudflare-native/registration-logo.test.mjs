@@ -32,9 +32,9 @@ test('invalid size, filename, MIME and image signatures fail before image decodi
 
 test('valid PNG, JPEG and WebP reuse one inspection and release decode and preview URLs',async()=>{
  for(const options of [{},{name:'logo.JPG',type:'image/jpeg',bytes:jpg},{name:'logo.webp',type:'',bytes:webp}]){
-  const f=fixture(),file=logoFile(options),changed=f.choose(file);await f.flush();assert.equal(f.images.length,1);f.images[0].load(1000,4000);await changed;
+  const f=fixture();assert.equal(f.remove.hidden,true);const file=logoFile(options),changed=f.choose(file);await f.flush();assert.equal(f.remove.hidden,false);assert.equal(f.images.length,1);f.images[0].load(1000,4000);await changed;
   assert.equal(await f.validate(file),true);assert.equal(file.reads,1);assert.equal(f.images.length,1);assert.equal(f.input.validationMessage,'');assert.match(f.preview.src,/^blob:test\//);assert.equal(f.revoked.length,1);assert.equal(f.remove.disabled,false);
-  const previewUrl=f.preview.src;f.removeLogo();assert.equal(f.preview.src,'/assets/logo-placeholder.svg');assert.equal(f.remove.disabled,true);assert.ok(f.revoked.includes(previewUrl));assert.equal(f.form.dataset.dirty,'1');
+  const previewUrl=f.preview.src;f.removeLogo();assert.equal(f.preview.src,'/assets/logo-placeholder.svg');assert.equal(f.remove.disabled,true);assert.equal(f.remove.hidden,true);assert.ok(f.revoked.includes(previewUrl));assert.equal(f.form.dataset.dirty,'1');
  }
 });
 
@@ -55,8 +55,8 @@ test('an old asynchronous selection cannot overwrite the newer preview or remova
 
 test('busy state protects Remove and reset clears previews and validity',async()=>{
  const f=fixture(),file=logoFile(),changed=f.choose(file);await f.flush();f.images[0].load();await changed;const preview=f.preview.src;
- f.busy(true);assert.equal(f.remove.disabled,true);f.removeLogo();assert.equal(f.input.files[0],file);assert.equal(f.preview.src,preview);f.busy(false);assert.equal(f.remove.disabled,false);
- await f.reset();assert.equal(f.preview.src,'/assets/logo-placeholder.svg');assert.equal(f.remove.disabled,true);assert.equal(f.input.validationMessage,'');assert.ok(f.revoked.includes(preview));assert.equal(await f.validate(),false);
+ f.busy(true);assert.equal(f.remove.disabled,true);assert.equal(f.remove.hidden,false);f.removeLogo();assert.equal(f.input.files[0],file);assert.equal(f.preview.src,preview);f.busy(false);assert.equal(f.remove.disabled,false);
+ await f.reset();assert.equal(f.preview.src,'/assets/logo-placeholder.svg');assert.equal(f.remove.disabled,true);assert.equal(f.remove.hidden,true);assert.equal(f.input.validationMessage,'');assert.ok(f.revoked.includes(preview));assert.equal(await f.validate(),false);
 });
 
 test('error text follows language changes and page exit releases the retained preview',async()=>{

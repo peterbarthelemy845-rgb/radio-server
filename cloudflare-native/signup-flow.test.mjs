@@ -24,14 +24,14 @@ function fixture(){
  const registration=form('registerForm',{name:'Sample Radio',stream_url:'http://stream.example.com:8000/live',bio:'Sample bio',email:'owner@example.com',artwork:'',rights_confirmed:'on'});registration.elements.artwork.type='file';registration.elements.artwork.files=[{name:'logo.png',size:5}];registration.elements.rights_confirmed.type='checkbox';registration.elements.rights_confirmed.checked=true;
  registration.copy=append(registration,node('copyGeneratedStream','BUTTON'));registration.copy.disabled=true;
  const login=form('loginForm',{email:'owner@example.com',code:'13'}),verification=node('verification','DIALOG'),verifyForm=form('verifyForm',{code:'123456'});append(verification,verifyForm);append(verification,node('resend','BUTTON'));append(verification,node('closeVerify','BUTTON'));
- form('editForm',{stream_url:'',bio:'',artwork:''});for(const id of ['openLogin','openRegister','navAdd','navLibrary','registerMessage','message','verifyText','verifyMessage','registrationHuman','stationSuccessTitle','stationSuccessText','stationSuccessMessage','retryOwnerEditor'])document.getElementById(id);node('stationSuccess','DIALOG');nodes.get('retryOwnerEditor').hidden=true;
+ const edit=form('editForm',{stream_url:'',bio:'',artwork:''});edit.elements.artwork.type='file';Object.defineProperty(edit.elements.artwork,'value',{get(){return this.files[0]?.name||'';},set(value){if(value==='')this.files=[];}});for(const id of ['openLogin','openRegister','navAdd','navLibrary','registerMessage','message','verifyText','verifyMessage','registrationHuman','stationSuccessTitle','stationSuccessText','stationSuccessMessage','retryOwnerEditor'])document.getElementById(id);node('stationSuccess','DIALOG');nodes.get('retryOwnerEditor').hidden=true;
  class FormDataFixture{constructor(target){this.entries=Object.values(target.elements).filter(field=>!field.disabled&&(field.type!=='checkbox'||field.checked)).map(field=>[field.name,field.type==='file'?field.files[0]:field.value]);}[Symbol.iterator](){return this.entries[Symbol.iterator]();}}
- const context=vm.createContext({document,window:{},Event:UiEvent,FormData:FormDataFixture,TextEncoder,crypto:webcrypto,navigator:{onLine:true},history:{replaceState(){}},location:{search:''},
+ const context=vm.createContext({document,window:{},Event:UiEvent,FormData:FormDataFixture,TextEncoder,crypto:webcrypto,setTimeout,clearTimeout,navigator:{onLine:true},history:{replaceState(){}},location:{search:''},
   __api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(answer!==undefined)return await answer;return {verification_id:'new-challenge',verification_email:'o***@example.com'};},
   __human:async(container,action)=>{humans.push({container,action});return await humanResult;},__fileData:async file=>{files.push(file);return file?{name:file.name,base64:'c2FtcGxl'}:undefined;},
   __editor:async()=>{editorCalls++;if(editorResult instanceof Error)throw editorResult;return await editorResult;},__logo:async file=>{logoFiles.push(file);return await logoResult;}
  });
- vm.runInContext(source,context);vm.runInContext("const actualEditor=editor;state={csrf:'test-csrf',agreement_version:'test-terms',turnstile_site_key:'test-site-key'};api=__api;human=__human;fileData=__fileData;editor=__editor;window.validateRegistrationLogo=__logo;",context);
+ vm.runInContext(source,context);vm.runInContext("const actualEditor=editor,actualHuman=human;state={csrf:'test-csrf',agreement_version:'test-terms',turnstile_site_key:'test-site-key'};api=__api;human=__human;fileData=__fileData;editor=__editor;window.validateRegistrationLogo=__logo;",context);
  async function submit(target){return target.onsubmit({preventDefault(){},target});}
  return {nodes,document,registration,login,verifyForm,calls,humans,files,logoFiles,context,submit,answers,verify(result={}){context.result={verification_id:'challenge-a',verification_email:'o***@example.com',...result};vm.runInContext('verify(result)',context);},id(){return vm.runInContext('verificationId',context);},human(value){humanResult=value;},editor(value){editorResult=value;},editorCalls:()=>editorCalls,logo(value){logoResult=value;},event:type=>new UiEvent(type),busy(target,on,fields=false){context.target=target;context.on=on;context.fields=fields;vm.runInContext('busy(target,on,fields)',context);}};
 }
@@ -69,6 +69,21 @@ test('login initializes a missing session and incomplete setup fails before a bo
  const f=fixture();vm.runInContext('state=undefined',f.context);f.answers.push({csrf:'fresh-csrf',agreement_version:'fresh-terms',turnstile_site_key:'fresh-key'},{verification_id:'login-challenge',verification_email:'o***@example.com'});await f.submit(f.login);assert.equal(f.calls[0].path,'/api/session');assert.equal(f.calls[1].path,'/api/owner/login');assert.equal(f.id(),'login-challenge');const incomplete=fixture();vm.runInContext('state=undefined',incomplete.context);incomplete.answers.push({csrf:'only-csrf'});await incomplete.submit(incomplete.registration);assert.equal(incomplete.calls.length,1);assert.equal(incomplete.humans.length,0);assert.match(incomplete.nodes.get('registerMessage').textContent,/setup is not ready/);assert.equal(incomplete.registration.submit.disabled,false);
 });
 
+test('shared security checks wait for the same in-flight session before creating widgets',async()=>{
+ const f=fixture(),pending=deferred(),renders=[];vm.runInContext('state=undefined',f.context);f.answers.push(pending.promise);
+ f.context.humanArea={querySelector:()=>({replaceChildren(){}})};f.context.window.turnstile={render(area,options){renders.push(options);queueMicrotask(()=>options.callback('checked-'+options.action));return options.action;},remove(){}};
+ const initial=vm.runInContext('loadOwnerSession()',f.context),support=vm.runInContext("actualHuman(humanArea,'support-ticket')",f.context),radio=vm.runInContext("actualHuman(humanArea,'radio-link')",f.context);
+ await until(()=>f.calls.length===1);assert.equal(f.calls[0].path,'/api/session');assert.equal(renders.length,0);
+ pending.resolve({csrf:'fresh-csrf',agreement_version:'fresh-terms',turnstile_site_key:'fresh-key'});const results=await Promise.all([initial,support,radio]);assert.equal(results[1],'checked-support-ticket');assert.equal(results[2],'checked-radio-link');assert.equal(f.calls.length,1);assert.equal(renders.length,2);assert.ok(renders.every(options=>options.sitekey==='fresh-key'));
+});
+
+test('shared security checks recover after session failure and incomplete setup stays blocked',async()=>{
+ const f=fixture(),renders=[];vm.runInContext('state=undefined',f.context);f.context.humanArea={querySelector:()=>({replaceChildren(){}})};f.context.window.turnstile={render(area,options){renders.push(options);queueMicrotask(()=>options.callback('checked-token'));return 'widget';},remove(){}};
+ f.answers.push(Error('Session connection interrupted'));await assert.rejects(vm.runInContext("actualHuman(humanArea,'support-ticket')",f.context),/Session connection interrupted/);assert.equal(renders.length,0);
+ f.answers.push({csrf:'only-csrf'});await assert.rejects(vm.runInContext("actualHuman(humanArea,'radio-link')",f.context),/Website setup is not ready/);assert.equal(renders.length,0);
+ f.answers.push({csrf:'retry-csrf',agreement_version:'fresh-terms',turnstile_site_key:'retry-key'});assert.equal(await vm.runInContext("actualHuman(humanArea,'support-ticket')",f.context),'checked-token');assert.equal(renders.length,1);assert.equal(renders[0].sitekey,'retry-key');assert.equal(f.calls.length,3);
+});
+
 test('login suppresses duplicate in-flight requests',async()=>{
  const f=fixture(),pending=deferred();f.human(pending.promise);const first=f.submit(f.login);await until(()=>f.humans.length===1);await f.submit(f.login);assert.equal(f.humans.length,1);pending.resolve('checked-token');await first;assert.equal(f.calls.length,1);assert.equal(f.calls[0].path,'/api/owner/login');
 });
@@ -83,6 +98,30 @@ test('late signup and sign-in acknowledgements do not open a code dialog over an
 
 test('successful verification remains visibly successful when the editor fails, with a working retry',async()=>{
  const f=fixture();f.verify();f.editor(new Error('Editor network timeout'));f.answers.push({registration_completed:true,review_required:false,station_code:'13'});await f.submit(f.verifyForm);assert.equal(f.nodes.get('verification').open,false);assert.equal(f.registration.resetCalled,true);assert.equal(f.nodes.get('stationSuccess').open,true);assert.equal(f.nodes.get('stationSuccessTitle').textContent,'Station added');assert.equal(f.nodes.get('stationSuccessText').textContent,'Station code #13.');assert.equal(f.nodes.get('verifyMessage').textContent,'');assert.equal(f.nodes.get('retryOwnerEditor').hidden,false);assert.match(f.nodes.get('stationSuccessMessage').textContent,/verification succeeded/);f.editor(undefined);await f.nodes.get('retryOwnerEditor').onclick();assert.equal(f.editorCalls(),2);assert.equal(f.nodes.get('stationSuccess').open,false);
+});
+
+test('signing back into the same station preserves unsaved text, artwork and its preview',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm'),cover={name:'draft-cover.png',size:5},previews=[];form.dataset.stationCode='13';form.dataset.dirty='1';form.elements.stream_url.value='https://unsaved.example/live';form.elements.bio.value='Unsaved station bio';form.elements.artwork.files=[cover];f.context.showOwnerCover=url=>previews.push(url);vm.runInContext('editor=actualEditor',f.context);f.verify();
+ f.answers.push({registration_completed:false,station_code:'13',message:'Signed in.'},{station:{code:'13',name:'Saved station',status:'published',stream_url:'https://saved.example/live',bio:'Saved bio',artwork_url:'/api/owner/artwork'}});await f.submit(f.verifyForm);
+ assert.equal(form.elements.stream_url.value,'https://unsaved.example/live');assert.equal(form.elements.bio.value,'Unsaved station bio');assert.equal(form.elements.artwork.files[0],cover);assert.equal(form.dataset.dirty,'1');assert.equal(previews.length,0);assert.equal(f.nodes.get('editor').hidden,false);
+});
+
+test('a different station login or a new registration cannot inherit an old station draft',async()=>{
+ for(const registration of [false,true]){const f=fixture(),form=f.nodes.get('editForm'),previews=[];form.dataset.stationCode='13';form.dataset.dirty='1';form.elements.stream_url.value='https://unsaved.example/live';form.elements.bio.value='Private old draft';form.elements.artwork.files=[{name:'old-cover.png',size:5}];f.context.showOwnerCover=url=>previews.push(url);vm.runInContext('editor=actualEditor',f.context);f.verify();const code=registration?'13':'14';
+  f.answers.push({registration_completed:registration,station_code:code,review_required:false,message:'Signed in.'},{station:{code,name:'Fresh station',status:'published',stream_url:'https://new.example/live',bio:'New bio',artwork_url:'/api/owner/artwork'}});await f.submit(f.verifyForm);
+  assert.equal(form.elements.stream_url.value,'https://new.example/live');assert.equal(form.elements.bio.value,'New bio');assert.equal(form.elements.artwork.files.length,0);assert.equal(form.dataset.dirty,undefined);assert.equal(form.dataset.stationCode,code);assert.deepEqual(previews,['/api/owner/artwork']);
+ }
+});
+
+test('retrying an unavailable editor after re-sign-in still preserves the same station draft',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm'),cover={name:'draft-cover.png',size:5};form.dataset.stationCode='13';form.dataset.dirty='1';form.elements.stream_url.value='https://draft.example/live';form.elements.bio.value='Keep this text';form.elements.artwork.files=[cover];f.context.showOwnerCover=()=>assert.fail('A saved cover must not replace the draft preview');vm.runInContext('editor=actualEditor',f.context);f.verify();
+ f.answers.push({registration_completed:false,station_code:'13',message:'Signed in.'},Error('Editor unavailable'));await f.submit(f.verifyForm);assert.equal(f.nodes.get('retryOwnerEditor').hidden,false);
+ f.answers.push({station:{code:'13',name:'Saved station',status:'published',stream_url:'https://saved.example/live',bio:'Saved bio',artwork_url:'/api/owner/artwork'}});await f.nodes.get('retryOwnerEditor').onclick();assert.equal(form.elements.stream_url.value,'https://draft.example/live');assert.equal(form.elements.bio.value,'Keep this text');assert.equal(form.elements.artwork.files[0],cover);assert.equal(form.dataset.dirty,'1');
+});
+
+test('signing back into an unchanged editor refreshes saved details rather than retaining stale values',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm');form.dataset.stationCode='13';form.elements.stream_url.value='https://old.example/live';form.elements.bio.value='Previously saved bio';f.context.showOwnerCover=()=>{};vm.runInContext('editor=actualEditor',f.context);f.verify();
+ f.answers.push({registration_completed:false,station_code:'13',message:'Signed in.'},{station:{code:'13',name:'Saved station',status:'published',stream_url:'https://latest.example/live',bio:'Latest saved bio',artwork_url:'/api/owner/artwork'}});await f.submit(f.verifyForm);assert.equal(form.elements.stream_url.value,'https://latest.example/live');assert.equal(form.elements.bio.value,'Latest saved bio');assert.equal(form.dataset.dirty,undefined);
 });
 
 test('verification and resend share one lock, preventing double requests and accidental close',async()=>{

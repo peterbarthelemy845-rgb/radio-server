@@ -111,7 +111,7 @@ export async function adminRoutes(request,env,now,deps={human}){
   if(body.revision!==await revision(env,row))throw new HttpError(409,'Station changed. Refresh and review it again.');
   if(body.action==='approve'&&(!row.email_verified_at||row.status!=='pending_review'))throw new HttpError(400,'Only email-verified stations awaiting review can be approved.');
   const status={approve:'published',reject:'suspended',delete:'deleted'}[body.action];
-  const reason=decisionReason(body.reason,body.action==='reject'?'Please review the station details and artwork and submit an update for review.':'');
+  const reason=decisionReason(body.reason,body.action==='reject'?'Contact Radio Locals Support to discuss the station details and artwork.':'');
   if(row.status===status)return json({status:'ok',notification_queued:false});
   const notice=row.email_verified_at?await ownerNotification(env,{kind:{approve:'station-approved',reject:'station-needs-changes',delete:'station-removed'}[body.action],stationCode:row.code,recipient:row.contact_email,event:await revision(env,row),reason}):null;
   // Compare every reviewed field in SQL too: edits arriving after the revision
