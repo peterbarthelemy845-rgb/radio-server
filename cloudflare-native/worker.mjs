@@ -20,7 +20,7 @@ import {adsRoutes} from './local-ads.mjs';
 import {inventoryStatements} from './saved-inventory.mjs';
 import {sessionCleanupStatements} from './session-maintenance.mjs';
 async function publicStation(db,code) {
-  return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
+  return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,CAST(updated_at AS TEXT) AS revision,name,stream_url AS url,bio,
     'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
     FROM stations WHERE code=? AND status='published'`).bind(Number(code)).first();
 }
@@ -76,6 +76,19 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     return json({stations:rows.results});
   }
   if(request.method==='GET'&&path==='/api/device/default-station')return json({name:'La Voix Divine',url:'https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live',listener_code:'',logo_url:'/assets/radiolavoixdivine.png'});
+  if(request.method==='GET'&&path==='/api/device/station-revisions'){
+    const values=url.searchParams.getAll('codes'),input=values[0]||'';
+    const codes=input.split(',');
+    if(values.length!==1||input.length>699||codes.length>100||codes.some(code=>!(/^[1-9][0-9]{1,5}$/).test(code)))
+      throw new HttpError(400,'Choose up to 100 saved station codes.');
+    const unique=[...new Set(codes.map(Number))];
+    // A radio asks only about its saved codes. Names, URLs, contact data, and
+    // unapproved changes never enter this compact public revision manifest.
+    const rows=await env.DB.prepare(`SELECT CAST(code AS TEXT) AS listener_code,CAST(updated_at AS TEXT) AS revision
+      FROM stations WHERE status='published' AND code IN (${unique.map(()=>'?').join(',')}) ORDER BY code`)
+      .bind(...unique).all();
+    return json({stations:rows.results});
+  }
   const deviceLookup=path.match(/^\/api\/device\/stations\/([0-9]{2,6})$/);
   if(deviceLookup&&request.method==='GET'){const station=await publicStation(env.DB,deviceLookup[1]);return station?json(station):json({message:'Station not found.'},404);}
   const lookup=path.match(/^\/api\/stations\/([0-9]{2,6})$/);

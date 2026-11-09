@@ -48,6 +48,7 @@ async function openSupportTicket(reference,silent=false){
   supportStatusReference=reference;statusPrivate.replaceChildren();statusLookup.hidden=true;statusIntro.hidden=true;statusRecent.hidden=true;statusPrivate.hidden=false;statusNotice.textContent='';delete statusNotice.dataset.i18n;
   const title=supportPrivateText('h3',result.ticket.subject),state=supportTicketStateNode(result.ticket.state),created=supportPrivateText('p',supportStatusDate(result.ticket.created_at),'small');
   const referenceLine=document.createElement('p');referenceLine.className='support-ticket-reference';referenceLine.append(supportStatusNode('span','supportStatus.reference','Ticket reference'),document.createTextNode(': '),supportPrivateText('span',result.ticket.reference));
+  if(result.ticket.station_code)referenceLine.append(document.createTextNode(' · '),supportPrivateText('span',(result.ticket.station_name||'Station')+' #'+result.ticket.station_code));
   const original=supportStatusNode('h4','supportStatus.original','Your message'),message=supportPrivateText('p',result.ticket.message,'support-ticket-body');
   const replies=supportStatusNode('h4','supportStatus.replies','Support replies');statusPrivate.append(title,state,created,referenceLine,original,message,replies);
   if(!(result.replies||[]).length)statusPrivate.append(supportStatusNode('p','supportStatus.noReplies','No reply yet. Your ticket status will update here.'));

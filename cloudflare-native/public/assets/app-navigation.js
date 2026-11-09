@@ -56,6 +56,30 @@ function appCloseStationPanel(){
  if(shareRunning){$('shareStatus').textContent='Please wait for the current request to finish before closing.';return;}
  if(history.state?.radioLocalsApp?.panel==='station')history.back();else stationPopup.close();
 }
+// Station reports stay in the existing Help form. Context is submitted as a
+// separate field so an existing message draft is never replaced or shortened.
+function appClearStationProblemContext(){
+ const form=$('ticketForm');form.elements.station_code.value='';$('ticketStationContext').hidden=true;$('ticketStationName').textContent='';
+}
+function appReportStationProblem({code,name}={}){
+ code=String(code||'');const form=$('ticketForm');
+ if(!/^[1-9][0-9]{1,5}$/.test(code)||shareRunning||window.radioControlsBusy||(typeof radioPairingBusy!=='undefined'&&radioPairingBusy)||form.dataset.busy==='1')return false;
+ const stationName=String(name||'').trim().slice(0,120)||'Station '+code;
+ form.elements.station_code.value=code;$('ticketStationName').textContent=stationName+' · #'+code;$('ticketStationContext').hidden=false;
+ if(!form.elements.subject.value)form.elements.subject.value='Station problem';form.dataset.dirty='1';
+ // Replacing the station-panel history entry makes Back return to Radio,
+ // without reopening the add popup or starting another addition.
+ const panel=history.state?.radioLocalsApp?.panel==='station';
+ if(stationPopup.open){appPanelOrigin=null;stationPopup.close();}
+ appHelp.dataset.expanded='1';appHelp.setAttribute('aria-expanded','true');
+ appShowPage('support',{replace:panel,push:!panel});form.hidden=false;
+ const generation=appNavigationGeneration;requestAnimationFrame(()=>{if(generation!==appNavigationGeneration||appCurrentPage!=='support')return;form.scrollIntoView?.({block:'start'});form.elements.message.focus({preventScroll:true});});
+ return true;
+}
+window.openStationProblemReport=appReportStationProblem;
+$('reportStationProblem')?.addEventListener('click',()=>{if(!$('shareForm').hidden)appReportStationProblem({code:sharedCode,name:$('shareName').textContent});});
+$('clearTicketStation')?.addEventListener('click',()=>{if($('ticketForm').dataset.busy==='1')return;appClearStationProblemContext();$('ticketForm').dataset.dirty='1';});
+$('ticketForm').addEventListener('reset',appClearStationProblemContext);
 const appOriginalOpenStation=openStationPopup;
 openStationPopup=async function(code,options={}){
  if(shareRunning||stationPopup.open)return;

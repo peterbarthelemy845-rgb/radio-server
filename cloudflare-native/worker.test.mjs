@@ -39,6 +39,26 @@ test('directory excludes private fields and suspended stations',async()=>{
   env.DB.sqlite.exec("UPDATE stations SET status='suspended'");
   assert.equal((await handle(new Request('https://native.example/api/stations/10'),env,now)).status,404);
 });
+
+test('saved-station revision scans expose only requested published revisions and reflect approved changes',async()=>{
+ const env=await fixture(),scan=()=>handle(new Request('https://native.example/api/device/station-revisions?codes=10,11,10'),env,now);
+ env.DB.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('Unrequested','https://example.com/other','secret@example.com','published',now,now);
+ env.DB.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('Private','https://example.com/private','secret@example.com','pending_review',now,now);
+ let response=await scan();assert.equal(response.headers.get('Cache-Control'),'no-store');assert.deepEqual((await response.json()).stations,[{listener_code:'10',revision:String(now)},{listener_code:'11',revision:String(now)}]);
+ env.DB.sqlite.prepare("UPDATE stations SET stream_url=?,artwork_key=?,updated_at=? WHERE code=10").run('https://example.com/new','a'.repeat(64)+'.png',now+1);
+ const station=await(await handle(new Request('https://native.example/api/device/stations/10'),env,now)).json();assert.equal(station.revision,String(now+1));assert.equal(station.url,'https://example.com/new');assert.equal(station.logo_url,'/artwork/'+'a'.repeat(64)+'.png');assert.equal(station.contact_email,undefined);
+ assert.equal((await(await scan()).json()).stations[0].revision,station.revision);
+ for(const state of ['pending_review','suspended','deleted']){env.DB.sqlite.prepare('UPDATE stations SET status=? WHERE code=10').run(state);assert.equal((await(await scan()).json()).stations.some(s=>s.listener_code==='10'),false);}
+ const privateScan=await(await handle(new Request('https://native.example/api/device/station-revisions?codes=12'),env,now)).json();assert.deepEqual(privateScan.stations,[]);
+});
+
+test('revision scans bound query size and do not accept malformed station code lists',async()=>{
+ const env=await fixture();for(const query of ['', '?codes=', '?codes=1', '?codes=0010', '?codes=10,,11', '?codes=10&codes=11', '?codes=10%27%20OR%201=1', '?codes='+Array(101).fill('10').join(',')])await assert.rejects(handle(new Request('https://native.example/api/device/station-revisions'+query),env,now),error=>error.status===400);
+ env.DB.sqlite.prepare('INSERT INTO stations(code,name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(999999,'Last','https://example.com/last','secret@example.com','published',now,now);
+ const result=await(await handle(new Request('https://native.example/api/device/station-revisions?codes='+Array(100).fill('999999').join(',')),env,now)).json();assert.deepEqual(result.stations,[{listener_code:'999999',revision:String(now)}]);
+ const codes=Array.from({length:100},(_,index)=>String(100000+index));for(const code of codes)env.DB.sqlite.prepare('INSERT INTO stations(code,name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(Number(code),'Saved','https://example.com/live','secret@example.com','published',now,now);
+ const text=await(await handle(new Request('https://native.example/api/device/station-revisions?codes='+codes.join(',')),env,now)).text();assert.equal(JSON.parse(text).stations.length,100);assert.ok(Buffer.byteLength(text,'utf8')<8192,'full saved list must fit the radio manifest decoder');
+});
 test('invalid device secret cannot poll or approve',async()=>{
   const env=await fixture();const res=await fetchHandler(request('/api/radio/poll',{},'e'.repeat(64)),env);
   assert.equal(res.status,401);

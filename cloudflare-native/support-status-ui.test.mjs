@@ -19,6 +19,10 @@ test('private ticket content is rendered as untranslated text, never executable 
  const f=fixture();f.answers.push(result);await f.open(reference);const panel=f.get('statusPrivate');assert.equal(panel.hidden,false);assert.equal(f.get('statusLookup').hidden,true);assert.match(text(panel),/<img src=x onerror=alert\(1\)>/);assert.match(text(panel),/<script>secret\(\)<\/script>/);
  const protectedNodes=[];function walk(node){if(node.dataset?.i18nSkip)protectedNodes.push(node);for(const child of node.children||[])walk(child);}walk(panel);assert.ok(protectedNodes.some(node=>node.textContent===result.ticket.message));assert.ok(protectedNodes.some(node=>node.textContent===result.replies[0].body));assert.equal(f.calls[0].path,'/api/support/status/ticket?reference='+reference);
 });
+
+test('a station problem ticket keeps its selected station visible as literal text',async()=>{
+ const f=fixture();f.answers.push({...result,ticket:{...result.ticket,station_code:'13',station_name:'<b>Test station</b>'}});await f.open(reference);assert.match(text(f.get('statusPrivate')),/<b>Test station<\/b> #13/);
+});
 test('email lookup requires its private challenge and verification before displaying a ticket',async()=>{
  const f=fixture();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push({verification_id:'c'.repeat(32)});await f.get('statusLookup').onsubmit({preventDefault(){}});assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.calls[0].body.turnstile_token,'bot-proof');
  f.get('statusCode').value='123456';f.answers.push({reference},result);await f.get('statusVerifyForm').onsubmit({preventDefault(){}});assert.equal(f.calls[1].path,'/api/support/status/verify');assert.equal(f.calls[1].body.code,'123456');assert.equal(f.get('statusVerify').open,false);assert.equal(f.get('statusCode').value,'');assert.equal(f.get('statusPrivate').hidden,false);

@@ -21,6 +21,7 @@ function renderSupportTicket(thread,view,draft='',notice=''){
  box.append(supportText('p','Reference: '+record.id+' · '+supportStateLabel(record.state),'support-meta'),supportText('p','Received '+supportTime(record.created_at),'support-meta'));
  const sender=[record.payload.name,record.payload.email].filter(Boolean).join(' · ');box.append(supportText('p',sender,'support-meta'));
  if(record.payload.device_code)box.append(supportText('p','Device code: '+record.payload.device_code,'support-meta'));
+ if(record.payload.station_code)box.append(supportText('p','Station: '+(record.payload.station_name||'Station')+' · #'+record.payload.station_code,'support-meta'));
  box.append(supportText('h4','Original message'),supportText('p',record.payload.message||'','support-message'));
  box.append(supportText('h4','Replies'));
  if(!thread.messages.length)box.append(supportText('p','No replies yet.','support-meta'));

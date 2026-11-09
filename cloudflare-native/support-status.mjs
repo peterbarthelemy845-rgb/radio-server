@@ -13,7 +13,7 @@ async function details(env,id,current,now){
  const replies=await Promise.all(rows.reverse().map(async row=>({body:JSON.parse(await decrypt(env,row.encrypted_payload)).body,created_at:row.created_at})));
  const history=(await env.DB.prepare(`SELECT action AS state,created_at FROM legal_actions WHERE request_id=? AND action IN ('new','review','closed') ORDER BY created_at DESC,rowid DESC LIMIT 100`).bind(id).all()).results.reverse();
  // Deliberate allowlist: email address, device code and internal audit notes are not returned.
- return {ticket:{reference:item.id,state:item.state,subject:payload.subject,message:payload.message,created_at:item.created_at},replies,history};
+ return {ticket:{reference:item.id,state:item.state,subject:payload.subject,message:payload.message,created_at:item.created_at,...(payload.station_code?{station_code:payload.station_code,station_name:payload.station_name||''}:{})},replies,history};
 }
 
 export async function supportStatusRoutes(request,env,now,deps={human}){

@@ -25,6 +25,18 @@ test('player exposes only the selected public stream and trusted local artwork',
 
 test('support ticket validates fields, checks bot protection and encrypts contact details',async()=>{const f=await fixture(),b=await f.browser();await assert.rejects(b.post('/api/support/ticket',{name:'Test'}),e=>e.status===400);const result=await(await b.post('/api/support/ticket',ticket)).json();assert.match(result.reference,/^[a-f0-9]{32}$/);const row=f.sqlite.prepare('SELECT * FROM legal_requests WHERE id=?').get(result.reference);assert.equal(row.kind,'support');assert.equal(row.encrypted_payload.includes('test@example.com'),false);assert.equal(JSON.parse(await decrypt(f.env,row.encrypted_payload)).message,'Cannot connect');assert.deepEqual(f.humanCalls,['support-ticket','support-ticket']);});
 
+test('station problem tickets use the server station identity without changing the message or email receipt',async()=>{
+ const f=await fixture(),b=await f.browser();f.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('Real station','https://example.com/live','owner@example.com','published',now,now);
+ const message='Existing draft '+'.'.repeat(2980),result=await(await b.post('/api/support/ticket',{...ticket,message,station_code:'10',station_name:'Forged name'})).json();
+ const row=f.sqlite.prepare('SELECT encrypted_payload FROM legal_requests WHERE id=?').get(result.reference),payload=JSON.parse(await decrypt(f.env,row.encrypted_payload));assert.equal(payload.station_code,'10');assert.equal(payload.station_name,'Real station');assert.equal(payload.message,message);assert.equal(row.encrypted_payload.includes('Real station'),false);
+ const mail=JSON.parse(await decrypt(f.env,f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox').get().encrypted_payload));assert.equal(mail.text.includes('Real station'),false);assert.equal(mail.text.includes(message),false);
+});
+
+test('invalid or removed station context cannot create a ticket while ordinary support still works',async()=>{
+ for(const station_code of ['0010','1','9999999','10,11',10,{},null,'10']){const f=await fixture(),b=await f.browser();await assert.rejects(b.post('/api/support/ticket',{...ticket,station_code}),error=>error.status===400);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM legal_requests').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);}
+ const f=await fixture(),b=await f.browser();const result=await(await b.post('/api/support/ticket',{...ticket,station_code:''})).json();const payload=JSON.parse(await decrypt(f.env,f.sqlite.prepare('SELECT encrypted_payload FROM legal_requests WHERE id=?').get(result.reference).encrypted_payload));assert.equal(payload.station_code,undefined);
+});
+
 test('support receipt is queued once with its reference and sends fixed plain text from the verified sender',async()=>{
  const f=await fixture(),b=await f.browser(),data={...ticket,name:'<img src=x onerror=alert(1)>',subject:'Injected\r\nBcc: victim@example.org',message:'Private <script>alert(1)</script> message',device_code:'987654'};
  const result=await(await b.post('/api/support/ticket',data)).json();

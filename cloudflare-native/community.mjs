@@ -19,6 +19,12 @@ export async function communityRoutes(request,env,now,deps={human}){
   if(!receiptEmail.test(payload.email))throw new HttpError(400,'Enter a valid email.');
   payload.email=payload.email.toLowerCase();
   payload.device_code=String(body.device_code||'').trim();if(payload.device_code.length>32)throw new HttpError(400,'Device code is too long.');
+  if(body.station_code!==undefined&&body.station_code!==''){
+   if(typeof body.station_code!=='string'||!(/^[1-9][0-9]{1,5}$/).test(body.station_code))throw new HttpError(400,'Choose a valid station.');
+   const station=await env.DB.prepare("SELECT CAST(code AS TEXT) AS code,name FROM stations WHERE code=? AND status='published'").bind(Number(body.station_code)).first();
+   if(!station)throw new HttpError(400,'This station is no longer available. Clear the station to send a general support ticket.');
+   payload.station_code=station.code;payload.station_name=station.name;
+  }
   await limit(env.DB,'ticket-recipient',payload.email,3,3600,now);
   const id=randomHex(16),receipt={text:`We received your Radio Locals support ticket.\n\nReference: ${id}\n\nKeep this reference for any follow-up with Radio Locals support. Your message and any device or security codes are not included in this receipt.\n\nIf you did not submit this ticket, you can ignore this email.`};
   // D1 batches are atomic: a ticket cannot be accepted without its durable

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('./public/assets/my-radio.js',import.meta.url),'utf8');
 function fixture(){
- const ids=new Map(),windowEvents={},documentEvents={},observers=[],answers=[],calls=[],dialogs=[],dialogAnswers=[];let clock=Date.UTC(2026,10,7,12,30);
+ const ids=new Map(),windowEvents={},documentEvents={},observers=[],answers=[],calls=[],dialogs=[],dialogAnswers=[],reports=[];let clock=Date.UTC(2026,10,7,12,30);
  function node(tag='div'){
   return {tag,children:[],hidden:false,textContent:'',className:'',attributes:{},replacements:0,disabled:false,
    setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){},
@@ -15,12 +15,12 @@ function fixture(){
  const navigator={onLine:true},document={hidden:false,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
  const context={document,navigator,Date:FakeDate,URLSearchParams,location:{search:'',hash:'#radio'},history:{replaceState(){}},
-  CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{dispatchEvent(){},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
+  CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{openStationProblemReport:station=>reports.push(station),dispatchEvent(){},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
   $:id=>ids.get(id),api:async path=>{calls.push(path);const next=answers.shift();if(next instanceof Error)throw next;if(typeof next==='function')return next();if(!next)throw Error('No fixture response');return next;},
   reconcileSelectedRadio:radios=>radios[0]?.id||'',loadRadioInventory(){},readSelectedRadio(){return 'one';},rememberSelectedRadio(){},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(){return 1;},clearTimeout(){}};
  runInNewContext(source,context);
  const load=runInNewContext('loadMyRadios',context),freshness=ids.get('radioConnectStatus').beforeNode;
- return {ids,load,answers,calls,dialogs,dialogAnswers,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,
+ return {ids,load,answers,calls,dialogs,dialogAnswers,reports,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,
   advance(ms){clock+=ms;},visibility(){observers[0].fn();},async flush(){await new Promise(resolve=>setImmediate(resolve));}};
 }
 const radio={id:'one',device_code:'3961',online:true,current_station:'Community Radio'};
@@ -40,6 +40,12 @@ test('Wi-Fi help is shown only for the selected radio when it is reported offlin
 
 test('another offline radio cannot show Wi-Fi help for the selected online radio',async()=>{
  const f=fixture();f.answers.push({radios:[radio,{...radio,id:'two',online:false}]});await f.load();assert.equal(f.ids.get('openWifiSetup').hidden,true);
+});
+
+test('current station reporting uses the latest radio station and stale card actions cannot report',async()=>{
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const first=f.views()[0].children[4];assert.equal(first.hidden,false);first.onclick();assert.equal(f.reports[0].code,'10');assert.equal(f.reports[0].name,'Community Radio');
+ f.answers.push(response({current_station:'Next station',current_station_code:'11'}));await f.load(true);const next=f.views()[0].children[4];first.onclick();assert.equal(f.reports.length,1);next.onclick();assert.equal(f.reports[1].code,'11');
+ f.answers.push(Error('Status unavailable'));await f.load(true);assert.equal(next.hidden,true);next.onclick();assert.equal(f.reports.length,2);
 });
 
 test('failed silent checks replace green Online and successful unchanged data restores it in place',async()=>{
