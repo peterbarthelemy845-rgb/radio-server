@@ -29,3 +29,6 @@ body.app-listener-page #listenerTextSize::after{content:'Aa';font-size:1.125rem;
 #ownerStreamTestStatus:empty{display:none}
 #ownerStreamTestStatus[data-state="success"]{color:#176238}
 #ownerStreamTestStatus:is([data-state="invalid"],[data-state="error"]){color:#922338}
+#library.radio-library .station-tile-delivery{display:block;min-height:1.3em;margin:2px 0 0;color:#1b5bad;font-size:12px;line-height:1.3;font-weight:600}
+.device-code-error{display:block;margin:6px 0 0;padding:8px 10px;border:1px solid #e5b8bd;border-radius:8px;background:#fff0f2;color:#8b2331;font-size:14px;line-height:1.4}
+.device-code-error[hidden]{display:none}

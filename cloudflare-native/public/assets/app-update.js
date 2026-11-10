@@ -1,5 +1,5 @@
 'use strict';
-const APP_RELEASE='2026.11.09.6';
+const APP_RELEASE='2026.11.09.7';
 let appAvailableRelease='',appDismissedRelease='',appReleaseChecking=false,appUpdateConfirming=false;
 const appUpdateBanner=document.createElement('aside');appUpdateBanner.id='appUpdateBanner';appUpdateBanner.className='app-update-banner';appUpdateBanner.hidden=true;appUpdateBanner.setAttribute('aria-label','Website update');
 const appUpdateTitle=document.createElement('strong'),appUpdateNote=document.createElement('p'),appUpdateActions=document.createElement('div'),appUpdateRefresh=document.createElement('button'),appUpdateLater=document.createElement('button');
@@ -11,7 +11,7 @@ function appStationDeliveryState(){
  return {pending:records.some(record=>['sending','pending'].includes(record.state)),unconfirmed:records.some(record=>record.state==='unconfirmed')};
 }
 function appHasUnfinishedWork(){
- if(typeof shareRunning!=='undefined'&&shareRunning||window.radioControlsBusy||appStationDeliveryState().pending)return true;
+ if(typeof shareRunning!=='undefined'&&shareRunning||typeof pairingCleanupPending!=='undefined'&&pairingCleanupPending>0||window.radioControlsBusy||appStationDeliveryState().pending)return true;
  if(document.querySelector('dialog[open]'))return true;
  for(const form of document.querySelectorAll('form')){
   if(form.dataset.dirty)return true;
@@ -49,7 +49,7 @@ document.addEventListener('input',event=>{const form=event.target.closest?.('for
 document.addEventListener('reset',event=>{if(event.target.tagName==='FORM')delete event.target.dataset.appUpdateDirty;queueMicrotask(renderAppUpdate);},true);
 new MutationObserver(renderAppUpdate).observe(document.querySelector('main'),{subtree:true,attributes:true,attributeFilter:['disabled','hidden','data-dirty','open']});
 new MutationObserver(renderAppUpdate).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open']});
-window.addEventListener('radio-controls-opened',renderAppUpdate);window.addEventListener('radio-controls-closed',renderAppUpdate);window.addEventListener('station-delivery-changed',renderAppUpdate);window.addEventListener('app-language-changed',renderAppUpdate);window.addEventListener('focus',checkAppRelease);window.addEventListener('online',checkAppRelease);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkAppRelease();});window.addEventListener('load',checkAppRelease);
+window.addEventListener('radio-controls-opened',renderAppUpdate);window.addEventListener('radio-controls-closed',renderAppUpdate);window.addEventListener('station-delivery-changed',renderAppUpdate);window.addEventListener('pairing-cleanup-changed',renderAppUpdate);window.addEventListener('app-language-changed',renderAppUpdate);window.addEventListener('focus',checkAppRelease);window.addEventListener('online',checkAppRelease);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkAppRelease();});window.addEventListener('load',checkAppRelease);
 setInterval(()=>{if(appAvailableRelease)renderAppUpdate();checkAppRelease();},300000);
 window.addEventListener('radio-locals-ready',()=>{
  try{const raw=sessionStorage.getItem('radioLocalsUpdateView');sessionStorage.removeItem('radioLocalsUpdateView');if(!raw)return;const data=JSON.parse(raw);if(data.expires<Date.now()||typeof data.query!=='string')return;if($('search')){$('search').value=data.query.slice(0,250);list();}requestAnimationFrame(()=>window.scrollTo(Number(data.x)||0,Number(data.y)||0));}catch{}

@@ -7,12 +7,12 @@ const source=readFileSync(new URL('./public/assets/my-radio.js',import.meta.url)
 const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8'),busySource=site.slice(site.indexOf('const formBusyStates='),site.indexOf('function loadHuman('));
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 async function until(check){for(let i=0;i<50&&!check();i++)await new Promise(setImmediate);assert.ok(check(),'Async checkpoint was not reached');}
-function fixture({human=async()=> 'bot-proof',loadSession=async()=>({csrf:'fresh'}),cancel=async()=>({state:'cancelled'})}={}){
+function fixture({human=async()=> 'bot-proof',loadSession=async()=>({csrf:'fresh'}),cancel=async()=>({state:'cancelled'}),validate=input=>input.value}={}){
  const ids=new Map(),calls=[],answers=[],dialogs=[],selections=[],approvals=[],observers=[],humanSignals=[],cancellations=[];let sessionLoads=0;
  function node(tag='div'){return {tag,children:[],hidden:false,disabled:false,textContent:'',className:'',dataset:{},attributes:{},elements:{},setAttribute(k,v){this.attributes[k]=v;},removeAttribute(k){delete this.attributes[k];},dispatchEvent(){},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},before(){},focus(options){this.focusOptions=options;this.focusCount=(this.focusCount||0)+1;},querySelector(){return this.button;},querySelectorAll(selector){return selector==='button'?[this.button]:[...Object.values(this.elements),this.button];},reset(){this.resetCount=(this.resetCount||0)+1;}};}
  for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','cancelRadioConnection','radioConnectStatus','refreshRadios','navRadio','openWifiSetup'])ids.set(id,node());
- const form=ids.get('connectRadioForm');form.button=node('button');form.elements.device_code=Object.assign(node('input'),{value:'3961'});
- const document={hidden:false,createElement:node,addEventListener(){}},ctx={document,navigator:{onLine:true},Date,AbortController,crypto:{randomUUID},location:{hash:'#radio',search:''},history:{replaceState(){}},window:{addEventListener(){},dispatchEvent(){}},Event:class{constructor(type){this.type=type;}},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},$:id=>ids.get(id),api:async(path,body)=>{calls.push({path,body});if(path==='/api/phone/claim/cancel'){cancellations.push(body);return cancel(body);}const next=answers.shift();if(next instanceof Error)throw next;if(next===undefined)throw Error('No fixture response');return await next;},human:(...args)=>{humanSignals.push(args[2]);return human(...args);},showRadioApproval(target,code){approvals.push({target,code});target.textContent=code+' — Match this number and tap Allow on your radio.';},loadOwnerSession:async()=>{sessionLoads++;return loadSession();},delay:async()=>{},reconcileSelectedRadio:radios=>radios[0]?.id||'',loadRadioInventory(){},rememberSelectedRadio:id=>selections.push(id),readSelectedRadio:()=>'',radioInventories:new Map(),listenerActionDialog:async(title,text)=>{dialogs.push({title,text});return true;},page(){ids.get('myRadio').hidden=false;},setTimeout(){return 1;},clearTimeout(){}};
+ ids.get('cancelRadioConnection').hidden=true;const form=ids.get('connectRadioForm');form.button=node('button');form.elements.device_code=Object.assign(node('input'),{value:'3961'});
+ const document={hidden:false,createElement:node,addEventListener(){}},ctx={document,navigator:{onLine:true},Date,AbortController,crypto:{randomUUID},location:{hash:'#radio',search:''},history:{replaceState(){}},window:{addEventListener(){},dispatchEvent(){},validateDeviceCodeInput:validate},Event:class{constructor(type){this.type=type;}},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},$:id=>ids.get(id),api:async(path,body)=>{calls.push({path,body});if(path==='/api/phone/claim/cancel'){cancellations.push(body);return cancel(body);}const next=answers.shift();if(next instanceof Error)throw next;if(next===undefined)throw Error('No fixture response');return await next;},human:(...args)=>{humanSignals.push(args[2]);return human(...args);},showRadioApproval(target,code){approvals.push({target,code});target.textContent=code+' — Match this number and tap Allow on your radio.';},loadOwnerSession:async()=>{sessionLoads++;return loadSession();},delay:async()=>{},reconcileSelectedRadio:radios=>radios[0]?.id||'',loadRadioInventory(){},rememberSelectedRadio:id=>selections.push(id),readSelectedRadio:()=>'',radioInventories:new Map(),listenerActionDialog:async(title,text)=>{dialogs.push({title,text});return true;},page(){ids.get('myRadio').hidden=false;},setTimeout(){return 1;},clearTimeout(){}};
  runInNewContext(busySource,ctx);runInNewContext(source,ctx);
  return {ctx,ids,form,calls,answers,dialogs,selections,approvals,document,humanSignals,cancellations,cancel:()=>ids.get('cancelRadioConnection').onclick(),sessionLoads:()=>sessionLoads,get:expression=>runInNewContext(expression,ctx),submit:()=>form.onsubmit({preventDefault(){},target:form}),leave(){ids.get('myRadio').hidden=true;observers[0]();},returnToRadio(){ids.get('myRadio').hidden=false;},observe(){observers[0]();}};
 }
@@ -116,4 +116,21 @@ test('a successful HTTP response still must confirm the cancellation state',asyn
 test('a confirmed connection is retained when the user leaves during the status refresh',async()=>{
  const refresh=deferred(),f=fixture();f.answers.push({claim_id:'claim',confirmation_code:'5831'},{state:'approved',radio_id:'one'},refresh.promise);const pending=f.submit();await until(()=>f.calls.some(call=>call.path==='/api/phone/radios'));
  assert.equal(f.ids.get('cancelRadioConnection').hidden,true);f.leave();refresh.resolve({radios:[]});await pending;assert.equal(f.cancellations.length,0);assert.deepEqual(f.selections,['one']);assert.equal(f.dialogs.length,0);
+});
+
+
+test('malformed Device Codes stop before busy state, security checks, session refresh or requests',async()=>{
+ const f=fixture({validate:()=>null});f.get('radioSessionExpired=true');f.form.elements.device_code.value='12!';await f.submit();
+ assert.equal(f.calls.length,0);assert.equal(f.humanSignals.length,0);assert.equal(f.sessionLoads(),0);assert.equal(f.get('radioPairingBusy'),false);assert.equal(f.form.button.disabled,false);assert.equal(f.ids.get('cancelRadioConnection').hidden,true);
+});
+
+test('main pairing sends the validated code preserving leading zeroes',async()=>{
+ const f=fixture({validate:()=> '0012'});f.form.elements.device_code.value=' 00-12 ';f.answers.push({claim_id:'claim',confirmation_code:'0583'},{state:'approved',radio_id:'one'},{radios:[]});await f.submit();
+ assert.equal(f.calls.find(call=>call.path==='/api/phone/claim').body.device_code,'0012');assert.equal(f.humanSignals.length,1);
+});
+
+
+test('Radio pairing waits for a dismissed station-popup claim to be withdrawn',async()=>{
+ const cleanup=deferred(),f=fixture();f.ctx.sharedPairingCancellation=cleanup.promise;f.answers.push({claim_id:'new',confirmation_code:'1234'},{state:'denied'});const pending=f.submit();await new Promise(setImmediate);
+ assert.equal(f.calls.length,0);assert.equal(f.form.button.disabled,true);cleanup.resolve();await pending;assert.equal(f.calls[0].path,'/api/phone/claim');
 });

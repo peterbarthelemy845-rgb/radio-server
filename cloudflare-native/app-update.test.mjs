@@ -57,3 +57,9 @@ test('a background page cannot open an uncertain-delivery update prompt or save 
 test('uncertain-delivery caution falls back to readable text when a translation key is missing',async()=>{
  const f=fixture({dialog:async()=>false});f.window.appI18n={t:key=>key};await f.check();f.delivery('request','unconfirmed');assert.equal(f.banner.children[1].textContent,'A station request is unconfirmed. Check your radio before updating.');await f.banner.children[2].children[0].onclick();assert.equal(f.dialogs[0][0],'Update website?');
 });
+
+
+test('website refresh waits for a dismissed pairing request to finish its cancellation',async()=>{
+ const f=fixture();await f.check();const refresh=f.banner.children[2].children[0];f.context.pairingCleanupPending=1;f.events['pairing-cleanup-changed']();assert.equal(refresh.disabled,true);await refresh.onclick();assert.equal(f.reloads(),0);
+ f.context.pairingCleanupPending=0;f.events['pairing-cleanup-changed']();assert.equal(refresh.disabled,false);await refresh.onclick();assert.equal(f.reloads(),1);
+});

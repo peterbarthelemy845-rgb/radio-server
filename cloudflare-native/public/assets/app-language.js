@@ -97,6 +97,8 @@ Object.assign(appEnglish,{'pairing.cancel':'Cancel connection','update.uncertain
 Object.assign(appCreole,{'pairing.cancel':'Anile koneksyon an','update.uncertain':'Yon demann estasyon poko konfime. Verifye radyo ou anvan ou mete sit la ajou.','update.uncertainTitle':'Mete sit la ajou?','update.uncertainConfirm':'Mete sit la ajou'});
 Object.assign(appEnglish,{'pairing.cancelled':'Connection cancelled.','pairing.cancelUnconfirmed':'Could not confirm cancellation. Tap Deny on your radio if the request is still showing.'});
 Object.assign(appCreole,{'pairing.cancelled':'Koneksyon an anile.','pairing.cancelUnconfirmed':'Nou pa ka konfime anilasyon an. Tape Deny sou radyo ou si demann nan toujou parèt.'});
+Object.assign(appEnglish,{'deviceCode.invalid':'Enter the complete Device Code shown on your radio.'});
+Object.assign(appCreole,{'deviceCode.invalid':'Antre tout kòd aparèy ki sou ekran radyo ou a.'});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';

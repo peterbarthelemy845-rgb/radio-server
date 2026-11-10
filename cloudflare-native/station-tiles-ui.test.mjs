@@ -5,7 +5,7 @@ import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('./public/assets/directory-news.js',import.meta.url),'utf8');
 
 test('failed station images fall back once without making broken-image retry loops',()=>{
- function node(){let src;return {children:[],srcWrites:[],setAttribute(){},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},get src(){return src;},set src(value){src=value;this.srcWrites.push(value);}};}
+ function node(){let src;return {children:[],srcWrites:[],setAttribute(){},removeAttribute(){},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},get src(){return src;},set src(value){src=value;this.srcWrites.push(value);}};}
  const render=runInNewContext(source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'))+';renderStationSlider;',{document:{createElement:node}}),track=node();
  render(track,[{name:'Station',listener_code:'13',logo_url:'/artwork/missing.png'}],'No stations');const image=track.children[0].children[0].children[0];
  image.onerror?.();assert.equal(image.src,'/assets/logo-placeholder.svg');assert.equal(image.onerror,null);image.onerror?.();assert.deepEqual(image.srcWrites,['/artwork/missing.png','/assets/logo-placeholder.svg']);
@@ -13,7 +13,7 @@ test('failed station images fall back once without making broken-image retry loo
 
 test('artwork and its visible name form one button and either tap starts one automatic add',()=>{
  const openings=[];
- function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},setAttribute(key,value){this.attrs[key]=value;},append(...children){for(const child of children){child.parent=this;this.children.push(child);}},replaceChildren(){this.children=[];}};}
+ function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){for(const child of children){child.parent=this;this.children.push(child);}},replaceChildren(){this.children=[];}};}
  const render=runInNewContext(source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'))+';renderStationSlider;',{document:{createElement:node},openStationPopup:(code,options)=>openings.push({code,autoAdd:options.autoAdd})}),track=node();
  render(track,[{name:'Community Radio',listener_code:'13',logo_url:'/artwork/logo.png'}],'No stations');
  const item=track.children[0],button=item.children[0],[image,name]=button.children;
@@ -25,7 +25,7 @@ test('artwork and its visible name form one button and either tap starts one aut
 
 test('saved tiles open their station without automatic addition and names remain literal text',()=>{
  const openings=[];
- function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},setAttribute(key,value){this.attrs[key]=value;},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];}};}
+ function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];}};}
  const render=runInNewContext(source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'))+';renderStationSlider;',{document:{createElement:node},openStationPopup:(code,options)=>openings.push({code,autoAdd:options.autoAdd})}),track=node(),station={name:'<b>Local Radio</b>',listener_code:'14'};
  render(track,[station],'No stations',true);const button=track.children[0].children[0];
  assert.equal(button.attrs['aria-label'],'<b>Local Radio</b> — on your radio');assert.equal(button.children[1].textContent,station.name);assert.equal(button.children[1].innerHTML,undefined);
@@ -42,7 +42,7 @@ test('unlinked station lists omit repeated connection instructions but retain us
 
 function searchFixture({known=true}={}){
  const nodes=new Map(),openings=[],focusCalls=[];
- function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}
+ function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}
  const $=id=>{if(!nodes.has(id)){const element=node();element.id=id;nodes.set(id,element);}return nodes.get(id);};
  const context={$,document:{createElement:node},stations:[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],readSelectedRadio:()=>known?'radio':'',readRadioInventory:()=>known?{known:true,codes:new Set(['13'])}:null,loadRadioInventory(){},openStationPopup:(code,options)=>openings.push({code,options})};
  runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('function renderStationSlider('),source.indexOf('const libraryHelp=')),context);

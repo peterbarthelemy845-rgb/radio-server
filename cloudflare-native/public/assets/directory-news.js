@@ -31,7 +31,17 @@ function renderStationSlider(track,found,emptyText,saved=false){
  for(const station of found){
   const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — on your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
   const image=document.createElement('img');image.onerror=()=>{image.onerror=null;image.src='/assets/logo-placeholder.svg';};image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
-  const name=document.createElement('span');name.className='station-tile-name';name.textContent=station.name;tile.append(image,name);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);track.append(item);
+  const name=document.createElement('span');name.className='station-tile-name';name.textContent=station.name;
+  const feedback=document.createElement('span');feedback.className='station-tile-delivery';feedback.setAttribute('aria-hidden','true');
+  let adding;
+  tile.updateDeliveryStatus=()=>{
+   const radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',delivery=radioId&&typeof stationDeliveries!=='undefined'?stationDeliveries.get(String(radioId)+'|'+String(station.listener_code)):null,pending=delivery?.state==='sending'||delivery?.state==='pending';
+   if(adding===pending)return;adding=pending;
+   tile.setAttribute('aria-busy',String(pending));
+   if(pending){feedback.setAttribute('data-i18n','busy.adding');const text=typeof window!=='undefined'?window.appI18n?.t('busy.adding'):null;feedback.textContent=text&&text!=='busy.adding'?text:'Adding…';}
+   else{feedback.removeAttribute('data-i18n');feedback.textContent='';}
+  };
+  tile.append(image,name,feedback);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);track.append(item);tile.updateDeliveryStatus();
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=emptyText;track.append(empty);}
 }
@@ -55,6 +65,9 @@ const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search
 window.addEventListener('radio-locals-ready',list);
 window.addEventListener('radio-selection-changed',list);
 window.addEventListener('radio-inventory-changed',event=>{if(event.detail.radioId===readSelectedRadio())list();});
+window.addEventListener('station-delivery-changed',()=>{
+ for(const id of ['savedStations','stations'])for(const item of $(id).children)item.children[0]?.updateDeliveryStatus?.();
+});
 
 // Owner account navigation stays beside Sign in, above both forms.
 const coverInput=$('registerForm').elements.artwork,coverPreview=$('registrationLogoPreview'),coverHint=$('registrationLogoHint'),coverRemove=$('removeRegistrationLogo');
