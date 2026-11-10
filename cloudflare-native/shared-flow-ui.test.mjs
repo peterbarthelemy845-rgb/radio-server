@@ -3,18 +3,20 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
+const listener=readFileSync(new URL('./public/assets/listener-usability.js',import.meta.url),'utf8');
+const confirmationSource=listener.slice(listener.indexOf('function showRadioApproval('),listener.indexOf("$('shareForm').elements.radio_id.addEventListener"));
 const sharedSource=source.slice(source.indexOf('let sharedOpenGeneration=0;'),source.indexOf('async function initializeSite()'));
 const pageSource=source.slice(source.indexOf('function page('),source.indexOf('function message('));
 const busySource=source.slice(source.indexOf('const formBusyStates='),source.indexOf('function loadHuman('));
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 async function until(check){for(let i=0;i<50&&!check();i++)await new Promise(setImmediate);assert.ok(check(),'Async checkpoint was not reached');}
-function fixture({human=async()=> 'checked',dialog=async()=>true,useDeviceCode=false,selectedId='one',confirmation=async()=>{},now=()=>Date.now()}={}){
- const ids=new Map(),calls=[],answers=[],dialogs=[],selected=[],refreshes=[];
+function fixture({human=async()=> 'checked',dialog=async()=>true,useDeviceCode=false,selectedId='one',inventory=async()=>({known:true,codes:new Set()}),now=()=>Date.now()}={}){
+ const ids=new Map(),calls=[],answers=[],dialogs=[],selected=[],refreshes=[],inventoryCalls=[],windowEvents=new Map();
  function node(tag='div'){return {tag,children:[],dataset:{},attributes:{},hidden:false,disabled:false,textContent:'',value:'',elements:{},setAttribute(k,v){this.attributes[k]=v;},removeAttribute(k){delete this.attributes[k];},dispatchEvent(){},querySelectorAll(selector){return selector==='button'?[this.button]:[...Object.values(this.elements),this.button];},append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;this.textContent=children.map(child=>child.textContent||'').join('');},focus(){},reset(){}};}
  const $=id=>{if(!ids.has(id))ids.set(id,node());return ids.get(id);},form=$('shareForm');form.button=node('button');const select=node('select');select.value='one';select.children=[{value:'one',textContent:'Device code 3961 · Online'}];Object.defineProperties(select,{options:{get(){return this.children;}},selectedOptions:{get(){return this.children.filter(option=>option.value===this.value);}}});form.elements.radio_id=select;form.elements.device_code=Object.assign(node('input'),{value:'3961'});$('deviceLabel').hidden=!useDeviceCode;$('radioLabel').hidden=useDeviceCode;$('shared').hidden=false;$('shareName').textContent='First station';$('stationPopupClose').textContent='Close';$('stationAddPopup').querySelector=selector=>selector==='.station-popup-close'?$('stationPopupClose'):null;
- const ctx={document:{createElement:node,hidden:false},$: $,Event:class{constructor(type){this.type=type;}},Promise,Date:class extends Date{static now(){return now();}},queueMicrotask,setTimeout(fn){queueMicrotask(fn);},api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('No fixture response');const result=answers.shift();if(result instanceof Error)throw result;return await result;},human,listenerActionDialog:async(...args)=>{dialogs.push(args);return await dialog(...args);},reconcileSelectedRadio:radios=>radios.length===1?String(radios[0].id):radios.some(r=>String(r.id)===selectedId)?selectedId:'',rememberSelectedRadio:id=>selected.push(id),updateStationConfirmation:confirmation,loadMyRadios:async()=>{},refreshRadioInventory:id=>refreshes.push(id)};
- runInNewContext('let sharedCode="10",shareRunning=false,sitePageGeneration=0,verificationId=null;function invalidateOwnerVerification(){throw Error(\"Owner verification is outside this shared-flow fixture\");}',ctx);runInNewContext(busySource,ctx);runInNewContext(pageSource,ctx);runInNewContext(sharedSource,ctx);
- return {ctx,ids,form,calls,answers,dialogs,selected,refreshes,id:$,get:expression=>runInNewContext(expression,ctx),open:runInNewContext('openShared',ctx),page:runInNewContext('page',ctx),submit:()=>form.onsubmit({preventDefault(){},target:form}),cancel(){runInNewContext('stopWaitingForSharedStation()',ctx);$('shared').hidden=true;},next(code='11'){runInNewContext('sharedCode='+JSON.stringify(code),ctx);$('shared').hidden=false;form.hidden=false;}};
+ const ctx={window:{addEventListener(name,fn){const handlers=windowEvents.get(name)||[];handlers.push(fn);windowEvents.set(name,handlers);},dispatchEvent(event){for(const handler of windowEvents.get(event.type)||[])handler(event);}},document:{createElement:node,hidden:false},$: $,Event:class{constructor(type){this.type=type;}},Promise,Date:class extends Date{static now(){return now();}},queueMicrotask,setTimeout(fn){queueMicrotask(fn);},api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('No fixture response');const result=answers.shift();if(result instanceof Error)throw result;return await result;},human,listenerActionDialog:async(...args)=>{dialogs.push(args);return await dialog(...args);},reconcileSelectedRadio:radios=>radios.length===1?String(radios[0].id):radios.some(r=>String(r.id)===selectedId)?selectedId:'',rememberSelectedRadio:id=>selected.push(id),loadRadioInventory:async id=>{inventoryCalls.push(id);return inventory(id);},loadMyRadios:async()=>{},refreshRadioInventory:id=>refreshes.push(id)};
+ runInNewContext('let sharedCode="10",shareRunning=false,sitePageGeneration=0,verificationId=null;function invalidateOwnerVerification(){throw Error(\"Owner verification is outside this shared-flow fixture\");}',ctx);runInNewContext(busySource,ctx);runInNewContext(pageSource,ctx);runInNewContext(sharedSource,ctx);runInNewContext(confirmationSource,ctx);
+ return {ctx,ids,form,calls,answers,dialogs,selected,refreshes,inventoryCalls,status(radios){ctx.window.dispatchEvent({type:'radio-status-updated',detail:{radios}});},id:$,get:expression=>runInNewContext(expression,ctx),open:runInNewContext('openShared',ctx),page:runInNewContext('page',ctx),submit:()=>form.onsubmit({preventDefault(){},target:form}),cancel(){runInNewContext('stopWaitingForSharedStation()',ctx);$('shared').hidden=true;},next(code='11'){runInNewContext('sharedCode='+JSON.stringify(code),ctx);$('shared').hidden=false;form.hidden=false;}};
 }
 
 test('station rendering is read-only and only a tile tap passes automatic add intent',()=>{
@@ -135,4 +137,47 @@ test('reattaching after the local monitoring deadline waits on the existing comm
 
 test('compact delivery feedback protects the station name and leaves the message independently translatable',async()=>{
  const f=fixture();f.id('shareName').textContent='Station added';f.answers.push({command_id:'command'},{state:'added'});await f.submit();const children=f.id('stationDeliveryStatus').children;assert.equal(children.length,2);assert.equal(children[0].textContent,'Station added — ');assert.equal(children[0].dataset.i18nSkip,'1');assert.equal(children[1].textContent,'Station added');assert.equal(children[1].dataset.i18nSkip,undefined);
+});
+
+test('tapping a station already reported on the radio does not add it again without explicit intent',async()=>{
+ const f=fixture({inventory:async()=>({known:true,codes:new Set(['10'])})});f.answers.push({name:'Saved station',listener_code:'10'},{radios:[{id:'one',online:true}]});await f.open('10',true,true);
+ assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,0);assert.equal(f.id('shareSavedNotice').hidden,false);assert.equal(f.id('shareSubmit').textContent,'Add again');assert.equal(f.id('shareSubmit').hidden,false);assert.equal(f.id('shareWifiHelp').hidden,true);assert.equal(f.dialogs.length,0);
+ f.answers.push({command_id:'explicit-add-again'},{state:'added'});await f.submit();assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,1);assert.deepEqual(f.dialogs.map(dialog=>dialog[0]),['Station added']);
+});
+
+test('closing during the saved inventory check prevents a later automatic station addition',async()=>{
+ const inventory=deferred(),f=fixture({inventory:()=>inventory.promise});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:true}]});const opening=f.open('10',true,true);await until(()=>f.inventoryCalls.length===1);f.cancel();inventory.resolve({known:true,codes:new Set()});await opening;
+ assert.equal(f.calls.length,2);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);assert.equal(f.id('shared').hidden,true);assert.equal(f.get('shareRunning'),false);assert.equal(f.dialogs.length,0);
+});
+
+test('an offline station sheet exposes Wi-Fi help and an online event restores Add without sending it',async()=>{
+ const f=fixture();f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:false}]});await f.open('10',true,true);
+ assert.equal(f.id('shareSubmit').hidden,true);assert.equal(f.id('shareWifiHelp').hidden,false);assert.equal(f.form.dataset.radioOffline,'1');assert.match(f.id('shareStatus').textContent,/Radio offline/);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);
+ f.status([{id:'one',online:true}]);await until(()=>f.id('shareStatus').textContent==='');assert.equal(f.id('shareSubmit').hidden,false);assert.equal(f.id('shareWifiHelp').hidden,true);assert.equal(f.form.dataset.radioOffline,'');assert.equal(f.calls.length,2);
+ f.answers.push({command_id:'online-add'},{state:'added'});await f.submit();assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,1);
+});
+
+test('offline status events hide Add again without dropping the saved notice or adding a duplicate',async()=>{
+ const f=fixture({inventory:async()=>({known:true,codes:new Set(['10'])})});f.answers.push({name:'Saved station',listener_code:'10'},{radios:[{id:'one',online:true}]});await f.open('10',true,true);f.status([{id:'one',online:false}]);assert.equal(f.id('shareSavedNotice').hidden,false);assert.equal(f.id('shareSubmit').hidden,true);assert.equal(f.id('shareWifiHelp').hidden,false);
+ f.status([{id:'one',online:true}]);await until(()=>!f.id('shareSubmit').hidden&&f.id('shareSubmit').textContent==='Add again');assert.equal(f.id('shareSavedNotice').hidden,false);assert.equal(f.calls.length,2);
+});
+
+test('offline Wi-Fi help is available before a slow inventory check completes',async()=>{
+ const inventory=deferred(),f=fixture({inventory:()=>inventory.promise});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:false}]});const opening=f.open('10',true,true);await until(()=>f.inventoryCalls.length===1);
+ assert.equal(f.id('shareSubmit').hidden,true);assert.equal(f.id('shareWifiHelp').hidden,false);assert.match(f.id('shareStatus').textContent,/offline/);f.status([{id:'one',online:true}]);inventory.resolve({known:true,codes:new Set()});await opening;await until(()=>!f.id('shareSubmit').hidden);assert.equal(f.calls.length,2);assert.equal(f.id('shareSubmit').disabled,false);
+});
+
+test('choosing another radio connection abandons the initial automatic inventory continuation',async()=>{
+ const inventory=deferred(),f=fixture({inventory:()=>inventory.promise});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:true}]});const opening=f.open('10',true,true);await until(()=>f.inventoryCalls.length===1);assert.equal(f.id('shareSubmit').disabled,true);f.id('otherRadio').onclick();inventory.resolve({known:true,codes:new Set()});await opening;
+ assert.equal(f.calls.length,2);assert.equal(f.id('deviceLabel').hidden,false);assert.equal(f.id('radioLabel').hidden,true);assert.equal(f.id('shareSubmit').disabled,false);assert.equal(f.get('shareRunning'),false);
+});
+
+test('a superseded inventory check cannot automatically resend a saved station after radio status recovers',async()=>{
+ const inventory=deferred(),f=fixture({inventory:()=>inventory.promise});f.answers.push({name:'Saved station',listener_code:'10'},{radios:[{id:'one',online:true}]});const opening=f.open('10',true,true);await until(()=>f.inventoryCalls.length===1);f.status([{id:'one',online:false}]);f.status([{id:'one',online:true}]);assert.equal(f.inventoryCalls.length,2);inventory.resolve({known:true,codes:new Set(['10'])});await opening;
+ assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,0);assert.equal(f.id('shareSavedNotice').hidden,false);assert.equal(f.id('shareSubmit').textContent,'Add again');assert.equal(f.id('shareSubmit').disabled,false);
+});
+
+test('changing the selected radio during an inventory check never transfers the original tap intent',async()=>{
+ const initial=deferred(),f=fixture({inventory:id=>id==='one'?initial.promise:Promise.resolve({known:true,codes:new Set()})});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:true},{id:'two',online:true}]});const opening=f.open('10',true,true);await until(()=>f.inventoryCalls.length===1);f.form.elements.radio_id.value='two';await f.get('updateStationConfirmation()');initial.resolve({known:true,codes:new Set()});await opening;
+ assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,0);assert.equal(f.form.elements.radio_id.value,'two');assert.equal(f.id('shareSubmit').disabled,false);assert.equal(f.dialogs.length,0);
 });

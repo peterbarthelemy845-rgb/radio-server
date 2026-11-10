@@ -23,11 +23,13 @@ test('artwork and its visible name form one button and either tap starts one aut
  tap(image);assert.deepEqual(openings,[{code:'13',autoAdd:true},{code:'13',autoAdd:true}]);
 });
 
-test('saved tiles keep their add-again label and station names remain literal text',()=>{
+test('saved tiles open their station without automatic addition and names remain literal text',()=>{
+ const openings=[];
  function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},setAttribute(key,value){this.attrs[key]=value;},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];}};}
- const render=runInNewContext(source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'))+';renderStationSlider;',{document:{createElement:node}}),track=node(),station={name:'<b>Local Radio</b>',listener_code:'14'};
+ const render=runInNewContext(source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'))+';renderStationSlider;',{document:{createElement:node},openStationPopup:(code,options)=>openings.push({code,autoAdd:options.autoAdd})}),track=node(),station={name:'<b>Local Radio</b>',listener_code:'14'};
  render(track,[station],'No stations',true);const button=track.children[0].children[0];
- assert.equal(button.attrs['aria-label'],'<b>Local Radio</b> — add again to your radio');assert.equal(button.children[1].textContent,station.name);assert.equal(button.children[1].innerHTML,undefined);
+ assert.equal(button.attrs['aria-label'],'<b>Local Radio</b> — on your radio');assert.equal(button.children[1].textContent,station.name);assert.equal(button.children[1].innerHTML,undefined);
+ button.onclick();assert.deepEqual(openings,[{code:'14',autoAdd:false}]);
 });
 
 test('unlinked station lists omit repeated connection instructions but retain useful linked-radio hints',()=>{
@@ -36,4 +38,32 @@ test('unlinked station lists omit repeated connection instructions but retain us
   const context={$,stations:[],readSelectedRadio:()=>radio,readRadioInventory:()=>inventory,loadRadioInventory(){},renderStationSlider(){}};
   const list=runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('list=function()'),source.indexOf("$('search').oninput=list;"))+';list;',context);list();assert.equal($('stationInventoryHelp').textContent,expected);assert.equal($('stationInventoryHelp').hidden,!expected);
  }
+});
+
+function searchFixture({known=true}={}){
+ const nodes=new Map(),openings=[],focusCalls=[];
+ function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}
+ const $=id=>{if(!nodes.has(id)){const element=node();element.id=id;nodes.set(id,element);}return nodes.get(id);};
+ const context={$,document:{createElement:node},stations:[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],readSelectedRadio:()=>known?'radio':'',readRadioInventory:()=>known?{known:true,codes:new Set(['13'])}:null,loadRadioInventory(){},openStationPopup:(code,options)=>openings.push({code,options})};
+ runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('function renderStationSlider('),source.indexOf('const libraryHelp=')),context);
+ return {$,openings,focusCalls,search(query){$('search').value=query;$('search').oninput();},names(id){return $(id).children.filter(item=>item.className==='station-slider-item').map(item=>item.children[0].children[1].textContent);}};
+}
+
+test('Clear search appears only when a real query matches neither saved nor available stations',()=>{
+ const f=searchFixture();
+ for(const query of ['', '   ', 'LOCAL', 'News', '13', '14']){f.search(query);assert.equal(f.$('clearStationSearch').hidden,true,query);}
+ f.search('missing station');assert.equal(f.$('clearStationSearch').hidden,false);assert.deepEqual(f.names('savedStations'),[]);assert.deepEqual(f.names('stations'),[]);
+ f.search('news');assert.equal(f.$('clearStationSearch').hidden,true);assert.deepEqual(f.names('stations'),['Morning News']);
+ assert.deepEqual(f.openings,[],'searching never issues a station action');
+});
+
+test('Clear search restores both lists and returns focus without scrolling or adding a station',()=>{
+ const f=searchFixture();f.search('no match');f.$('clearStationSearch').onclick();
+ assert.equal(f.$('search').value,'');assert.equal(f.$('clearStationSearch').hidden,true);assert.deepEqual(f.names('savedStations'),['Local Radio']);assert.deepEqual(f.names('stations'),['Morning News']);
+ assert.equal(f.focusCalls.length,1);assert.equal(f.focusCalls[0].id,'search');assert.equal(f.focusCalls[0].options.preventScroll,true);assert.deepEqual(f.openings,[]);
+});
+
+test('Clear search works before a radio has been linked',()=>{
+ const f=searchFixture({known:false});f.search('not found');assert.equal(f.$('clearStationSearch').hidden,false);f.$('clearStationSearch').onclick();
+ assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);assert.equal(f.$('savedStationsSection').hidden,true);assert.equal(f.$('clearStationSearch').hidden,true);assert.deepEqual(f.openings,[]);
 });

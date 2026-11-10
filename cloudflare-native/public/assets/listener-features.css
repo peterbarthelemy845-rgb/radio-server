@@ -11,3 +11,10 @@ body.app-listener-page #listenerTextSize::after{content:'Aa';font-size:1.125rem;
 #stationDeliveryStatus{margin:12px 0 0;padding:10px 12px;border:1px solid #bed6f4;border-radius:10px;background:#edf5ff;color:#174a76;font-size:.9375rem;line-height:1.5;overflow-wrap:anywhere}
 #stationDeliveryStatus[data-status="success"]{border-color:#b3dfca;background:#edf9f2;color:#17603c}
 #stationDeliveryStatus[data-status="error"]{border-color:#eac6c6;background:#fff3f2;color:#8b3030}
+
+#loginMessage:empty{display:none}
+#loginMessage{padding:10px 12px;margin:10px 0;border:1px solid #e5b8bd;border-radius:9px;background:#fff0f2;color:#8b2331;font-size:.9375rem;line-height:1.5;overflow-wrap:anywhere}
+.radio-approval-number{display:block;margin:12px 0;padding:14px 10px;border:1px solid #b9d8fa;border-radius:12px;background:#edf6ff;color:#153f70;font-size:2.75rem;line-height:1.2;letter-spacing:.12em;text-align:center;font-variant-numeric:tabular-nums}
+.radio-approval-instruction{display:block;line-height:1.5}
+#shared .share-saved-notice{padding:10px 12px;margin:10px 0;border:1px solid #b3dfca;border-radius:10px;background:#edf9f2;color:#17603c;font-size:1rem;line-height:1.4;font-weight:650}
+#shared #shareWifiHelp{width:100%;margin-top:8px;min-height:48px}

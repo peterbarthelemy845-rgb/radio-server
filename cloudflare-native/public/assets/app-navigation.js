@@ -73,6 +73,13 @@ function appCloseStationPanel(){
  if(shareRunning&&typeof stopWaitingForSharedStation==='function')stopWaitingForSharedStation();
  if(history.state?.radioLocalsApp?.panel==='station')history.back();else stationPopup.close();
 }
+function appOpenStationWifiHelp(){
+ if(shareRunning||$('shared').hidden)return;
+ const panel=history.state?.radioLocalsApp?.panel==='station';
+ if(stationPopup.open){appPanelOrigin=null;stationPopup.close();}
+ appShowPage('wifiSetup',{replace:panel,push:!panel,focus:$('listenerAppTitle')});
+}
+$('shareWifiHelp').onclick=appOpenStationWifiHelp;
 // Station reports stay in the existing Help form. Context is submitted as a
 // separate field so an existing message draft is never replaced or shortened.
 function appClearStationProblemContext(){

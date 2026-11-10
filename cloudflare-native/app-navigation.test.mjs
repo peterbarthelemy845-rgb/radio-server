@@ -8,7 +8,7 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  function node(id='',tag='DIV'){
   const listeners={};const n={id,tagName:tag,hidden:false,dataset:{},children:[],scrollLeft:0,isConnected:true,textContent:'',attrs:{},classList:{values:new Set(),toggle(name,on){if(on)this.values.add(name);else this.values.delete(name);}},setAttribute(key,value){this.attrs[key]=value;},addEventListener(key,fn){(listeners[key]??=[]).push(fn);},append(...items){this.children.push(...items);},before(){},focus(){document.activeElement=this;},querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;queueMicrotask(()=>{for(const fn of listeners.close||[])fn({});});},dispatch(name,event={}){for(const fn of listeners[name]||[])fn(event);}};if(id)nodes.set(id,n);return n;
  }
- const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;
+ const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','shareWifiHelp','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;
  for(const id of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(id).hidden=id!==initial;
  const supportLink=node('supportLink','A');supportLink.href='https://radio.example/support';const wifiLink=nodes.get('openWifiSetup');wifiLink.tagName='A';wifiLink.href='https://radio.example/wifi-setup';
  const document={body:node(),activeElement:null,querySelector(selector){return selector.startsWith('nav a')?supportLink:null;},createElement:tag=>node('',tag.toUpperCase())};nodes.get('ticketForm').elements=Object.fromEntries(['name','email','device_code','subject','message','station_code'].map(key=>[key,Object.assign(node('ticket-'+key,'INPUT'),{value:''})]));
@@ -145,4 +145,14 @@ test('browser Back leaves owner verification through the real core page lifecycl
 
 test('Back with no app state still dismisses a pending station popup',async()=>{
  const f=fixture();f.history.replaceState(null,'',f.context.location.href);await vm.runInContext("openStationPopup('13'); shareRunning=true",f.context);f.entries[0].state=null;f.history.back();await f.settle();assert.equal(f.stationPopup.open,false);assert.equal(f.context.shareRunning,false);
+});
+
+test('station Wi-Fi help replaces the sheet and browser Back returns to Radio without reopening an add',async()=>{
+ const f=fixture({app:true});f.window.scrollY=240;f.nodes.get('stations').scrollLeft=110;await vm.runInContext("openStationPopup('13',{autoAdd:true})",f.context);assert.equal(f.stationPopup.open,true);assert.equal(f.entries.length,2);
+ f.nodes.get('shareWifiHelp').onclick();await f.settle();assert.equal(f.stationPopup.open,false);assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.equal(f.nodes.get('shared').hidden,true);assert.equal(f.history.state.radioLocalsApp.page,'wifiSetup');assert.equal(f.history.state.radioLocalsApp.panel,null);assert.equal(f.entries.at(-1).url,'https://radio.example/wifi-setup?app=1');assert.equal(f.entries.length,2);
+ f.history.back();await f.settle();assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.window.scrollY,240);assert.equal(f.nodes.get('stations').scrollLeft,110);assert.equal(f.stationOpenings.length,1);assert.equal(f.stationPopup.open,false);f.history.forward();await f.settle();assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.equal(f.stationOpenings.length,1);assert.equal(f.stationPopup.open,false);
+});
+
+test('Wi-Fi help cannot abandon a still-running station request',async()=>{
+ const f=fixture();await vm.runInContext("openStationPopup('13');shareRunning=true",f.context);f.nodes.get('shareWifiHelp').onclick();await f.settle();assert.equal(f.stationPopup.open,true);assert.equal(f.nodes.get('wifiSetup').hidden,true);assert.equal(f.history.state.radioLocalsApp.panel,'station');
 });

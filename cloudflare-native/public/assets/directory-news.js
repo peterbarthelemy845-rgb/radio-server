@@ -29,9 +29,9 @@ let stationListSnapshot='';
 function renderStationSlider(track,found,emptyText,saved=false){
  track.replaceChildren();
  for(const station of found){
-  const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — add again to your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
+  const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — on your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
   const image=document.createElement('img');image.onerror=()=>{image.onerror=null;image.src='/assets/logo-placeholder.svg';};image.src=station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
-  const name=document.createElement('span');name.className='station-tile-name';name.textContent=station.name;tile.append(image,name);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:true});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);track.append(item);
+  const name=document.createElement('span');name.className='station-tile-name';name.textContent=station.name;tile.append(image,name);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);track.append(item);
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=emptyText;track.append(empty);}
 }
@@ -44,10 +44,12 @@ list=function(){
  const hint=!radioId?'':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
  const snapshot=JSON.stringify([radioId,known,query,hint,saved,available]);if(snapshot===stationListSnapshot)return;stationListSnapshot=snapshot;
  $('stationCount').textContent='';$('savedStationsSection').hidden=!known;$('stationInventoryHelp').textContent=hint;$('stationInventoryHelp').hidden=!hint;
+ $('clearStationSearch').hidden=!query||saved.length+available.length>0;
  renderStationSlider($('savedStations'),saved,query?'No matching saved stations.':'No saved stations reported.',true);
  renderStationSlider($('stations'),available,query?'No matching available stations.':known?'No more stations available.':'No stations yet.');
 };
 $('search').oninput=list;
+$('clearStationSearch').onclick=()=>{$('search').value='';list();$('search').focus({preventScroll:true});};
 const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search').after(libraryHelp);
 
 window.addEventListener('radio-locals-ready',list);
@@ -127,4 +129,4 @@ for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > 
 const stationPopup=document.createElement('dialog');stationPopup.id='stationAddPopup';stationPopup.setAttribute('aria-label','Add station to your radio');
 const stationPopupClose=document.createElement('button');stationPopupClose.className='station-popup-close';stationPopupClose.textContent='Close';stationPopupClose.onclick=()=>stationPopup.close();stationPopup.append(stationPopupClose);document.body.append(stationPopup);
 stationPopup.addEventListener('close',()=>{$('shared').hidden=true;});
-async function openStationPopup(code,{autoAdd=false}={}){if(shareRunning)return;stationPopup.append($('shared'));$('shared').dataset.quickAdd=autoAdd?'1':'';$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';$('shareStationBio').hidden=true;setSharedStatus('');stationPopup.querySelector('.station-popup-share')?.remove();stationPopup.querySelector('.station-share-feedback')?.remove();const selected=stations.find(s=>String(s.listener_code)===String(code));if(selected){const share=shareButton('Share station',selected.name,location.origin+'/station/'+code);share.className='station-popup-share secondary';share.textContent='Share station';stationPopup.append(share);}stationPopup.showModal();try{await openShared(code,true,autoAdd);}catch(e){if(stationPopup.open)setSharedStatus(e.message,'error');}}
+async function openStationPopup(code,{autoAdd=false}={}){if(shareRunning)return;stationPopup.append($('shared'));$('shared').dataset.quickAdd='1';$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';$('shareStationBio').hidden=true;setSharedStatus('');stationPopup.querySelector('.station-popup-share')?.remove();stationPopup.querySelector('.station-share-feedback')?.remove();const selected=stations.find(s=>String(s.listener_code)===String(code));if(selected){const share=shareButton('Share station',selected.name,location.origin+'/station/'+code);share.className='station-popup-share secondary';share.textContent='Share station';stationPopup.append(share);}stationPopup.showModal();try{await openShared(code,true,autoAdd);}catch(e){if(stationPopup.open)setSharedStatus(e.message,'error');}}

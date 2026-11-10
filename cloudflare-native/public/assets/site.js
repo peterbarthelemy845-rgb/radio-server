@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);let state,verificationId,stations=[],humanLoading,sitePageGeneration=0;
-function page(id){sitePageGeneration++;if(id==='library')id='myRadio';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
+function page(id){sitePageGeneration++;if(typeof cancelOwnerAccess==='function')cancelOwnerAccess();if(id==='library')id='myRadio';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
 function message(text){$('message').textContent=text;}
 async function api(path,body,options={}){
  if(!navigator.onLine)throw new Error('No internet. Check your connection and try again.');
@@ -38,9 +38,27 @@ function busy(form,on,freezeFields=false,label){
 function formIsBusy(form){return formBusyStates.has(form);}
 
 function loadHuman(){if(window.turnstile)return Promise.resolve();if(!humanLoading)humanLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';let timer;const failed=()=>{clearTimeout(timer);script.remove();humanLoading=null;reject(new Error('Security check could not load. Refresh and try again.'));};script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=failed;document.head.append(script);timer=setTimeout(failed,15000);});return humanLoading;}
-async function human(container,action){await ensureOwnerSession();await loadHuman();return new Promise((resolve,reject)=>{let widget,settled=false;const area=container.querySelector('.human');area.replaceChildren();function finish(error,token){if(settled)return;settled=true;clearTimeout(timer);if(widget!==undefined)window.turnstile.remove(widget);if(error)reject(error);else resolve(token);}const timer=setTimeout(()=>finish(new Error('Security check timed out. Please try again.')),90000);widget=window.turnstile.render(area,{sitekey:state.turnstile_site_key,action,theme:'light',size:'flexible',retry:'never',callback:token=>finish(null,token),'error-callback':code=>{finish(new Error('Security check could not complete ('+String(code).replace(/[^0-9]/g,'').slice(0,8)+'). Refresh and try again. If it continues, open this page in your regular browser.'));return true;},'expired-callback':()=>finish(new Error('Security check expired. Please try again.'))});});}
+function humanCancelled(){const error=new Error('Security check cancelled.');error.name='AbortError';return error;}
+function humanStep(promise,signal){
+ if(!signal)return promise;
+ return new Promise((resolve,reject)=>{let settled=false;const finish=(error,value)=>{if(settled)return;settled=true;signal.removeEventListener('abort',cancel);if(error)reject(error);else resolve(value);},cancel=()=>finish(humanCancelled());signal.addEventListener('abort',cancel,{once:true});if(signal.aborted)cancel();Promise.resolve(promise).then(value=>finish(null,value),error=>finish(error));});
+}
+async function human(container,action,signal){
+ if(signal?.aborted)throw humanCancelled();await humanStep(ensureOwnerSession(),signal);if(signal?.aborted)throw humanCancelled();await humanStep(loadHuman(),signal);if(signal?.aborted)throw humanCancelled();
+ return new Promise((resolve,reject)=>{
+  let widget,timer,settled=false;const area=container.querySelector('.human'),removeWidget=()=>{if(widget!==undefined){try{window.turnstile.remove(widget);}catch{}widget=undefined;}};
+  function finish(error,token){if(settled)return;settled=true;clearTimeout(timer);signal?.removeEventListener('abort',cancel);removeWidget();if(error)reject(error);else resolve(token);}
+  const cancel=()=>finish(humanCancelled());signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted){cancel();return;}
+  area.replaceChildren();timer=setTimeout(()=>finish(new Error('Security check timed out. Please try again.')),90000);
+  try{widget=window.turnstile.render(area,{sitekey:state.turnstile_site_key,action,theme:'light',size:'flexible',retry:'never',callback:token=>finish(null,token),'error-callback':code=>{finish(new Error('Security check could not complete ('+String(code).replace(/[^0-9]/g,'').slice(0,8)+'). Refresh and try again. If it continues, open this page in your regular browser.'));return true;},'expired-callback':()=>finish(new Error('Security check expired. Please try again.'))});if(settled)removeWidget();}catch(error){finish(error);}
+ });
+}
 async function fileData(file){if(!file?.size)return undefined;if(file.size>3*1024*1024)throw new Error('Choose an image under 3 MB.');const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));return {name:file.name,base64:btoa(binary)};}
-let verificationGeneration=0,verificationPageGeneration=0,verificationBusy=false,verificationResendDeadline=0,verificationResendTimer,ownerAccessGeneration=0,registrationRequestFingerprint='',registrationRequestId='',ownerSessionPromise,ownerSessionGeneration=0;
+let verificationGeneration=0,verificationPageGeneration=0,verificationBusy=false,verificationResendDeadline=0,verificationResendTimer,ownerAccessGeneration=0,ownerAccessAttempt=null,registrationRequestFingerprint='',registrationRequestId='',ownerSessionPromise,ownerSessionGeneration=0;
+function cancelOwnerAccess(){const attempt=ownerAccessAttempt;if(!attempt)return;ownerAccessAttempt=null;ownerAccessGeneration++;attempt.controller.abort();busy(attempt.form,false);}
+function beginOwnerAccess(form){cancelOwnerAccess();const attempt={form,controller:new AbortController(),generation:++ownerAccessGeneration,view:sitePageGeneration};ownerAccessAttempt=attempt;busy(form,true,true);return attempt;}
+function currentOwnerAccess(attempt){return ownerAccessAttempt===attempt&&attempt.generation===ownerAccessGeneration&&attempt.view===sitePageGeneration&&!attempt.controller.signal.aborted;}
+function finishOwnerAccess(attempt){if(ownerAccessAttempt===attempt){ownerAccessAttempt=null;busy(attempt.form,false);}}
 function renderVerificationResend(){
  clearTimeout(verificationResendTimer);verificationResendTimer=undefined;
  const button=$('resend'),remaining=Math.max(0,Math.ceil((verificationResendDeadline-Date.now())/1000));
@@ -54,9 +72,10 @@ function invalidateOwnerVerification(){verificationGeneration++;verificationId=n
 function verify(result){verificationGeneration++;verificationPageGeneration=sitePageGeneration;verificationResendDeadline=Date.now()+60000;setVerificationBusy(false);verificationId=result.verification_id;$('verifyText').textContent='Enter the private code sent to '+result.verification_email+'. It expires in 15 minutes.';$('verifyMessage').textContent='';$('verifyForm').reset();if(!$('verification').open)$('verification').showModal();renderVerificationResend();}
 window.addEventListener?.('app-language-changed',renderVerificationResend);
 function registrationMessage(text){const target=$('registerMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
+function loginMessage(text){const target=$('loginMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
 function loadOwnerSession(){if(!ownerSessionPromise){const generation=ownerSessionGeneration;ownerSessionPromise=api('/api/session').then(result=>{if(generation===ownerSessionGeneration)state=result;return result;}).finally(()=>{ownerSessionPromise=null;});}return ownerSessionPromise;}
 async function ensureOwnerSession(){if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)await loadOwnerSession();if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)throw new Error('Website setup is not ready. Please refresh and try again.');}
-async function registrationRequest(data){const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');if(fingerprint!==registrationRequestFingerprint){registrationRequestFingerprint=fingerprint;registrationRequestId=crypto.randomUUID().replaceAll('-','');}return registrationRequestId;}
+async function registrationRequest(data,current=()=>true){const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');if(!current())return '';if(fingerprint!==registrationRequestFingerprint){registrationRequestFingerprint=fingerprint;registrationRequestId=crypto.randomUUID().replaceAll('-','');}return registrationRequestId;}
 function ownerAccessSuccess(result){$('stationSuccessTitle').textContent=result.registration_completed?(result.review_required?'Waiting for review':'Station added'):'Signed in';$('stationSuccessText').textContent=result.registration_completed?'Station code #'+result.station_code+'.':'You can edit your station.';if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='';if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=true;if(!$('stationSuccess').open)$('stationSuccess').showModal();}
 function ownerEditorUnavailable(result,error){ownerAccessSuccess(result);if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Your verification succeeded. Please try opening the editor again.';else message(error.message);if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=false;}
 async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;state.owner_station=result.station.code;page('editor');$('ownerName').textContent=result.station.name;const form=$('editForm'),sameStation=form.dataset.stationCode===String(result.station.code),keepDraft=preserveDraft&&sameStation&&!!(form.dataset.dirty||form.elements.artwork.files[0]);if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(result.station.artwork_url);$('ownerStatus').textContent='Station code #'+result.station.code+' · '+result.station.status.replaceAll('_',' ');if(!keepDraft){form.elements.stream_url.value=result.station.stream_url;form.elements.bio.value=result.station.bio;form.elements.artwork.value='';delete form.dataset.dirty;}form.dataset.stationCode=String(result.station.code);return true;}
@@ -65,11 +84,11 @@ $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.pr
 $('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
 $('registerForm').addEventListener('reset',()=>{registrationRequestFingerprint='';registrationRequestId='';registrationMessage('');});
 $('registerForm').onsubmit=async event=>{
- event.preventDefault();const form=event.target;if(formIsBusy(form))return;if(window.prepareRegistrationStream&&!window.prepareRegistrationStream())return;registrationMessage('');const generation=++ownerAccessGeneration,view=sitePageGeneration,current=()=>generation===ownerAccessGeneration&&view===sitePageGeneration;
- try{const data=Object.fromEntries(new FormData(form)),artworkFile=form.elements.artwork.files[0];data.rights_confirmed=form.elements.rights_confirmed.checked;busy(form,true,true);if(window.validateRegistrationLogo&&!await window.validateRegistrationLogo(artworkFile))throw new Error(form.elements.artwork.validationMessage||'Choose a valid station logo.');await ensureOwnerSession();if(!current())return;data.agreement_version=state.agreement_version;data.artwork=await fileData(artworkFile);data.request_id=await registrationRequest(data);if(!current())return;data.turnstile_token=await human($('registrationHuman'),'station-submit');if(!current())return;const result=await api('/api/owner/register',data);if(current())verify(result);}
- catch(e){if(current())registrationMessage(e.message);}finally{busy(form,false);}
+ event.preventDefault();const form=event.target;if(formIsBusy(form))return;if(window.prepareRegistrationStream&&!window.prepareRegistrationStream())return;registrationMessage('');const data=Object.fromEntries(new FormData(form)),artworkFile=form.elements.artwork.files[0];data.rights_confirmed=form.elements.rights_confirmed.checked;const attempt=beginOwnerAccess(form),current=()=>currentOwnerAccess(attempt);
+ try{if(window.validateRegistrationLogo&&!await window.validateRegistrationLogo(artworkFile))throw new Error(form.elements.artwork.validationMessage||'Choose a valid station logo.');if(!current())return;await ensureOwnerSession();if(!current())return;data.agreement_version=state.agreement_version;data.artwork=await fileData(artworkFile);if(!current())return;data.request_id=await registrationRequest(data,current);if(!current())return;data.turnstile_token=await human($('registrationHuman'),'station-submit',attempt.controller.signal);if(!current())return;const result=await api('/api/owner/register',data);if(current())verify(result);}
+ catch(e){if(current())registrationMessage(e.message);}finally{finishOwnerAccess(attempt);}
 };
-$('loginForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;const generation=++ownerAccessGeneration,view=sitePageGeneration,current=()=>generation===ownerAccessGeneration&&view===sitePageGeneration,data=Object.fromEntries(new FormData(form));busy(form,true,true);try{await ensureOwnerSession();if(!current())return;data.turnstile_token=await human(form,'station-access');if(!current())return;const result=await api('/api/owner/login',data);if(current())verify(result);}catch(e){if(current())message(e.message);}finally{busy(form,false);}};
+$('loginForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;loginMessage('');const data=Object.fromEntries(new FormData(form)),attempt=beginOwnerAccess(form),current=()=>currentOwnerAccess(attempt);try{await ensureOwnerSession();if(!current())return;data.turnstile_token=await human(form,'station-access',attempt.controller.signal);if(!current())return;const result=await api('/api/owner/login',data);if(current())verify(result);}catch(e){if(current())loginMessage(e.message);}finally{finishOwnerAccess(attempt);}};
 $('verifyForm').onsubmit=async event=>{
  event.preventDefault();if(verificationBusy||!verificationId||!$('verification').open)return;const form=event.target,generation=verificationGeneration,id=verificationId,code=form.elements.code.value;setVerificationBusy(true);
  try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;const view=sitePageGeneration;setVerificationBusy(false);$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{if(await editor(!result.registration_completed,view)!==false&&!result.registration_completed)message(result.message);}catch(e){if(view===sitePageGeneration)ownerEditorUnavailable(result,e);}}
@@ -213,6 +232,11 @@ $('deleteVerifyForm').onsubmit=async event=>{
 };
 
 let sharedOpenGeneration=0;
+function setSharedSavedState(saved){$('shareSavedNotice').hidden=!saved;$('shareSubmit').textContent=saved?'Add again':'Add station';}
+function renderSharedRadioAvailability(offline){
+ $('shareForm').dataset.radioOffline=offline?'1':'';$('shareSubmit').hidden=offline;$('shareWifiHelp').hidden=!offline;
+ if(offline)setSharedStatus('Radio offline. Check power and Wi-Fi.','error');return offline;
+}
 function renderSharedWaitButton(){const close=$('stationAddPopup')?.querySelector?.('.station-popup-close');if(close)close.textContent=shareRunning?'Stop waiting':'Close';}
 function setSharedStatus(text,kind='progress'){const target=$('shareStatus');target.dataset.status=kind;target.textContent=text;renderSharedWaitButton();}
 const stationDeliveries=new Map();let stationDeliveryLastNotice=null;
@@ -250,13 +274,13 @@ function requestStationDelivery(radioId,stationCode,name){
  })();return record.promise;
 }
 let sharedOfflineRadios=new Set();
-function invalidateSharedView(){sharedOpenGeneration++;delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}setSharedStatus('');}
+function invalidateSharedView(){sharedOpenGeneration++;delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');}
 function stopWaitingForSharedStation(){invalidateSharedView();renderStationDeliveryStatus();}
 async function openShared(code,inPopup=false,autoAdd=false){
  const generation=++sharedOpenGeneration;
  try{
  const station=await api('/api/stations/'+code);if(generation!==sharedOpenGeneration)return;sharedCode=code;
- if(!inPopup)page('shared');$('shared').hidden=false;$('shareForm').hidden=false;setSharedStatus('');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
+ if(!inPopup)page('shared');$('shared').hidden=false;$('shareForm').hidden=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
  if(station.logo_url){$('shareArt').src=station.logo_url;$('shareArt').hidden=false;}
  const result=await api('/api/phone/radios');if(generation!==sharedOpenGeneration)return;
  const select=$('shareForm').elements.radio_id,selected=reconcileSelectedRadio(result.radios);sharedOfflineRadios=new Set(result.radios.filter(r=>r.online===false).map(r=>String(r.id)));select.replaceChildren();
@@ -265,21 +289,26 @@ async function openShared(code,inPopup=false,autoAdd=false){
  select.value=selected;select.required=!!result.radios.length;$('shareForm').elements.device_code.required=!result.radios.length;$('radioLabel').hidden=!result.radios.length;$('deviceLabel').hidden=!!result.radios.length;$('otherRadio').hidden=!result.radios.length;
  // Only an intentional tile tap can start an addition. Restored history and
  // incoming shared URLs must wait for the visitor to press Add station.
- if(autoAdd&&selected){
-  if(sharedOfflineRadios.has(String(selected))){setSharedStatus('Radio offline. Check power and Wi-Fi.','error');return;}
-  await submitSharedStation($('shareForm'));
- }else await updateStationConfirmation();
+ const canAutoAdd=autoAdd&&selected&&!sharedOfflineRadios.has(String(selected));renderSharedRadioAvailability(!!selected&&sharedOfflineRadios.has(String(selected)));
+ const alreadySaved=await updateStationConfirmation();if(generation!==sharedOpenGeneration)return;
+ if(canAutoAdd&&selected===select.value&&alreadySaved===false&&!sharedOfflineRadios.has(String(selected)))await submitSharedStation($('shareForm'));
  }catch(error){if(generation===sharedOpenGeneration)throw error;}
 }
-$('otherRadio').onclick=()=>{$('radioLabel').hidden=true;$('deviceLabel').hidden=false;$('otherRadio').hidden=true;$('shareForm').elements.radio_id.required=false;$('shareForm').elements.device_code.required=true;$('shareForm').elements.device_code.focus();};
+$('otherRadio').onclick=()=>{sharedOpenGeneration++;$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('radioLabel').hidden=true;$('deviceLabel').hidden=false;$('otherRadio').hidden=true;$('shareForm').elements.radio_id.required=false;$('shareForm').elements.device_code.required=true;$('shareForm').elements.device_code.focus();};
+window.addEventListener('radio-status-updated',event=>{
+ if($('shared').hidden||$('shareForm').hidden||shareRunning||$('radioLabel').hidden||!Array.isArray(event.detail?.radios))return;
+ const id=String($('shareForm').elements.radio_id.value),radio=event.detail.radios.find(item=>String(item.id)===id);if(!radio)return;
+ const wasOffline=sharedOfflineRadios.has(id);if(radio.online)sharedOfflineRadios.delete(id);else sharedOfflineRadios.add(id);
+ if(!radio.online)renderSharedRadioAvailability(true);else if(wasOffline){renderSharedRadioAvailability(false);void updateStationConfirmation();}
+});
 const delay=()=>new Promise(resolve=>setTimeout(resolve,2500));
 async function submitSharedStation(form){
- if(shareRunning)return;shareRunning=true;const stationCode=sharedCode,generation=sharedOpenGeneration,current=()=>generation===sharedOpenGeneration&&!$('shared').hidden;busy(form,true,true);$('shared').dataset.adding='1';setSharedStatus('Adding station…');
+ if(shareRunning)return;shareRunning=true;const stationCode=sharedCode,generation=sharedOpenGeneration,current=()=>generation===sharedOpenGeneration&&!$('shared').hidden;busy(form,true,true);$('shared').dataset.adding='1';$('shareWifiHelp').hidden=true;setSharedStatus('Adding station…');
  try{
   let radioId=form.elements.radio_id.value,radioLabel=form.elements.radio_id.selectedOptions[0]?.textContent.split(' · ')[0]||'your linked radio';
   if(!$('deviceLabel').hidden){
    const deviceCode=form.elements.device_code.value,turnstile_token=await human(form,'radio-link');if(!current())return;const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token});if(!current())return;
-   setSharedStatus(claim.confirmation_code+' — Match this number and tap Allow on your radio.');
+   showRadioApproval($('shareStatus'),claim.confirmation_code);
    const deadline=Date.now()+180000;let approved=false;
    while(Date.now()<deadline){await delay();if(!current())return;const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(!current())return;if(result.state==='approved'){radioId=result.radio_id;approved=true;break;}if(result.state!=='waiting')throw new Error('Connection was not approved. Please try again.');}
    if(!approved)throw new Error('Connection timed out. Please try again.');
@@ -288,7 +317,7 @@ async function submitSharedStation(form){
    if(!$('myRadio').hidden)loadMyRadios(true);
   }
   if(!radioId)throw new Error('Choose a radio to add this station.');rememberSelectedRadio(radioId);
-  if(sharedOfflineRadios.has(String(radioId))){const radios=await api('/api/phone/radios');if(!current())return;const radio=radios.radios.find(r=>String(r.id)===String(radioId));if(!radio)throw new Error('Connect your radio again.');if(!radio.online)throw new Error('Radio offline. Check power and Wi-Fi.');sharedOfflineRadios.delete(String(radioId));}
+  if(sharedOfflineRadios.has(String(radioId))){const radios=await api('/api/phone/radios');if(!current())return;const radio=radios.radios.find(r=>String(r.id)===String(radioId));if(!radio)throw new Error('Connect your radio again.');if(!radio.online){renderSharedRadioAvailability(true);return;}sharedOfflineRadios.delete(String(radioId));renderSharedRadioAvailability(false);}
   if(!current())return;
   // Delivery belongs to the dispatched command, not to this popup's lifetime.
   // Reopening the same station attaches to its existing request instead of sending twice.

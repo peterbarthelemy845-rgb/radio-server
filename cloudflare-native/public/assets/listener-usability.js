@@ -19,14 +19,24 @@ function loadRadioInventory(id,force=false){
  radioInventoryRequests.set(id,request);return request;
 }
 function refreshRadioInventory(id){const pending=radioInventoryRequests.get(String(id));return (pending||Promise.resolve()).then(()=>loadRadioInventory(id,true));}
+function showRadioApproval(target,number){
+ const digits=document.createElement('strong');digits.className='radio-approval-number';digits.dataset.i18nSkip='1';digits.textContent=String(number);
+ const instruction=document.createElement('span');instruction.className='radio-approval-instruction';instruction.dataset.i18n='pairing.approve';const translated=window.appI18n?.t('pairing.approve');instruction.textContent=translated&&translated!=='pairing.approve'?translated:'Match this number and tap Allow on your radio.';
+ target.replaceChildren(digits,instruction);
+}
+let sharedConfirmationGeneration=0;
 async function updateStationConfirmation(){
- const select=$('shareForm').elements.radio_id,id=select.value,code=String(sharedCode);
- $('shareSubmit').textContent='Add station';
- if(!id){setSharedStatus($('radioLabel').hidden?'':'Choose a radio to add this station.');return;}
- rememberSelectedRadio(id);const inventory=await loadRadioInventory(id);
- if(select.value!==id||String(sharedCode)!==code||shareRunning)return;
- if(inventory?.known&&inventory.codes.has(code)){setSharedStatus('On your radio. You can add it again if needed.','success');$('shareSubmit').textContent='Add again';}
- else setSharedStatus(inventory?.known?'':inventory?.unavailable?'Saved stations could not be checked. You can still add this station.':'Check your radio for its saved stations. The saved list updates after a radio software update.');
+ const select=$('shareForm').elements.radio_id,id=select.value,code=String(sharedCode),generation=sharedOpenGeneration,check=++sharedConfirmationGeneration,submit=$('shareSubmit');
+ setSharedSavedState(false);
+ if(!id){renderSharedRadioAvailability(false);setSharedStatus($('radioLabel').hidden?'':'Choose a radio to add this station.');return false;}
+ submit.disabled=true;const checking=window.appI18n?.t('busy.checking');submit.textContent=checking&&checking!=='busy.checking'?checking:'Checking…';
+ try{
+  rememberSelectedRadio(id);const inventory=await loadRadioInventory(id);
+  if(select.value!==id||String(sharedCode)!==code||generation!==sharedOpenGeneration||check!==sharedConfirmationGeneration||shareRunning||$('radioLabel').hidden)return;
+  const saved=!!(inventory?.known&&inventory.codes.has(code));setSharedSavedState(saved);
+  if(renderSharedRadioAvailability(sharedOfflineRadios.has(String(id))))return saved;
+  setSharedStatus(saved?'':inventory?.known?'':inventory?.unavailable?'Saved stations could not be checked. You can still add this station.':'Check your radio for its saved stations. The saved list updates after a radio software update.');return saved;
+ }finally{if(generation===sharedOpenGeneration&&check===sharedConfirmationGeneration&&!shareRunning)submit.disabled=false;}
 }
 $('shareForm').elements.radio_id.addEventListener('change',updateStationConfirmation);
 
