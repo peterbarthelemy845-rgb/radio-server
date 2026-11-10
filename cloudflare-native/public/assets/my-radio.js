@@ -31,16 +31,28 @@ async function unlinkMyRadio(radioId,deviceLabel,unlink){
  }catch(e){if(current())$('radioConnectStatus').textContent=e.message;}
  finally{radioUnlinkPending.delete(radioId);unlink.disabled=false;const replacement=radioCardViews.get(radioId)?.unlink;if(replacement)replacement.disabled=false;}
 }
+let radioStatusAvailable=false;
 const radioCardViews=new Map(),radioFreshness=document.createElement('p');radioFreshness.id='radioFreshness';radioFreshness.className='radio-freshness';radioFreshness.hidden=true;radioFreshness.setAttribute('aria-live','off');$('radioConnectStatus').before(radioFreshness);
 function checkedRadioTime(){return radioLastChecked?new Date(radioLastChecked).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';}
 function showRadioFreshness(available){radioFreshness.hidden=available;radioFreshness.textContent=available?'':radioLastChecked?'Last checked '+checkedRadioTime():'Status has not been checked.';}
-function updateRadioCardStatus(available){for(const view of radioCardViews.values()){const {status,station,radio,report}=view;status.textContent=available?(radio.online?'Online':'Radio offline. Check power and Wi-Fi.'):'Status unavailable';status.className=available?(radio.online?'radio-online':'radio-offline'):'radio-unknown';station.textContent='Current station: '+(available?(radio.online?(radio.current_station||'Not reported yet'):'Unavailable while offline'):'Unavailable until status is checked');if(report)report.hidden=!available||!radio.current_station||!(/^[1-9][0-9]{1,5}$/).test(String(radio.current_station_code||''));}const selected=radioCardViews.get(String(readSelectedRadio()))?.radio;$('openWifiSetup').hidden=available&&radioCardViews.size>0&&selected?.online!==false;}
+function updateRadioCardStatus(available){
+ radioStatusAvailable=available;
+ for(const view of radioCardViews.values()){
+  const {status,station,radio,report,choose}=view,selected=String(readSelectedRadio())===String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),inventory=typeof readRadioInventory==='function'?readRadioInventory(radio.id):null;
+  status.textContent=available?(radio.online?'Online':'Radio offline. Check power and Wi-Fi.'):'Status unavailable';status.className=available?(radio.online?'radio-online':'radio-offline'):'radio-unknown';
+  station.textContent=available&&radio.online&&!radio.current_station&&inventory?.known&&inventory.codes.size===0?'Choose a station below':'Current station: '+(available?(radio.online?(radio.current_station||'Not reported yet'):'Unavailable while offline'):'Unavailable until status is checked');
+  if(choose){choose.textContent=deviceLabel;choose.setAttribute('aria-pressed',String(selected));choose.setAttribute('aria-label',deviceLabel+(selected?', selected':', select radio'));choose.title=selected?'Selected radio':'Select this radio';}
+  if(report)report.hidden=!available||!radio.current_station||!(/^[1-9][0-9]{1,5}$/).test(String(radio.current_station_code||''));
+ }
+ const selected=radioCardViews.get(String(readSelectedRadio()))?.radio;$('openWifiSetup').hidden=available&&radioCardViews.size>0&&selected?.online!==false;
+}
+window.addEventListener('radio-inventory-changed',()=>{if(radioStatusAvailable&&!radioLoading&&!$('myRadio').hidden)updateRadioCardStatus(true);});
 function publishRadioStatus(radios){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{radios,checked_at:Date.now()}}));}
 function markRadioStatusUnavailable(text){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{unavailable:true}}));updateRadioCardStatus(false);showRadioFreshness(false);$('refreshRadios').hidden=false;if(text)$('radioConnectStatus').textContent=text;}
 function markRadioStatusUpdating(){
  // A refresh is not a failure. Retain the last reported station while making
  // its freshness clear, and reserve retry controls for a failed request.
- for(const {status,report} of radioCardViews.values()){status.textContent='Updating status…';status.className='radio-unknown';if(report)report.hidden=true;}
+ radioStatusAvailable=false;for(const {status,report} of radioCardViews.values()){status.textContent='Updating status…';status.className='radio-unknown';if(report)report.hidden=true;}
  if(radioCardViews.size)showRadioFreshness(false);
  else{radioFreshness.hidden=false;radioFreshness.textContent='Updating status…';}
  $('refreshRadios').hidden=true;$('radioConnectStatus').textContent='';
@@ -66,7 +78,7 @@ async function loadMyRadios(silent=false){
   const selected=reconcileSelectedRadio(result.radios);
   if(selected)loadRadioInventory(selected,true);
   const selectionHint=result.radios.length>1&&!selected?'Choose a Device code for station additions.':'';
-  const snapshot=JSON.stringify([result.radios.map(r=>[r.id,r.device_code,r.online,r.current_station]),selected]);
+  const snapshot=JSON.stringify(result.radios.map(r=>String(r.id)).sort());
   radioLastChecked=Date.now();showRadioFreshness(true,result.radios.length>0);$('refreshRadios').hidden=true;$('radioConnectStatus').textContent=selectionHint;
   if(snapshot===radioViewSnapshot){for(const radio of result.radios){const view=radioCardViews.get(String(radio.id));if(view)view.radio=radio;}updateRadioCardStatus(true);publishRadioStatus(result.radios);return;}
   radioViewSnapshot=snapshot;$('linkedRadios').replaceChildren();radioCardViews.clear();$('connectRadio').hidden=true;$('connectRadioForm').hidden=result.radios.length>0;
@@ -75,8 +87,8 @@ async function loadMyRadios(silent=false){
    const radioId=String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),card=document.createElement('article'),status=document.createElement('p'),station=document.createElement('p');
    card.className='linked-radio-card';radioCardViews.set(radioId,{status,station,radio});
    const unlink=document.createElement('button');unlink.type='button';unlink.className='secondary radio-unlink';unlink.textContent='Unlink radio';unlink.disabled=radioUnlinkPending.has(radioId);radioCardViews.get(radioId).unlink=unlink;
-   unlink.onclick=()=>unlinkMyRadio(radioId,deviceLabel,unlink);
-   const choose=document.createElement('button');choose.type='button';choose.className='secondary device-code-select';choose.textContent=deviceLabel;choose.setAttribute('aria-pressed',String(selected===radioId));choose.setAttribute('aria-label',deviceLabel+(selected===radioId?', selected':', select radio'));choose.title=selected===radioId?'Selected radio':'Select this radio';choose.onclick=()=>{rememberSelectedRadio(radioId);loadMyRadios();};
+   unlink.onclick=()=>unlinkMyRadio(radioId,'Device code '+(radioCardViews.get(radioId)?.radio.device_code||'—'),unlink);
+   const choose=document.createElement('button');choose.type='button';choose.className='secondary device-code-select';choose.textContent=deviceLabel;radioCardViews.get(radioId).choose=choose;choose.onclick=()=>{rememberSelectedRadio(radioId);loadMyRadios();};
    const report=document.createElement('button');report.type='button';report.className='radio-station-report';report.textContent='Report a station problem';report.hidden=true;radioCardViews.get(radioId).report=report;
    report.onclick=()=>{const view=radioCardViews.get(radioId);if(view?.report!==report||report.hidden||$('myRadio').hidden||document.hidden)return;window.openStationProblemReport?.({code:view.radio.current_station_code,name:view.radio.current_station});};
    card.append(status,station,choose,unlink,report);$('linkedRadios').append(card);

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
-function fixture({human}={}){
+function fixture({human,clipboard,receipt=false}={}){
  const events={},calls=[],answers=[],ids=new Map(),observers=[];
  function element(tag='div'){
   const node={tag,nodeType:1,children:[],dataset:{},hidden:false,attributes:{},textContent:'',value:'',isConnected:true,replacements:0,
@@ -14,14 +14,14 @@ function fixture({human}={}){
    contains(child){return child===this||this.children.some(node=>node.contains?.(child));},
    querySelectorAll(selector){const tags=selector.split(',');return this.children.flatMap(child=>[...(tags.includes(child.tag)?[child]:[]),...(child.querySelectorAll?.(selector)||[])]);},
    getBoundingClientRect(){return {top:0,bottom:0,height:0};},
-   addEventListener(name,fn){this[name+'Listener']=fn;},showModal(){this.open=true;},close(){this.open=false;this.closeListener?.();},focus(){this.focused=true;document.activeElement=this;},reset(){this.resetCalled=true;}};
+   after(...siblings){this.afterNodes=siblings;},select(){this.selected=true;},addEventListener(name,fn){this[name+'Listener']=fn;},showModal(){this.open=true;},close(){this.open=false;this.closeListener?.();},focus(){this.focused=true;document.activeElement=this;},reset(){this.resetCalled=true;}};
   Object.defineProperty(node,'innerHTML',{set(){throw Error('Untrusted HTML insertion');}});return node;
  }
- const document={hidden:false,activeElement:null,selection:null,getSelection(){return this.selection;},createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(){}};ids.set('supportTicketStatus',element());ids.set('support',element());
+ const document={hidden:false,activeElement:null,selection:null,getSelection(){return this.selection;},createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(){}};ids.set('supportTicketStatus',element());ids.set('support',element());if(receipt){ids.set('ticketReference',element());ids.set('ticketSuccess',element('dialog'));}
  const window={innerHeight:720,scrollX:0,scrollY:0,scrolls:[],scrollTo(x,y){this.scrolls.push({x,y});this.scrollX=x;this.scrollY=y;},addEventListener(name,fn){events[name]=fn;},dispatchEvent(){},appI18n:{language:'en'}};
- const ctx={document,window,$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(){return 1;},clearTimeout(){},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
+ const ctx={document,window,navigator:{clipboard},$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(){return 1;},clearTimeout(){},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
  runInNewContext(readFileSync(new URL('./public/assets/support-status.js',import.meta.url),'utf8'),ctx);
- return {events,calls,answers,document,window,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
+ return {events,calls,answers,document,window,ids,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
 }
 function text(node){return node.textContent+(node.children||[]).map(text).join('');}
 const reference='b'.repeat(32);
@@ -110,4 +110,28 @@ test('a navigation-cancelled lookup cannot unlock a new request after returning 
 });
 test('leaving Support dismisses its challenge and ignores a late verification result',async()=>{
  const f=fixture();await beginVerification(f);const pending=deferred();f.answers.push(pending.promise);const verification=f.get('statusVerifyForm').onsubmit({preventDefault(){}});f.leave();assert.equal(f.get('statusVerify').open,false);pending.resolve({reference});await verification;assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.calls.filter(call=>call.path.startsWith('/api/support/status/ticket')).length,0);
+});
+
+test('a private ticket copies only its reference and Hide ticket only signs out of that private view',async()=>{
+ const copied=[],f=fixture({clipboard:{async writeText(value){copied.push(value);}}});f.answers.push(result);await f.open(reference);
+ const copy=f.get('statusPrivate').querySelectorAll('button').find(node=>node.dataset.i18n==='supportStatus.copyReference');await copy.onclick();assert.deepEqual(copied,[reference]);assert.match(text(f.get('statusPrivate')),/Reference copied/);assert.equal(f.get('supportTicketView').close.textContent,'Hide ticket');
+ f.answers.push({}, {tickets:[]});await f.get('supportTicketView').close.onclick();assert.equal(f.calls.at(-2).path,'/api/support/status/logout');assert.equal(f.calls.at(-2).body.reference,reference);assert.equal(f.get('statusPrivate').hidden,true);
+});
+
+test('ticket-reference clipboard failures provide a selectable manual fallback without exposing message content',async()=>{
+ const f=fixture({clipboard:{async writeText(){throw Error('Clipboard denied');}}});f.answers.push(result);await f.open(reference);
+ const copy=f.get('statusPrivate').querySelectorAll('button').find(node=>node.dataset.i18n==='supportStatus.copyReference');await copy.onclick();const field=f.document.activeElement;
+ assert.equal(field.tag,'input');assert.equal(field.readOnly,true);assert.equal(field.selected,true);assert.equal(field.value,reference);assert.equal(field.dataset.i18nSkip,'true');assert.match(text(f.get('statusPrivate')),/Select and copy your ticket reference/);assert.equal(f.calls.length,1);
+});
+
+test('a late reference-copy completion cannot write feedback into a different ticket',async()=>{
+ const pending=deferred(),f=fixture({clipboard:{writeText:()=>pending.promise}});f.answers.push(result);await f.open(reference);
+ const old=f.get('statusPrivate').querySelectorAll('button').find(node=>node.dataset.i18n==='supportStatus.copyReference'),copying=old.onclick();f.answers.push(result);await f.open('d'.repeat(32));pending.resolve();await copying;
+ assert.doesNotMatch(text(f.get('statusPrivate')),/Reference copied/);assert.equal(f.get('supportTicketView').reference,'d'.repeat(32));
+});
+
+test('the receipt copies its event reference rather than reading translated receipt text',async()=>{
+ const copied=[],f=fixture({receipt:true,clipboard:{async writeText(value){copied.push(value);}}});f.ids.get('ticketReference').textContent='Translated private receipt text';f.answers.push({tickets:[]},result);
+ f.events['support-ticket-created']({detail:{reference}});await new Promise(setImmediate);f.ids.get('ticketSuccess').open=true;
+ const host=f.get('receiptReferenceCopy'),copy=host.querySelectorAll('button')[0];assert.equal(host.hidden,false);await copy.onclick();assert.deepEqual(copied,[reference]);assert.match(text(host),/Reference copied/);
 });

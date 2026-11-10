@@ -7,17 +7,17 @@ function fixture(){
  const ids=new Map(),windowEvents={},documentEvents={},observers=[],answers=[],calls=[],dialogs=[],dialogAnswers=[],reports=[],selections=[],statusEvents=[];let clock=Date.UTC(2026,10,7,12,30),selectedRadio='one';
  function node(tag='div'){
   return {tag,children:[],hidden:false,textContent:'',className:'',attributes:{},replacements:0,disabled:false,
-   setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){},
+   setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){document.activeElement=this;},
    querySelector(selector){if(selector==='button')return this.button;return null;},reset(){}};
  }
  for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','cancelRadioConnection','radioConnectStatus','refreshRadios','navRadio','openWifiSetup'])ids.set(id,node());ids.get('openWifiSetup').hidden=true;ids.get('cancelRadioConnection').hidden=true;
  ids.get('connectRadioForm').button=node('button');ids.get('connectRadioForm').elements={device_code:{value:'3961',focus(){}}};
- const navigator={onLine:true},document={hidden:false,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
+ const navigator={onLine:true},document={hidden:false,activeElement:null,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
  const context={document,navigator,Date:FakeDate,URLSearchParams,location:{search:'',hash:'#radio'},history:{replaceState(){}},
   CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{openStationProblemReport:station=>reports.push(station),dispatchEvent(event){statusEvents.push(event);},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
   $:id=>ids.get(id),api:async path=>{calls.push(path);const next=answers.shift();if(next instanceof Error)throw next;if(typeof next==='function')return next();if(!next)throw Error('No fixture response');return next;},
-  reconcileSelectedRadio:radios=>selectedRadio=radios[0]?.id||'',loadRadioInventory(){},readSelectedRadio(){return selectedRadio;},rememberSelectedRadio(id){selectedRadio=id;selections.push(id);},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(){return 1;},clearTimeout(){}};
+  reconcileSelectedRadio:radios=>selectedRadio=radios.length===1?radios[0].id:radios.some(r=>r.id===selectedRadio)?selectedRadio:'',loadRadioInventory(){},readRadioInventory:id=>context.radioInventories.get(id),readSelectedRadio(){return selectedRadio;},rememberSelectedRadio(id){selectedRadio=id;selections.push(id);},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(){return 1;},clearTimeout(){}};
  runInNewContext(source,context);
  const load=runInNewContext('loadMyRadios',context),freshness=ids.get('radioConnectStatus').beforeNode;
  return {ids,load,answers,calls,dialogs,dialogAnswers,reports,selections,statusEvents,inventories:context.radioInventories,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,
@@ -81,9 +81,9 @@ test('another offline radio cannot show Wi-Fi help for the selected online radio
  const f=fixture();f.answers.push({radios:[radio,{...radio,id:'two',online:false}]});await f.load();assert.equal(f.ids.get('openWifiSetup').hidden,true);
 });
 
-test('current station reporting uses the latest radio station and stale card actions cannot report',async()=>{
+test('the current station report action stays in place and uses the latest station',async()=>{
  const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const first=f.views()[0].children[4];assert.equal(first.hidden,false);first.onclick();assert.equal(f.reports[0].code,'10');assert.equal(f.reports[0].name,'Community Radio');
- f.answers.push(response({current_station:'Next station',current_station_code:'11'}));await f.load(true);const next=f.views()[0].children[4];first.onclick();assert.equal(f.reports.length,1);next.onclick();assert.equal(f.reports[1].code,'11');
+ f.answers.push(response({current_station:'Next station',current_station_code:'11'}));await f.load(true);const next=f.views()[0].children[4];assert.equal(next,first);next.onclick();assert.equal(f.reports.length,2);assert.equal(f.reports[1].code,'11');
  f.answers.push(Error('Status unavailable'));await f.load(true);assert.equal(next.hidden,true);next.onclick();assert.equal(f.reports.length,2);
 });
 
@@ -139,4 +139,23 @@ test('initial status failures keep Wi-Fi help reachable without falsely reportin
  const f=fixture();f.answers.push(Error('Service unavailable'));await f.load();
  assert.equal(f.ids.get('openWifiSetup').hidden,false);assert.equal(f.views().length,0);assert.equal(f.ids.get('refreshRadios').hidden,false);assert.doesNotMatch(f.ids.get('radioConnectStatus').textContent,/Radio offline/);
  f.answers.push(response());await f.load();assert.equal(f.ids.get('openWifiSetup').hidden,true);
+});
+
+test('station, online and Device Code changes update existing card buttons without losing focus',async()=>{
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const card=f.views()[0],choose=card.children[2],unlink=card.children[3],report=card.children[4],replacements=f.ids.get('linkedRadios').replacements;choose.focus();f.ids.get('linkedRadios').scrollTop=63;
+ f.answers.push(response({device_code:'7777',current_station:'Next station',current_station_code:'11'}));await f.load(true);assert.equal(f.views()[0],card);assert.equal(card.children[2],choose);assert.equal(card.children[3],unlink);assert.equal(card.children[4],report);assert.equal(f.document.activeElement,choose);assert.equal(f.ids.get('linkedRadios').scrollTop,63);assert.equal(choose.textContent,'Device code 7777');assert.equal(choose.attributes['aria-pressed'],'true');assert.match(card.children[1].textContent,/Next station/);report.onclick();assert.equal(f.reports.at(-1).code,'11');
+ f.answers.push(response({device_code:'7777',online:false}));await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.document.activeElement,choose);assert.equal(f.ids.get('linkedRadios').replacements,replacements);assert.equal(card.children[0].className,'radio-offline');
+});
+
+test('a confirmed empty online radio gets a useful next step while unknown, offline or stale data does not',async()=>{
+ const f=fixture();f.answers.push(response({current_station:null}));await f.load();const station=f.views()[0].children[1];assert.equal(station.textContent,'Current station: Not reported yet');
+ f.inventories.set('one',{known:false,codes:new Set()});f.windowEvents['radio-inventory-changed']();assert.equal(station.textContent,'Current station: Not reported yet');
+ f.inventories.set('one',{known:true,codes:new Set()});f.windowEvents['radio-inventory-changed']();assert.equal(station.textContent,'Choose a station below');
+ f.answers.push(response({current_station:null,online:false}));await f.load(true);assert.equal(station.textContent,'Current station: Unavailable while offline');
+ f.answers.push(Error('Status failed'));await f.load(true);f.windowEvents['radio-inventory-changed']();assert.equal(station.textContent,'Current station: Unavailable until status is checked');
+});
+
+test('changing the selected radio and response order updates selection without rebuilding either card',async()=>{
+ const f=fixture(),second={...radio,id:'two',device_code:'7777'};f.answers.push({radios:[radio,second]});await f.load();const [one,two]=f.views(),chooseTwo=two.children[2],replacements=f.ids.get('linkedRadios').replacements;chooseTwo.focus();f.answers.push({radios:[second,radio]});chooseTwo.onclick();await f.flush();
+ assert.equal(f.views()[0],one);assert.equal(f.views()[1],two);assert.equal(one.children[2].attributes['aria-pressed'],'false');assert.equal(chooseTwo.attributes['aria-pressed'],'true');assert.equal(f.document.activeElement,chooseTwo);assert.equal(f.ids.get('linkedRadios').replacements,replacements);
 });

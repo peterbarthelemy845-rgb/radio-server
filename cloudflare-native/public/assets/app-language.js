@@ -99,12 +99,37 @@ Object.assign(appEnglish,{'pairing.cancelled':'Connection cancelled.','pairing.c
 Object.assign(appCreole,{'pairing.cancelled':'Koneksyon an anile.','pairing.cancelUnconfirmed':'Nou pa ka konfime anilasyon an. Tape Deny sou radyo ou si demann nan toujou parèt.'});
 Object.assign(appEnglish,{'deviceCode.invalid':'Enter the complete Device Code shown on your radio.'});
 Object.assign(appCreole,{'deviceCode.invalid':'Antre tout kòd aparèy ki sou ekran radyo ou a.'});
+Object.assign(appEnglish,{
+ 'registration.nameRequired':'Enter your station name.',
+ 'owner.signInExpired':'Your sign-in expired. Sign in again to save your changes. Your edits are kept in this tab.',
+ 'owner.signInContinue':'Sign in again to keep editing. Your unsaved changes are kept in this tab.',
+ 'owner.discardTitle':'Discard unsaved changes?','owner.discardText':'Your unsaved station changes will be lost.','owner.discardLogout':'Discard and log out',
+ 'owner.imageLoadFailed':'Cover art could not load. Try Retry image.','owner.signInAgain':'Sign in again','owner.retryImage':'Retry image',
+ 'support.enterName':'Enter your name.','support.enterEmail':'Enter your email.','support.enterMessage':'Enter a message.',
+ 'support.confirmUnavailable':'Ticket confirmation was unavailable. Try again.',
+ 'supportStatus.copyReference':'Copy reference','supportStatus.referenceCopied':'Reference copied','supportStatus.copyReferenceHelp':'Select and copy your ticket reference.','supportStatus.hidePrivate':'Hide ticket',
+ 'error.reference':'Reference','station.chooseBelow':'Choose a station below','station.previous':'Previous stations','station.next':'Next stations','sharing.short':'Share','sharing.share':'Share'
+});
+Object.assign(appCreole,{
+ 'registration.nameRequired':'Antre non estasyon ou.',
+ 'owner.signInExpired':'Koneksyon ou ekspire. Konekte ankò pou anrejistre chanjman ou yo. Sa ou modifye yo rete nan onglet sa a.',
+ 'owner.signInContinue':'Konekte ankò pou kontinye modifye. Chanjman ou poko anrejistre yo rete nan onglet sa a.',
+ 'owner.discardTitle':'Efase chanjman ki poko anrejistre yo?','owner.discardText':'Chanjman estasyon ou poko anrejistre yo ap pèdi.','owner.discardLogout':'Efase epi dekonekte',
+ 'owner.imageLoadFailed':'Imaj estasyon an pa chaje. Tape Eseye imaj la ankò.','owner.signInAgain':'Konekte ankò','owner.retryImage':'Eseye imaj la ankò',
+ 'support.enterName':'Antre non ou.','support.enterEmail':'Antre imèl ou.','support.enterMessage':'Antre yon mesaj.',
+ 'support.confirmUnavailable':'Nou pa resevwa konfimasyon demann nan. Eseye ankò.',
+ 'supportStatus.copyReference':'Kopye referans','supportStatus.referenceCopied':'Referans lan kopye','supportStatus.copyReferenceHelp':'Chwazi epi kopye referans demann ou an.','supportStatus.hidePrivate':'Kache demann nan',
+ 'error.reference':'Referans','station.chooseBelow':'Chwazi yon estasyon anba a','station.previous':'Estasyon anvan yo','station.next':'Estasyon apre yo','sharing.short':'Pataje','sharing.share':'Pataje'
+});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';
 function appTranslate(key,params={}){let text=(appLanguage==='ht'?appCreole[key]:appEnglish[key])||appEnglish[key]||key;for(const [name,value] of Object.entries(params))text=text.replaceAll('{'+name+'}',String(value));return text;}
 function appTranslatePhrase(source){
  const key=appPhraseKeys.get(source)||appCreoleKeys.get(source);if(key)return appTranslate(key);
+ const reference=source.match(/^(.+) (?:Reference|Referans): ([a-f0-9]{16,32})\.$/s);if(reference)return appTranslatePhrase(reference[1])+' '+appTranslate('error.reference')+': '+reference[2]+'.';
+ if(source.startsWith('Share '))return appTranslate('sharing.short')+' '+source.slice(6);
+ if(source.startsWith('Pataje '))return appTranslate('sharing.short')+' '+source.slice(7);
  if(appLanguage!=='ht')return source;
  if(source.endsWith(' — on your radio'))return source.slice(0,-' — on your radio'.length)+' — sou radyo ou';
  if(source.endsWith(' — add to your radio'))return source.slice(0,-' — add to your radio'.length)+' — ajoute sou radyo ou';

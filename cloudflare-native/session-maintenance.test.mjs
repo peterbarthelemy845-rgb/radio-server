@@ -100,3 +100,11 @@ test('pairing request backlogs retain the bounded cleanup budget before retiring
  const f=await operationsFixture(),old=f.now-8*86400,hash='pairing-backlog';f.sqlite.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)').run(hash,'hash',old-10,old);const insert=f.sqlite.prepare("INSERT INTO phone_pair_requests(session_hash,request_id,state,created_at,expires) VALUES (?,?,'cancelled',?,?)");for(let i=0;i<451;i++)insert.run(hash,i.toString(16).padStart(32,'0'),old-10,old);
  for(const expected of [251,51,0]){await cleanup(f.env,f.now);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM phone_pair_requests WHERE session_hash=?').get(hash).n,expected);assert.equal(!!f.sqlite.prepare('SELECT 1 FROM sessions WHERE token_hash=?').get(hash),expected>0);}
 });
+
+test('support retry backlogs drain in bounded batches before retiring the parent session or affecting ticket history',async()=>{
+ const f=await operationsFixture(),old=f.now-8*86400,hash='support-backlog';f.sqlite.exec('PRAGMA foreign_keys=ON');f.sqlite.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)').run(hash,'hash',old-10,old);
+ f.sqlite.prepare("INSERT INTO legal_requests(id,kind,encrypted_payload,created_at) VALUES ('history','support','encrypted history',?)").run(old);
+ const insert=f.sqlite.prepare('INSERT INTO support_ticket_requests VALUES (?,?,?,?,?,?,?)');for(let i=0;i<451;i++)insert.run(hash,i.toString(16).padStart(32,'0'),'payload-hash','ticket-'+i,'operation',old-10,old);
+ for(const expected of [251,51,0]){await cleanup(f.env,f.now);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_ticket_requests WHERE session_hash=?').get(hash).n,expected);assert.equal(!!f.sqlite.prepare('SELECT 1 FROM sessions WHERE token_hash=?').get(hash),expected>0);assert.equal(f.sqlite.prepare("SELECT kind FROM legal_requests WHERE id='history'").get().kind,'support');}
+ assert.deepEqual(f.sqlite.prepare('PRAGMA foreign_key_check').all(),[]);
+});

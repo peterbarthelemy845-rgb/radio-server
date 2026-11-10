@@ -68,20 +68,32 @@ export async function processMail(env,now=Math.floor(Date.now()/1000)){
   // the job looking in progress until its original expiry days later.
   await env.DB.prepare(`UPDATE mail_outbox SET state='failed',encrypted_payload='',lease=0
     WHERE id IN (SELECT id FROM mail_outbox WHERE state='sending' AND attempts>=5 AND lease<=? ORDER BY lease LIMIT 100)`).bind(now).run();
-  // Retries use a lease persisted in D1; concurrent Workers cannot take the same job.
-  const job=await env.DB.prepare(`UPDATE mail_outbox SET state='sending',attempts=attempts+1,lease=?
-    WHERE id=(SELECT id FROM mail_outbox WHERE state IN ('pending','sending') AND attempts<5
-      AND due<=? AND lease<=? AND expires>? ORDER BY due LIMIT 1)
-    RETURNING *`).bind(now+60,now,now,now).first();
-  if(!job)return;
-  try{
-    const payload=JSON.parse(await decrypt(env,job.encrypted_payload));
-    await env.EMAIL.send({from:'info@radiolocals.com',to:job.recipient,subject:job.subject,text:payload.text});
-    await env.DB.prepare("UPDATE mail_outbox SET state='sent',encrypted_payload='',lease=0 WHERE id=? AND lease=?")
-      .bind(job.id,now+60).run();
-  }catch{
-    await env.DB.prepare("UPDATE mail_outbox SET state=?,due=?,lease=0,encrypted_payload=CASE WHEN ? THEN '' ELSE encrypted_payload END WHERE id=? AND lease=?")
-      .bind(job.attempts>=5?'failed':'pending',now+Math.min(120,15*job.attempts),Number(job.attempts>=5),job.id,now+60).run();
+  // Drain a small batch after an outage. Earlier expiry prioritizes private
+  // verification codes over day/week-long receipts without inspecting content.
+  // The persisted global budget also bounds parallel request/cron senders.
+  const deadline=Date.now()+8000;
+  for(let sent=0;sent<10&&Date.now()<deadline;sent++){
+    const job=await env.DB.prepare(`UPDATE mail_outbox SET state='sending',attempts=attempts+1,lease=?
+      WHERE id=(SELECT id FROM mail_outbox WHERE state IN ('pending','sending') AND attempts<5
+        AND due<=? AND lease<=? AND expires>? ORDER BY expires,due,id LIMIT 1)
+      RETURNING *`).bind(now+60,now,now,now).first();
+    if(!job)return;
+    try{await limit(env.DB,'mail-send-global','all',60,60,now);}
+    catch(error){
+      // A budget deferral is not a provider attempt and must not consume a retry.
+      await env.DB.prepare("UPDATE mail_outbox SET state='pending',attempts=attempts-1,lease=0 WHERE id=? AND lease=?").bind(job.id,now+60).run();
+      if(error instanceof HttpError&&error.status===429)return;
+      throw error;
+    }
+    try{
+      const payload=JSON.parse(await decrypt(env,job.encrypted_payload));
+      await env.EMAIL.send({from:'info@radiolocals.com',to:job.recipient,subject:job.subject,text:payload.text});
+      await env.DB.prepare("UPDATE mail_outbox SET state='sent',encrypted_payload='',lease=0 WHERE id=? AND lease=?")
+        .bind(job.id,now+60).run();
+    }catch{
+      await env.DB.prepare("UPDATE mail_outbox SET state=?,due=?,lease=0,encrypted_payload=CASE WHEN ? THEN '' ELSE encrypted_payload END WHERE id=? AND lease=?")
+        .bind(job.attempts>=5?'failed':'pending',now+Math.min(120,15*job.attempts),Number(job.attempts>=5),job.id,now+60).run();
+    }
   }
 }
 export async function authRoutes(request,env,now,deps={human}){

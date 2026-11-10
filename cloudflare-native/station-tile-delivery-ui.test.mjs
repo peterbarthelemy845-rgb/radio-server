@@ -7,7 +7,7 @@ const directory=readFileSync(new URL('./public/assets/directory-news.js',import.
 const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
 const tileSource=directory.slice(directory.indexOf("let stationListSnapshot='';"),directory.indexOf('const libraryHelp='));
 const listeners=directory.slice(directory.indexOf("window.addEventListener('radio-locals-ready'"),directory.indexOf('// Owner account navigation'));
-const deliverySource=site.slice(site.indexOf('const stationDeliveries=new Map();'),site.indexOf('let sharedOfflineRadios='));
+const deliverySource=site.slice(site.indexOf('const stationDeliveries='),site.indexOf('let sharedOfflineRadios='));
 function deferred(){let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};}
 async function until(check){for(let i=0;i<40&&!check();i++)await new Promise(setImmediate);assert.ok(check(),'Async checkpoint was not reached');}
 function fixture({translation=key=>key}={}){
@@ -16,7 +16,7 @@ function fixture({translation=key=>key}={}){
  function node(tag='div'){return {tagName:tag.toUpperCase(),children:[],attributes:{},dataset:{},value:'',hidden:false,textContent:'',scrollLeft:0,replaceCount:0,attributeWrites:0,setAttribute(key,value){this.attributes[key]=String(value);this.attributeWrites++;if(key.startsWith('data-'))this.dataset[key.slice(5)]=String(value);},removeAttribute(key){delete this.attributes[key];if(key.startsWith('data-'))delete this.dataset[key.slice(5)];},append(...children){for(const child of children){child.parent=this;this.children.push(child);}},replaceChildren(...children){this.children=children;this.replaceCount++;},focus(){document.activeElement=this;}};}
  const $=id=>{if(!ids.has(id))ids.set(id,node());return ids.get(id);};
  const window={appI18n:{t:translation},addEventListener(name,handler){const events=handlers.get(name)||[];events.push(handler);handlers.set(name,events);},dispatchEvent(event){for(const handler of handlers.get(event.type)||[])handler(event);}};
- const context={document,window,$,Event:class{constructor(type){this.type=type;}},stations:[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],readSelectedRadio:()=>selected,readRadioInventory:()=>inventory,loadRadioInventory(){},refreshRadioInventory:radio=>refreshes.push(radio),api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('Missing response');return await answers.shift();},delay:async()=>{},openStationPopup:(code,options)=>{openings.push({code,options});return runInNewContext('requestStationDelivery',context)(selected,code,'Local Radio');}};
+ const context={document,window,$,setTimeout(){},Event:class{constructor(type){this.type=type;}},stations:[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],readSelectedRadio:()=>selected,readRadioInventory:()=>inventory,loadRadioInventory(){},refreshRadioInventory:radio=>refreshes.push(radio),api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('Missing response');return await answers.shift();},delay:async()=>{},openStationPopup:(code,options)=>{openings.push({code,options});return runInNewContext('requestStationDelivery',context)(selected,code,'Local Radio');}};
  runInNewContext('let list;'+deliverySource+tileSource+listeners,context);
  const emit=(type,detail)=>window.dispatchEvent({type,detail});
  const render=()=>runInNewContext('list()',context);

@@ -2,6 +2,28 @@
 // Ticket contents remain in this page's memory, never local/session storage or URLs.
 const supportStatusHost=$('supportTicketStatus');
 function supportStatusNode(tag,key,text,className){const node=document.createElement(tag);if(key)node.dataset.i18n=key;if(text)node.textContent=text;if(className)node.className=className;return node;}
+function supportReferenceText(key,fallback){const translated=window.appI18n?.t?.(key);return translated&&translated!==key?translated:fallback;}
+function supportReferenceCopy(reference,current){
+ const host=document.createElement('div');host.className='support-reference-actions';const copy=supportStatusNode('button','supportStatus.copyReference','Copy reference','secondary'),feedback=document.createElement('div');copy.type='button';feedback.className='support-reference-feedback';feedback.setAttribute('role','status');host.append(copy,feedback);
+ copy.onclick=async()=>{
+  if(copy.disabled||!current())return;copy.disabled=true;feedback.replaceChildren();
+  try{
+   if(typeof navigator==='undefined'||typeof navigator.clipboard?.writeText!=='function')throw Error('Clipboard unavailable');
+   await navigator.clipboard.writeText(reference);if(!current())return;
+   const text=supportStatusNode('p','supportStatus.referenceCopied',supportReferenceText('supportStatus.referenceCopied','Reference copied'));feedback.replaceChildren(text);
+  }catch{
+   if(!current())return;
+   const label=document.createElement('label'),help=supportStatusNode('span','supportStatus.copyReferenceHelp',supportReferenceText('supportStatus.copyReferenceHelp','Select and copy your ticket reference.')),field=document.createElement('input');field.type='text';field.readOnly=true;field.value=reference;field.dataset.i18nSkip='true';field.onclick=()=>field.select();field.onfocus=()=>field.select();label.append(help,field);feedback.replaceChildren(label);field.focus();field.select();
+  }finally{copy.disabled=false;}
+ };
+ return host;
+}
+const receiptReference=$('ticketReference'),receiptReferenceCopy=receiptReference?document.createElement('div'):null;
+if(receiptReferenceCopy){receiptReferenceCopy.hidden=true;receiptReference.after(receiptReferenceCopy);}
+function supportReceiptReference(reference){
+ if(!receiptReferenceCopy||!/^[a-f0-9]{32}$/.test(reference))return;
+ const actions=supportReferenceCopy(reference,()=>!!$('ticketSuccess')?.open&&receiptReferenceCopy.contains(actions));receiptReferenceCopy.replaceChildren(actions);receiptReferenceCopy.hidden=false;
+}
 function supportStatusChanged(){window.dispatchEvent(new Event('app-content-changed'));}
 const statusDetails=document.createElement('details');statusDetails.className='support-ticket-tracker';
 statusDetails.append(supportStatusNode('summary','supportStatus.title','My support ticket'));
@@ -63,8 +85,9 @@ function createSupportTicketView(reference){
  const noReplies=supportStatusNode('p','supportStatus.noReplies','No reply yet. Your ticket status will update here.');replies.append(noReplies);
  const checked=document.createElement('p');checked.className='small';const checkedTime=document.createTextNode('');checked.append(supportStatusNode('span','supportStatus.checked','Checked'),checkedTime);
  const actions=document.createElement('div');actions.className='support-ticket-actions';const refresh=supportStatusNode('button','supportStatus.refresh','Refresh status','secondary');refresh.type='button';refresh.onclick=()=>openSupportTicket(reference);
- const close=supportStatusNode('button','supportStatus.closePrivate','Close private ticket','secondary');close.type='button';close.onclick=async()=>{close.disabled=true;try{await api('/api/support/status/logout',{reference});clearSupportTicket();loadSupportTicketRecent();}catch(e){statusNotice.textContent=e.message;}finally{close.disabled=false;}};
- actions.append(refresh,close);statusPrivate.replaceChildren(title,state,created,referenceLine,original,message,repliesTitle,replies,checked,actions);
+ const close=supportStatusNode('button','supportStatus.hidePrivate','Hide ticket','secondary');close.type='button';close.onclick=async()=>{close.disabled=true;try{await api('/api/support/status/logout',{reference});clearSupportTicket();loadSupportTicketRecent();}catch(e){statusNotice.textContent=e.message;}finally{close.disabled=false;}};
+ const copy=supportReferenceCopy(reference,()=>supportTicketView?.reference===reference&&!$('support').hidden&&statusPrivate.contains(copy));
+ actions.append(refresh,close);statusPrivate.replaceChildren(title,state,created,referenceLine,copy,original,message,repliesTitle,replies,checked,actions);
  return {reference,title,state,created,station,message,replies,noReplies,checkedTime,refresh,close,replyViews:new Map(),stateValue:null,snapshot:''};
 }
 function renderSupportTicket(reference,result,silent,previousReading=null){
@@ -119,6 +142,6 @@ statusVerify.addEventListener('cancel',invalidateSupportStatusChallenge);
 statusVerify.addEventListener('close',()=>{if(!statusVerify.open&&supportStatusVerification)invalidateSupportStatusChallenge();});
 statusDetails.addEventListener('toggle',()=>{if(statusDetails.open&&!supportStatusReference)loadSupportTicketRecent();scheduleSupportTicketRefresh();});document.addEventListener('visibilitychange',scheduleSupportTicketRefresh);new MutationObserver(supportStatusVisibilityChanged).observe($('support'),{attributes:true,attributeFilter:['hidden']});
 window.addEventListener('radio-locals-ready',loadSupportTicketRecent);if(typeof state!=='undefined'&&state)loadSupportTicketRecent();
-window.addEventListener('support-ticket-created',event=>{if(/^[a-f0-9]{32}$/.test(event.detail?.reference||'')){loadSupportTicketRecent();openSupportTicket(event.detail.reference);}});
+window.addEventListener('support-ticket-created',event=>{if(/^[a-f0-9]{32}$/.test(event.detail?.reference||'')){supportReceiptReference(event.detail.reference);loadSupportTicketRecent();openSupportTicket(event.detail.reference);}});
 window.addEventListener('app-language-changed',()=>{if(supportStatusReference)openSupportTicket(supportStatusReference,true);});
 supportStatusChanged();

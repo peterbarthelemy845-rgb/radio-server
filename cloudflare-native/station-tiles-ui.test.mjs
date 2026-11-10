@@ -40,11 +40,11 @@ test('unlinked station lists omit repeated connection instructions but retain us
  }
 });
 
-function searchFixture({known=true}={}){
+function searchFixture({known=true,codes=['13'],stations=[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}]}={}){
  const nodes=new Map(),openings=[],focusCalls=[];
  function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}
  const $=id=>{if(!nodes.has(id)){const element=node();element.id=id;nodes.set(id,element);}return nodes.get(id);};
- const context={$,document:{createElement:node},stations:[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],readSelectedRadio:()=>known?'radio':'',readRadioInventory:()=>known?{known:true,codes:new Set(['13'])}:null,loadRadioInventory(){},openStationPopup:(code,options)=>openings.push({code,options})};
+ const context={$,document:{createElement:node},stations,readSelectedRadio:()=>known?'radio':'',readRadioInventory:()=>known?{known:true,codes:new Set(codes)}:null,loadRadioInventory(){},openStationPopup:(code,options)=>openings.push({code,options})};
  runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('function renderStationSlider('),source.indexOf('const libraryHelp=')),context);
  return {$,openings,focusCalls,search(query){$('search').value=query;$('search').oninput();},names(id){return $(id).children.filter(item=>item.className==='station-slider-item').map(item=>item.children[0].children[1].textContent);}};
 }
@@ -66,4 +66,14 @@ test('Clear search restores both lists and returns focus without scrolling or ad
 test('Clear search works before a radio has been linked',()=>{
  const f=searchFixture({known:false});f.search('not found');assert.equal(f.$('clearStationSearch').hidden,false);f.$('clearStationSearch').onclick();
  assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);assert.equal(f.$('savedStationsSection').hidden,true);assert.equal(f.$('clearStationSearch').hidden,true);assert.deepEqual(f.openings,[]);
+});
+
+test('station search accepts pasted # codes and matches accents without changing visible names',()=>{
+ const f=searchFixture({stations:[{name:'Radio Étoile',listener_code:'13'},{name:'Espérance FM',listener_code:'14'}]});
+ for(const code of ['13','#13',' # 13 ']){f.search(code);assert.deepEqual(f.names('savedStations'),['Radio Étoile']);assert.equal(f.$('clearStationSearch').hidden,true);}
+ f.search('etoile');assert.deepEqual(f.names('savedStations'),['Radio Étoile']);f.search('ESPERANCE');assert.deepEqual(f.names('stations'),['Espérance FM']);f.search('espérance');assert.deepEqual(f.names('stations'),['Espérance FM']);assert.deepEqual(f.openings,[]);
+});
+
+test('known-empty saved stations do not consume a section and no-result searches still offer Clear search',()=>{
+ const f=searchFixture({codes:[]});f.search('');assert.equal(f.$('savedStationsSection').hidden,true);assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);f.search('no match');assert.equal(f.$('savedStationsSection').hidden,true);assert.equal(f.$('clearStationSearch').hidden,false);f.$('clearStationSearch').onclick();assert.equal(f.$('savedStationsSection').hidden,true);assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);
 });

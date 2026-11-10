@@ -79,3 +79,13 @@ test('language selection works with blocked storage and persists only the prefer
 test('code recovery, resend guidance and reconnection messages have matching Creole translations',()=>{
  const f=fixture();const keys=['verification.resendCountdown','verification.newestCode','verification.resent','expiredPhone','recovery.open','recovery.title','recovery.help','recovery.email','recovery.send','recovery.sent','recovery.sending'];for(const key of keys){const english=f.api.t(key,{seconds:42});assert.notEqual(english,key);f.api.setLanguage('ht');const creole=f.api.t(key,{seconds:42});assert.notEqual(creole,key);assert.notEqual(creole,english);f.api.setLanguage('en');}assert.match(f.api.t('expiredPhone'),/Enter the Device Code/);f.api.setLanguage('ht');assert.match(f.api.t('verification.resendCountdown',{seconds:42}),/42/);
 });
+
+test('new recovery, support, search and share controls translate without changing private references',async()=>{
+ const f=fixture(),reference='1234567890abcdef';
+ const error=f.add('p','The website is temporarily unavailable. Please try again. Reference: '+reference+'.');
+ const share=f.add('button','Share',{'data-i18n':'sharing.share','aria-label':'Share Étoile FM'});
+ const keys=['registration.nameRequired','owner.signInExpired','owner.signInContinue','owner.discardTitle','owner.discardText','owner.discardLogout','owner.imageLoadFailed','owner.signInAgain','owner.retryImage','support.enterName','support.enterEmail','support.enterMessage','support.confirmUnavailable','supportStatus.copyReference','supportStatus.referenceCopied','supportStatus.copyReferenceHelp','supportStatus.hidePrivate','station.chooseBelow','station.previous','station.next'];
+ for(const key of keys){const english=f.api.t(key);assert.notEqual(english,key);f.api.setLanguage('ht');assert.notEqual(f.api.t(key),key);assert.notEqual(f.api.t(key),english);f.api.setLanguage('en');}
+ f.api.setLanguage('ht');await f.mutate();assert.match(error.textContent,new RegExp('Referans: '+reference+'\\.$'));assert.equal(share.textContent,'Pataje');assert.equal(share.getAttribute('aria-label'),'Pataje Étoile FM');
+ f.api.setLanguage('en');assert.equal(error.textContent,'The website is temporarily unavailable. Please try again. Reference: '+reference+'.');assert.equal(share.getAttribute('aria-label'),'Share Étoile FM');
+});

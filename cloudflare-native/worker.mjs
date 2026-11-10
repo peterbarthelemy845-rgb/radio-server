@@ -153,8 +153,11 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     const target=new URL(request.url);if(!path.startsWith('/assets/')&&!['/manifest.webmanifest','/sw.js','/offline.html'].includes(path))target.pathname=/^\/radiolavoixdivine\/?$/.test(path)?'/station-player.html':'/index.html';
     const asset=await env.ASSETS.fetch(new Request(target,request));
     const html=asset.headers.get('Content-Type')?.includes('text/html');
-    const response=env.MIGRATION_PREVIEW==='false'&&html?new Response((await asset.text()).replace('<aside class="preview">Test website — your current radio website has not switched yet.</aside>',''),asset):new Response(asset.body,asset);
-    response.headers.set('Cache-Control','no-store');
+    const response=env.MIGRATION_PREVIEW==='false'&&html&&asset.status===200?new Response((await asset.text()).replace('<aside class="preview">Test website — your current radio website has not switched yet.</aside>',''),asset):new Response(asset.body,asset);
+    // Stable public asset URLs may be stored, but must revalidate on every use.
+    // HTML, service-worker entrypoints and private/API responses stay no-store.
+    const publicAsset=path.startsWith('/assets/')&&!html&&[200,304].includes(response.status)&&!response.headers.has('Set-Cookie');
+    response.headers.set('Cache-Control',publicAsset?'public, max-age=0, must-revalidate':'no-store');
     response.headers.set('X-Content-Type-Options','nosniff');
     response.headers.set('Referrer-Policy','strict-origin-when-cross-origin');
     response.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' blob: data: https:; media-src 'self' https:; connect-src 'self' https://challenges.cloudflare.com");
@@ -176,8 +179,14 @@ export async function fetchHandler(request,env,ctx) {
       ctx.waitUntil(processMail(env));
     return transportSecurity(request,response);
   }catch(error){
-    return transportSecurity(request,json({message:error instanceof HttpError?error.message:'Service temporarily unavailable.'},
-      error instanceof HttpError?error.status:503));
+    if(error instanceof HttpError)return transportSecurity(request,json({message:error.message},error.status));
+    // Never log raw URLs, query strings, bodies, headers, exception messages or
+    // stacks: any of those can contain contact details or private codes.
+    const reference=randomHex(8),pathname=new URL(request.url).pathname;
+    const category=pathname.startsWith('/api/admin/')?'admin':pathname.startsWith('/api/owner/')?'owner':pathname.startsWith('/api/support')?'support':pathname.startsWith('/api/radio/')?'radio':pathname.startsWith('/api/phone/')?'phone':pathname.startsWith('/api/')?'api':pathname.startsWith('/assets/')?'asset':'page';
+    const errorCategory=['D1_ERROR','D1_EXEC_ERROR','D1_TYPE_ERROR'].includes(error?.name)?'database':['OperationError','DataError'].includes(error?.name)?'cryptography':error?.name==='TypeError'?'runtime_type':'runtime';
+    console.error(JSON.stringify({event:'request_failed',error_reference:reference,method:['GET','POST','HEAD','PUT','PATCH','DELETE','OPTIONS'].includes(request.method)?request.method:'other',route_category:category,error_category:errorCategory,status:503}));
+    return transportSecurity(request,json({message:'Service temporarily unavailable.',error_reference:reference},503));
   }
 }
 export async function cleanup(env,now=Math.floor(Date.now()/1000)) {

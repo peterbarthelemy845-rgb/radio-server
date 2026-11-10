@@ -13,6 +13,17 @@ function fixture(reply){
 }
 const jsonResponse=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
 
+test('unexpected server errors show a validated support reference without exposing arbitrary reference text',async()=>{
+ for(const reference of ['1234567890abcdef','a'.repeat(32)]){
+  const f=fixture(jsonResponse({message:'Please try again.',error_reference:reference},500));
+  await assert.rejects(f.request(),error=>error.status===500&&error.errorReference===reference&&error.message==='Please try again. Reference: '+reference+'.');
+ }
+ for(const reference of ['private-email@example.com','<script>bad</script>','abc',42,{secret:'private'}]){
+  const f=fixture(jsonResponse({message:'Please try again.',error_reference:reference},500));
+  await assert.rejects(f.request(),error=>error.status===500&&error.errorReference===undefined&&error.message==='Please try again.');
+ }
+});
+
 test('HTML outages and malformed unauthorized responses show a plain retry error while preserving HTTP status',async()=>{
  for(const status of [503,401]){const f=fixture(new Response('<html>Gateway error: private upstream detail</html>',{status,headers:{'Content-Type':'text/html'}}));await assert.rejects(f.request(),error=>error.status===status&&error.message==='The website is temporarily unavailable. Please try again.'&&!error.message.includes('private upstream'));}
 });

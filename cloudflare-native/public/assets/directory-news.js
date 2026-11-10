@@ -1,13 +1,13 @@
 'use strict';
-function shareButton(label,name,url){
+function shareButton(label,name,url,{standalone=false}={}){
  const button=document.createElement('button');button.type='button';button.setAttribute('aria-label',label);button.title=label;button.textContent=label;let running=false;
  button.onclick=async()=>{
-  const popup=button.closest('dialog'),current=()=>button.isConnected&&popup?.open&&button.closest('dialog')===popup&&!shareRunning;
+  const popup=button.closest('dialog'),host=standalone?button.parentElement:popup,current=()=>button.isConnected&&(!standalone?popup?.open&&button.closest('dialog')===popup:button.parentElement===host&&!$('myRadio').hidden)&&!shareRunning;
   if(running||!current())return;
   // Only public station links belong in either the system share sheet or the
   // manual fallback. Pairing codes and query parameters never enter sharing.
   let publicUrl;try{publicUrl=new URL(url,location.origin);if(publicUrl.origin!==location.origin||!/^\/station\/[1-9][0-9]{1,5}$/.test(publicUrl.pathname)||publicUrl.search||publicUrl.hash)return;}catch{return;}
-  running=true;button.disabled=true;popup.querySelector('.station-share-feedback')?.remove();
+  running=true;button.disabled=true;host.querySelector('.station-share-feedback')?.remove();
   api('/api/events',{event_id:crypto.randomUUID().replaceAll('-',''),station_code:publicUrl.pathname.split('/').pop(),channel:'more'}).catch(()=>{});
   try{
    if(typeof navigator.share==='function')try{await navigator.share({title:name,url:publicUrl.href});return;}catch(error){if(error?.name==='AbortError'||!current())return;}
@@ -41,19 +41,22 @@ function renderStationSlider(track,found,emptyText,saved=false){
    if(pending){feedback.setAttribute('data-i18n','busy.adding');const text=typeof window!=='undefined'?window.appI18n?.t('busy.adding'):null;feedback.textContent=text&&text!=='busy.adding'?text:'Adding…';}
    else{feedback.removeAttribute('data-i18n');feedback.textContent='';}
   };
-  tile.append(image,name,feedback);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);track.append(item);tile.updateDeliveryStatus();
+  tile.append(image,name,feedback);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);
+  if(typeof shareButton==='function'){const share=shareButton('Share '+station.name,station.name,location.origin+'/station/'+station.listener_code,{standalone:true});share.className='station-tile-share';share.textContent='Share';share.setAttribute('data-i18n','sharing.share');item.append(share);}
+  track.append(item);tile.updateDeliveryStatus();
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=emptyText;track.append(empty);}
+ if(typeof updateStationSliderControls==='function')updateStationSliderControls(track);
 }
 list=function(){
- const query=$('search').value.trim().toLowerCase(),radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',inventory=typeof readRadioInventory==='function'?readRadioInventory(radioId):null,known=!!inventory?.known;
+ const fold=value=>String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),query=fold($('search').value.trim().replace(/^#\s*(?=\d)/,'')),radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',inventory=typeof readRadioInventory==='function'?readRadioInventory(radioId):null,known=!!inventory?.known;
  if(radioId&&typeof loadRadioInventory==='function')loadRadioInventory(radioId);
- const savedCodes=known?inventory.codes:new Set(),matches=s=>(s.name+' '+s.listener_code).toLowerCase().includes(query);
+ const savedCodes=known?inventory.codes:new Set(),matches=s=>fold(s.name+' '+s.listener_code).includes(query);
  const saved=known?[...savedCodes].map(code=>stations.find(s=>String(s.listener_code)===code)||{listener_code:code,name:'Station '+code,logo_url:''}).filter(matches):[];
  const available=stations.filter(s=>!savedCodes.has(String(s.listener_code))&&matches(s));
  const hint=!radioId?'':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
  const snapshot=JSON.stringify([radioId,known,query,hint,saved,available]);if(snapshot===stationListSnapshot)return;stationListSnapshot=snapshot;
- $('stationCount').textContent='';$('savedStationsSection').hidden=!known;$('stationInventoryHelp').textContent=hint;$('stationInventoryHelp').hidden=!hint;
+ $('stationCount').textContent='';$('savedStationsSection').hidden=!known||saved.length===0;$('stationInventoryHelp').textContent=hint;$('stationInventoryHelp').hidden=!hint;
  $('clearStationSearch').hidden=!query||saved.length+available.length>0;
  renderStationSlider($('savedStations'),saved,query?'No matching saved stations.':'No saved stations reported.',true);
  renderStationSlider($('stations'),available,query?'No matching available stations.':known?'No more stations available.':'No stations yet.');
@@ -68,6 +71,23 @@ window.addEventListener('radio-inventory-changed',event=>{if(event.detail.radioI
 window.addEventListener('station-delivery-changed',()=>{
  for(const id of ['savedStations','stations'])for(const item of $(id).children)item.children[0]?.updateDeliveryStatus?.();
 });
+function updateStationSliderControls(track){
+ if(!track?.addEventListener||!track.before)return;
+ let controls=track.stationSliderControls;
+ if(!controls){
+  const row=document.createElement('div'),previous=document.createElement('button'),next=document.createElement('button');row.className='station-slider-controls';row.hidden=true;
+  for(const [button,label,step] of [[previous,'Previous stations',-1],[next,'Next stations',1]]){
+   button.type='button';button.setAttribute('aria-label',label);if(track.id)button.setAttribute('aria-controls',track.id);button.title=label;
+   button.onclick=()=>{const rtl=typeof getComputedStyle==='function'&&getComputedStyle(track).direction==='rtl',reduced=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;track.scrollBy({left:step*(rtl?-1:1)*Math.max(106,track.clientWidth*.8),behavior:reduced?'auto':'smooth'});};
+  }
+  row.append(previous,next);track.before(row);controls=track.stationSliderControls={row,previous,next};track.addEventListener('scroll',()=>updateStationSliderControls(track),{passive:true});
+  if(typeof ResizeObserver==='function')new ResizeObserver(()=>updateStationSliderControls(track)).observe(track);
+ }
+ const rtl=typeof getComputedStyle==='function'&&getComputedStyle(track).direction==='rtl',overflow=track.scrollWidth>track.clientWidth+2,offset=Math.abs(track.scrollLeft),limit=track.scrollWidth-track.clientWidth;
+ controls.row.hidden=!overflow;controls.previous.disabled=!overflow||offset<=1;controls.next.disabled=!overflow||offset>=limit-1;controls.previous.textContent=rtl?'›':'‹';controls.next.textContent=rtl?'‹':'›';
+}
+window.addEventListener('resize',()=>{for(const id of ['savedStations','stations'])updateStationSliderControls($(id));});
+window.addEventListener('radio-status-updated',()=>{for(const id of ['savedStations','stations'])updateStationSliderControls($(id));});
 
 // Owner account navigation stays beside Sign in, above both forms.
 const coverInput=$('registerForm').elements.artwork,coverPreview=$('registrationLogoPreview'),coverHint=$('registrationLogoHint'),coverRemove=$('removeRegistrationLogo');

@@ -48,7 +48,9 @@ test('HTTPS pages and APIs receive host-only transport security without changing
 
 test('HTTPS transport security also covers errors while keeping status and private error handling intact',async()=>{
  const env=await fixture(),denied=await fetchHandler(request('/api/radio/poll',{},'e'.repeat(64)),env);assert.equal(denied.status,401);assert.equal(denied.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.deepEqual(await denied.json(),{message:'Radio authentication required.'});
- const failure=await fetchHandler(new Request('https://native.example/health'),{DB:{prepare(){throw Error('Private database detail');}}});assert.equal(failure.status,503);assert.equal(failure.headers.get('Strict-Transport-Security'),'max-age=15552000');assert.deepEqual(await failure.json(),{message:'Service temporarily unavailable.'});
+ const logs=[],original=console.error;console.error=value=>logs.push(value);let failure;
+ try{failure=await fetchHandler(new Request('https://native.example/health?email=private@example.com'),{DB:{prepare(){throw Error('Private database detail');}}});}finally{console.error=original;}
+ assert.equal(failure.status,503);assert.equal(failure.headers.get('Strict-Transport-Security'),'max-age=15552000');const body=await failure.json();assert.equal(body.message,'Service temporarily unavailable.');assert.match(body.error_reference,/^[a-f0-9]{16}$/);assert.deepEqual(JSON.parse(logs[0]),{event:'request_failed',error_reference:body.error_reference,method:'GET',route_category:'page',error_category:'runtime',status:503});assert.doesNotMatch(logs.join(''),/private@example|Private database detail|health/);
 });
 
 test('transport security preserves session cookies and redirect status without mutating immutable responses',async()=>{

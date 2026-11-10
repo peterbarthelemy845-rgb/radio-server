@@ -15,8 +15,9 @@
  function registrationInvalidate(){registrationVersion++;registrationActiveTest=null;registrationStatus('','');}
  function registrationValidateName(report=false){
   if(!registrationName)return true;
-  const name=registrationName.value.trim(),invalid=/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96;
-  registrationName.setCustomValidity(invalid?registrationText('registration.shorterName','Shorten the station name so it fits on the radio.'):'');
+  const name=registrationName.value.trim(),missing=!name,invalid=missing||/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96;
+  registrationName.setCustomValidity(missing?registrationText('registration.nameRequired','Enter your station name.'):invalid?registrationText('registration.shorterName','Shorten the station name so it fits on the radio.'):'');
+  if(report&&!invalid)registrationName.value=name;
   if(invalid&&report){registrationName.focus();registrationName.reportValidity();}return !invalid;
  }
  function registrationPublicIpv4(host){
