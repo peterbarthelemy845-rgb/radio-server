@@ -28,11 +28,11 @@ let sharedConfirmationGeneration=0;
 async function updateStationConfirmation(){
  const select=$('shareForm').elements.radio_id,id=select.value,code=String(sharedCode),generation=sharedOpenGeneration,check=++sharedConfirmationGeneration,submit=$('shareSubmit');
  setSharedSavedState(false);
- if(!id){renderSharedRadioAvailability(false);setSharedStatus($('radioLabel').hidden?'':'Choose a radio to add this station.');return false;}
+ if(!id){renderSharedRadioAvailability(false);setSharedStatus(!$('deviceLabel').hidden?'':'Choose a radio to add this station.');return false;}
  submit.disabled=true;const checking=window.appI18n?.t('busy.checking');submit.textContent=checking&&checking!=='busy.checking'?checking:'Checking…';
  try{
   rememberSelectedRadio(id);const inventory=await loadRadioInventory(id);
-  if(select.value!==id||String(sharedCode)!==code||generation!==sharedOpenGeneration||check!==sharedConfirmationGeneration||shareRunning||$('radioLabel').hidden)return;
+  if(select.value!==id||String(sharedCode)!==code||generation!==sharedOpenGeneration||check!==sharedConfirmationGeneration||shareRunning||!$('deviceLabel').hidden)return;
   const saved=!!(inventory?.known&&inventory.codes.has(code));setSharedSavedState(saved);
   if(renderSharedRadioAvailability(sharedOfflineRadios.has(String(id))))return saved;
   setSharedStatus(saved?'':inventory?.known?'':inventory?.unavailable?'Saved stations could not be checked. You can still add this station.':'Check your radio for its saved stations. The saved list updates after a radio software update.');return saved;

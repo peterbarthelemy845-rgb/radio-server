@@ -18,3 +18,14 @@ body.app-listener-page #listenerTextSize::after{content:'Aa';font-size:1.125rem;
 .radio-approval-instruction{display:block;line-height:1.5}
 #shared .share-saved-notice{padding:10px 12px;margin:10px 0;border:1px solid #b3dfca;border-radius:10px;background:#edf9f2;color:#17603c;font-size:1rem;line-height:1.4;font-weight:650}
 #shared #shareWifiHelp{width:100%;margin-top:8px;min-height:48px}
+#shareSingleRadio{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 14px;padding:10px 12px;background:#f0f4fb;border:1px solid #dce5f1;border-radius:10px;color:#4f6383;font-size:14px}
+#shareSingleRadio[hidden]{display:none}
+#shareSingleRadioCode{color:#172b4d;font-size:20px;letter-spacing:1px;overflow-wrap:anywhere}
+#cancelRadioConnection{margin-top:8px;width:100%}
+#editor .stream-test-row{display:flex;align-items:center;gap:10px;margin:6px 0 0}
+#editor .stream-test-row button{width:auto;min-height:44px;margin:0;padding:8px 12px;font-size:13px}
+#editor .stream-test-row span{color:#617694;font-size:12px;line-height:1.4}
+#ownerStreamTestStatus{font-size:13px;line-height:1.45;color:#516383;margin:6px 0 10px;overflow-wrap:anywhere}
+#ownerStreamTestStatus:empty{display:none}
+#ownerStreamTestStatus[data-state="success"]{color:#176238}
+#ownerStreamTestStatus:is([data-state="invalid"],[data-state="error"]){color:#922338}

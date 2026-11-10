@@ -93,21 +93,40 @@ export async function controlRoutes(request,env,now){
  return json({command_id:accepted.id,state:accepted.state,duplicate:accepted.id!==commandId});
 }
 export function approvalStatements(env,id,claim,decision,body,now){
- const scope=body.pair_scope==='control'&&body.remote_control_version===1;
+ const scope=body.pair_scope==='control'&&body.remote_control_version===1,transition=randomHex(16);
  return [
   env.DB.prepare(`UPDATE pair_claims SET state=CASE WHEN expires<=? OR NOT EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=pair_claims.session_hash AND s.expires>?) THEN 'expired' WHEN ?='approve' THEN 'approved' ELSE 'denied' END
    WHERE id=? AND radio_id=? AND state='waiting' AND (expires<=? OR NOT EXISTS(SELECT 1 FROM sessions s WHERE s.token_hash=pair_claims.session_hash AND s.expires>?)
     OR ?='deny' OR NOT EXISTS(SELECT 1 FROM radio_control_claims WHERE claim_id=pair_claims.id)
     OR (?=1 AND EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=pair_claims.radio_id AND p.session_hash=pair_claims.session_hash AND p.expires>?)))`).bind(now,now,decision,claim,id,now,now,decision,Number(scope),now),
+  // This per-transition marker is inserted only after a real waiting->approved
+  // update. Later statements do not rely on changes() after optional writes.
+  env.DB.prepare(`INSERT INTO phone_pair_grant_sources(session_hash,radio_id,claim_id,scope,decision_token,expires)
+   SELECT c.session_hash,c.radio_id,c.id,CASE WHEN EXISTS(SELECT 1 FROM radio_control_claims sc WHERE sc.claim_id=c.id) THEN 'control' ELSE 'base' END,?,
+    CASE WHEN EXISTS(SELECT 1 FROM radio_control_claims sc WHERE sc.claim_id=c.id) THEN (SELECT p.expires FROM phone_radios p WHERE p.session_hash=c.session_hash AND p.radio_id=c.radio_id) ELSE ? END
+   FROM pair_claims c WHERE c.id=? AND c.radio_id=? AND c.state='approved' AND c.expires>? AND changes()>0 ON CONFLICT DO NOTHING`).bind(transition,now+2592000,claim,id,now),
+  // Unlink/reset invalidates old sources. They cannot reappear when a new
+  // approval later creates a grant for the same browser and radio.
+  env.DB.prepare(`DELETE FROM phone_pair_grant_sources WHERE radio_id=? AND claim_id!=? AND session_hash=(SELECT session_hash FROM pair_claims WHERE id=?)
+   AND EXISTS(SELECT 1 FROM phone_pair_grant_sources current WHERE current.claim_id=? AND current.decision_token=?)
+   AND NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.radio_id=phone_pair_grant_sources.radio_id AND p.session_hash=phone_pair_grant_sources.session_hash AND p.expires>?)`).bind(id,claim,claim,claim,transition,now),
+  env.DB.prepare(`INSERT INTO phone_pair_grant_sources(session_hash,radio_id,claim_id,scope,decision_token,expires)
+   SELECT p.session_hash,p.radio_id,'','baseline','',p.expires FROM phone_radios p JOIN pair_claims c ON c.session_hash=p.session_hash AND c.radio_id=p.radio_id
+   WHERE c.id=? AND p.expires>? AND EXISTS(SELECT 1 FROM phone_pair_grant_sources current WHERE current.claim_id=c.id AND current.decision_token=?)
+   AND NOT EXISTS(SELECT 1 FROM phone_pair_grant_sources other WHERE other.session_hash=p.session_hash AND other.radio_id=p.radio_id AND other.claim_id!=c.id AND other.scope IN ('base','baseline') AND other.expires>=p.expires)
+   ON CONFLICT(session_hash,radio_id,claim_id) DO UPDATE SET expires=MAX(phone_pair_grant_sources.expires,excluded.expires)`).bind(claim,now,transition),
   env.DB.prepare(`INSERT INTO phone_radios(session_hash,radio_id,expires)
    SELECT c.session_hash,c.radio_id,CASE WHEN EXISTS(SELECT 1 FROM radio_control_claims sc WHERE sc.claim_id=c.id)
-    THEN (SELECT p.expires FROM phone_radios p WHERE p.session_hash=c.session_hash AND p.radio_id=c.radio_id) ELSE ? END
-   FROM pair_claims c WHERE c.id=? AND c.radio_id=? AND c.state='approved' AND c.expires>? AND changes()>0
-   ON CONFLICT(session_hash,radio_id) DO UPDATE SET expires=excluded.expires`).bind(now+2592000,claim,id,now),
+    THEN (SELECT p.expires FROM phone_radios p WHERE p.session_hash=c.session_hash AND p.radio_id=c.radio_id)
+    ELSE (SELECT MAX(s.expires) FROM phone_pair_grant_sources s WHERE s.session_hash=c.session_hash AND s.radio_id=c.radio_id AND s.scope IN ('base','baseline') AND s.expires>?) END
+   FROM pair_claims c WHERE c.id=? AND c.radio_id=? AND c.state='approved' AND c.expires>?
+   AND EXISTS(SELECT 1 FROM phone_pair_grant_sources current WHERE current.claim_id=c.id AND current.decision_token=?)
+   ON CONFLICT(session_hash,radio_id) DO UPDATE SET expires=excluded.expires`).bind(now,claim,id,now,transition),
   env.DB.prepare(`INSERT INTO radio_control_grants(session_hash,radio_id,approved_at,expires)
    SELECT p.session_hash,p.radio_id,?,p.expires FROM pair_claims c JOIN radio_control_claims sc ON sc.claim_id=c.id
-   JOIN phone_radios p ON p.session_hash=c.session_hash AND p.radio_id=c.radio_id WHERE c.id=? AND c.radio_id=? AND c.state='approved' AND c.expires>? AND p.expires>? AND ?=1 AND changes()>0
-   ON CONFLICT(session_hash,radio_id) DO UPDATE SET approved_at=excluded.approved_at,expires=excluded.expires`).bind(now,claim,id,now,now,Number(scope))
+   JOIN phone_radios p ON p.session_hash=c.session_hash AND p.radio_id=c.radio_id WHERE c.id=? AND c.radio_id=? AND c.state='approved' AND c.expires>? AND p.expires>? AND ?=1
+   AND EXISTS(SELECT 1 FROM phone_pair_grant_sources current WHERE current.claim_id=c.id AND current.decision_token=?)
+   ON CONFLICT(session_hash,radio_id) DO UPDATE SET approved_at=excluded.approved_at,expires=excluded.expires`).bind(now,claim,id,now,now,Number(scope),transition)
  ];
 }
 export async function pollControls(env,id,body,now){

@@ -86,3 +86,17 @@ test('expired proof backlogs do not break parent FK cleanup and retain a bounded
  await cleanup(f.env,f.now);await cleanup(f.env,f.now);
  assert.equal(f.sqlite.prepare('SELECT 1 FROM sessions WHERE token_hash=?').get(hash),undefined);
 });
+
+test('pairing tombstones and expired or unlinked grant sources drain without removing active grants',async()=>{
+ const f=await operationsFixture(),current=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash,old=f.now-8*86400,retired='retired-pairing-session';f.sqlite.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)').run(retired,'hash',old-100,old);
+ f.sqlite.prepare("INSERT INTO phone_pair_requests(session_hash,request_id,state,created_at,expires) VALUES (?,?,'cancelled',?,?)").run(retired,'1'.repeat(32),old-100,old);
+ f.sqlite.prepare("INSERT INTO phone_pair_grant_sources VALUES (?,?,'old','base','token',?)").run(retired,'radio-one',old);
+ f.sqlite.prepare('INSERT INTO phone_radios VALUES (?,?,?)').run(current,'radio-one',f.now+1000);f.sqlite.prepare("INSERT INTO phone_pair_grant_sources VALUES (?,?,'active','base','token',?)").run(current,'radio-one',f.now+1000);
+ await cleanup(f.env,f.now);assert.equal(f.sqlite.prepare('SELECT 1 FROM sessions WHERE token_hash=?').get(retired),undefined);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM phone_pair_requests').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM phone_pair_grant_sources').get().n,1);assert.equal(f.sqlite.prepare('SELECT claim_id FROM phone_pair_grant_sources').get().claim_id,'active');assert.ok(f.sqlite.prepare('SELECT 1 FROM phone_radios WHERE session_hash=?').get(current));
+ f.sqlite.prepare('DELETE FROM phone_radios WHERE session_hash=?').run(current);await cleanup(f.env,f.now);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM phone_pair_grant_sources').get().n,0);assert.deepEqual(f.sqlite.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('pairing request backlogs retain the bounded cleanup budget before retiring their session',async()=>{
+ const f=await operationsFixture(),old=f.now-8*86400,hash='pairing-backlog';f.sqlite.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)').run(hash,'hash',old-10,old);const insert=f.sqlite.prepare("INSERT INTO phone_pair_requests(session_hash,request_id,state,created_at,expires) VALUES (?,?,'cancelled',?,?)");for(let i=0;i<451;i++)insert.run(hash,i.toString(16).padStart(32,'0'),old-10,old);
+ for(const expected of [251,51,0]){await cleanup(f.env,f.now);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM phone_pair_requests WHERE session_hash=?').get(hash).n,expected);assert.equal(!!f.sqlite.prepare('SELECT 1 FROM sessions WHERE token_hash=?').get(hash),expected>0);}
+});

@@ -241,6 +241,7 @@ function renderSharedWaitButton(){const close=$('stationAddPopup')?.querySelecto
 function setSharedStatus(text,kind='progress'){const target=$('shareStatus');target.dataset.status=kind;target.textContent=text;renderSharedWaitButton();}
 const stationDeliveries=new Map();let stationDeliveryLastNotice=null;
 function renderStationDeliveryStatus(){
+ window.dispatchEvent(new Event('station-delivery-changed'));
  const host=$('stationDeliveryStatus');if(!host)return;
  const active=[...stationDeliveries.values()],latest=active[active.length-1],notice=latest?{name:latest.name,message:latest.state==='sending'?'Sending station request…':latest.state==='pending'?'Adding station…':'Your radio has not confirmed yet. Check it before trying again.',kind:latest.state==='unconfirmed'?'error':'progress'}:stationDeliveryLastNotice;
  host.hidden=!notice;host.dataset.status=notice?.kind||'progress';
@@ -273,7 +274,13 @@ function requestStationDelivery(radioId,stationCode,name){
   catch(error){const rejected=error.status>=400&&error.status<500;return finishStationDelivery(record,rejected?'failed':'unconfirmed',rejected?error.message:'Your radio has not confirmed yet. Check it before trying again.');}
  })();return record.promise;
 }
-let sharedOfflineRadios=new Set();
+let sharedOfflineRadios=new Set(),sharedLinkedRadios=[];
+function renderSharedRadioDestination(){
+ const enteringCode=!$('deviceLabel').hidden,single=!enteringCode&&sharedLinkedRadios.length===1;
+ $('radioLabel').hidden=enteringCode||sharedLinkedRadios.length<2;
+ $('shareSingleRadio').hidden=!single;
+ $('shareSingleRadioCode').textContent=single?String(sharedLinkedRadios[0].device_code||'—'):'';
+}
 function invalidateSharedView(){sharedOpenGeneration++;delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');}
 function stopWaitingForSharedStation(){invalidateSharedView();renderStationDeliveryStatus();}
 async function openShared(code,inPopup=false,autoAdd=false){
@@ -283,10 +290,10 @@ async function openShared(code,inPopup=false,autoAdd=false){
  if(!inPopup)page('shared');$('shared').hidden=false;$('shareForm').hidden=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
  if(station.logo_url){$('shareArt').src=station.logo_url;$('shareArt').hidden=false;}
  const result=await api('/api/phone/radios');if(generation!==sharedOpenGeneration)return;
- const select=$('shareForm').elements.radio_id,selected=reconcileSelectedRadio(result.radios);sharedOfflineRadios=new Set(result.radios.filter(r=>r.online===false).map(r=>String(r.id)));select.replaceChildren();
+ const select=$('shareForm').elements.radio_id,selected=reconcileSelectedRadio(result.radios);sharedLinkedRadios=result.radios;sharedOfflineRadios=new Set(result.radios.filter(r=>r.online===false).map(r=>String(r.id)));select.replaceChildren();
  if(result.radios.length>1){const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a radio';placeholder.disabled=true;select.append(placeholder);}
  for(const radio of result.radios){const option=document.createElement('option');option.value=String(radio.id);option.textContent='Device code '+(radio.device_code||'—')+(radio.online?' · Online':' · Offline');select.append(option);}
- select.value=selected;select.required=!!result.radios.length;$('shareForm').elements.device_code.required=!result.radios.length;$('radioLabel').hidden=!result.radios.length;$('deviceLabel').hidden=!!result.radios.length;$('otherRadio').hidden=!result.radios.length;
+ select.value=selected;select.required=!!result.radios.length;$('shareForm').elements.device_code.required=!result.radios.length;$('deviceLabel').hidden=!!result.radios.length;$('otherRadio').hidden=!result.radios.length;renderSharedRadioDestination();
  // Only an intentional tile tap can start an addition. Restored history and
  // incoming shared URLs must wait for the visitor to press Add station.
  const canAutoAdd=autoAdd&&selected&&!sharedOfflineRadios.has(String(selected));renderSharedRadioAvailability(!!selected&&sharedOfflineRadios.has(String(selected)));
@@ -294,9 +301,9 @@ async function openShared(code,inPopup=false,autoAdd=false){
  if(canAutoAdd&&selected===select.value&&alreadySaved===false&&!sharedOfflineRadios.has(String(selected)))await submitSharedStation($('shareForm'));
  }catch(error){if(generation===sharedOpenGeneration)throw error;}
 }
-$('otherRadio').onclick=()=>{sharedOpenGeneration++;$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('radioLabel').hidden=true;$('deviceLabel').hidden=false;$('otherRadio').hidden=true;$('shareForm').elements.radio_id.required=false;$('shareForm').elements.device_code.required=true;$('shareForm').elements.device_code.focus();};
+$('otherRadio').onclick=()=>{sharedOpenGeneration++;$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('deviceLabel').hidden=false;renderSharedRadioDestination();$('otherRadio').hidden=true;$('shareForm').elements.radio_id.required=false;$('shareForm').elements.device_code.required=true;$('shareForm').elements.device_code.focus();};
 window.addEventListener('radio-status-updated',event=>{
- if($('shared').hidden||$('shareForm').hidden||shareRunning||$('radioLabel').hidden||!Array.isArray(event.detail?.radios))return;
+ if($('shared').hidden||$('shareForm').hidden||shareRunning||!$('deviceLabel').hidden||!Array.isArray(event.detail?.radios))return;
  const id=String($('shareForm').elements.radio_id.value),radio=event.detail.radios.find(item=>String(item.id)===id);if(!radio)return;
  const wasOffline=sharedOfflineRadios.has(id);if(radio.online)sharedOfflineRadios.delete(id);else sharedOfflineRadios.add(id);
  if(!radio.online)renderSharedRadioAvailability(true);else if(wasOffline){renderSharedRadioAvailability(false);void updateStationConfirmation();}
@@ -313,7 +320,7 @@ async function submitSharedStation(form){
    while(Date.now()<deadline){await delay();if(!current())return;const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(!current())return;if(result.state==='approved'){radioId=result.radio_id;approved=true;break;}if(result.state!=='waiting')throw new Error('Connection was not approved. Please try again.');}
    if(!approved)throw new Error('Connection timed out. Please try again.');
    radioLabel='Device code '+deviceCode;sharedOfflineRadios.delete(String(radioId));rememberSelectedRadio(radioId);setSharedStatus('Adding station…');
-   const select=form.elements.radio_id;if(![...select.options].some(option=>option.value===String(radioId))){const option=document.createElement('option');option.value=String(radioId);option.textContent=radioLabel;select.append(option);}select.value=String(radioId);select.required=true;form.elements.device_code.required=false;$('deviceLabel').hidden=true;$('radioLabel').hidden=false;$('otherRadio').hidden=false;
+   const select=form.elements.radio_id;if(![...select.options].some(option=>option.value===String(radioId))){const option=document.createElement('option');option.value=String(radioId);option.textContent=radioLabel;select.append(option);}select.value=String(radioId);select.required=true;form.elements.device_code.required=false;$('deviceLabel').hidden=true;if(!sharedLinkedRadios.some(r=>String(r.id)===String(radioId)))sharedLinkedRadios.push({id:String(radioId),device_code:deviceCode});renderSharedRadioDestination();$('otherRadio').hidden=false;
    if(!$('myRadio').hidden)loadMyRadios(true);
   }
   if(!radioId)throw new Error('Choose a radio to add this station.');rememberSelectedRadio(radioId);

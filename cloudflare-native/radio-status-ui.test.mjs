@@ -10,7 +10,7 @@ function fixture(){
    setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){},
    querySelector(selector){if(selector==='button')return this.button;return null;},reset(){}};
  }
- for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','radioConnectStatus','refreshRadios','navRadio','openWifiSetup'])ids.set(id,node());ids.get('openWifiSetup').hidden=true;
+ for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','cancelRadioConnection','radioConnectStatus','refreshRadios','navRadio','openWifiSetup'])ids.set(id,node());ids.get('openWifiSetup').hidden=true;ids.get('cancelRadioConnection').hidden=true;
  ids.get('connectRadioForm').button=node('button');ids.get('connectRadioForm').elements={device_code:{value:'3961',focus(){}}};
  const navigator={onLine:true},document={hidden:false,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}

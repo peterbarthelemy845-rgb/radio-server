@@ -1,7 +1,22 @@
 'use strict';
 let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0,radioPairingBusy=false,radioPairingGeneration=0,radioSessionExpired=false;
+let radioPairingAttempt=null;
+let radioPairingCancellation=Promise.resolve();
 const radioUnlinkPending=new Set();
-function cancelRadioPairing(){radioPairingGeneration++;if(radioPairingBusy){radioPairingBusy=false;busy($('connectRadioForm'),false);}}
+function cancelRadioPairingRequest(attempt,showStatus,generation){
+ if(!attempt?.dispatched||attempt.approved||attempt.cancellationStarted)return;attempt.cancellationStarted=true;
+ const previous=radioPairingCancellation;
+ radioPairingCancellation=Promise.all([previous,api('/api/phone/claim/cancel',{request_id:attempt.requestId}).then(result=>{if(result.state!=='cancelled')throw Error('Cancellation not confirmed');}).catch(()=>{
+  if(showStatus&&generation===radioPairingGeneration&&!radioPairingBusy&&!$('myRadio').hidden)$('radioConnectStatus').textContent='Could not confirm cancellation. Tap Deny on your radio if the request is still showing.';
+ })]).then(()=>undefined);
+}
+function cancelRadioPairing(showStatus=false){
+ const attempt=radioPairingAttempt;radioPairingGeneration++;radioPairingAttempt=null;attempt?.controller.abort();
+ if(radioPairingBusy){radioPairingBusy=false;busy($('connectRadioForm'),false);}
+ $('cancelRadioConnection').hidden=true;
+ if(showStatus){$('radioConnectStatus').textContent='Connection cancelled.';$('connectRadioForm').elements.device_code.focus({preventScroll:true});}
+ cancelRadioPairingRequest(attempt,showStatus,radioPairingGeneration);
+}
 function currentRadioPairing(generation){return generation===radioPairingGeneration&&!$('myRadio').hidden;}
 async function unlinkMyRadio(radioId,deviceLabel,unlink){
  const generation=radioViewGeneration,current=()=>generation===radioViewGeneration&&!$('myRadio').hidden&&!document.hidden;
@@ -72,19 +87,21 @@ async function loadMyRadios(silent=false){
 }
 $('navRadio').onclick=()=>{history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();};$('refreshRadios').onclick=()=>loadMyRadios();
 $('connectRadio').onclick=()=>{$('connectRadioForm').hidden=false;$('radioConnectStatus').textContent='Use the current Device Code. If it was reset, the old code will not work. Approve the request on your radio.';$('connectRadioForm').elements.device_code.focus();};
+$('cancelRadioConnection').onclick=()=>cancelRadioPairing(true);
 $('connectRadioForm').onsubmit=async event=>{
- event.preventDefault();const form=event.target;if(radioPairingBusy)return;const generation=++radioPairingGeneration,deviceCode=form.elements.device_code.value;radioPairingBusy=true;busy(form,true,true);
+ event.preventDefault();const form=event.target;if(radioPairingBusy)return;const generation=++radioPairingGeneration,deviceCode=form.elements.device_code.value,attempt={generation,controller:new AbortController(),requestId:crypto.randomUUID().replaceAll('-',''),dispatched:false};radioPairingAttempt=attempt;radioPairingBusy=true;busy(form,true,true);$('cancelRadioConnection').hidden=false;$('radioConnectStatus').textContent='';
  try{
   // Expired browser sessions need a fresh CSRF token before a new physical
   // approval request. Refresh only on an explicit reconnect attempt.
   if(radioSessionExpired){await loadOwnerSession();if(!currentRadioPairing(generation))return;radioSessionExpired=false;}
-  const turnstile_token=await human(form,'radio-link');if(!currentRadioPairing(generation))return;
-  const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token});if(!currentRadioPairing(generation))return;
+  const turnstile_token=await human(form,'radio-link',attempt.controller.signal);if(!currentRadioPairing(generation))return;
+  await radioPairingCancellation;if(!currentRadioPairing(generation))return;
+  attempt.dispatched=true;const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token,request_id:attempt.requestId});if(!currentRadioPairing(generation))return;
   showRadioApproval($('radioConnectStatus'),claim.confirmation_code);const deadline=Date.now()+180000;let approved=false;
-  while(Date.now()<deadline){await delay();if(!currentRadioPairing(generation))return;const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(!currentRadioPairing(generation))return;if(result.state==='approved'){if(result.radio_id)rememberSelectedRadio(result.radio_id);approved=true;break;}if(result.state!=='waiting')throw Error('Connection was not approved. Please try again.');}
-  if(!approved)throw Error('Connection timed out. Please try again.');form.reset();form.hidden=true;await loadMyRadios();if(!currentRadioPairing(generation))return;$('radioConnectStatus').textContent='';if(!document.hidden)await listenerActionDialog('Radio connected','');
+  while(Date.now()<deadline){await delay();if(!currentRadioPairing(generation))return;const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(!currentRadioPairing(generation))return;if(result.state==='approved'){attempt.approved=true;if(result.radio_id)rememberSelectedRadio(result.radio_id);approved=true;break;}if(result.state!=='waiting')throw Error('Connection was not approved. Please try again.');}
+  if(!approved)throw Error('Connection timed out. Please try again.');$('cancelRadioConnection').hidden=true;form.reset();form.hidden=true;await loadMyRadios();if(!currentRadioPairing(generation))return;$('radioConnectStatus').textContent='';if(!document.hidden)await listenerActionDialog('Radio connected','');
  }catch(e){if(currentRadioPairing(generation))$('radioConnectStatus').textContent=e.message;}
- finally{if(generation===radioPairingGeneration){radioPairingBusy=false;busy(form,false);}}
+ finally{cancelRadioPairingRequest(attempt,false,generation);if(generation===radioPairingGeneration){radioPairingBusy=false;radioPairingAttempt=null;attempt.controller.abort();$('cancelRadioConnection').hidden=true;busy(form,false);}}
 };
 window.addEventListener('radio-locals-ready',()=>{if(!$('myRadio').hidden){if(location.hash==='#library')history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();scheduleRadioRefresh();}});
 

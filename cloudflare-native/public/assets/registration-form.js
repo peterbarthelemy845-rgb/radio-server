@@ -41,6 +41,7 @@
   for(const key of parsed.searchParams.keys())if(/^(?:access[_-]?token|token|auth(?:orization)?|api[_-]?key|key|password|pass|secret|signature|sig)$/i.test(key))throw registrationIssue('registration.noTokens','Use a public stream URL without private access tokens or passwords.');
   return parsed;
  }
+ window.parsePublicStreamUrl=registrationParse;
  function registrationSetUrl(value){
   if(registrationUrl.value===value)return;
   registrationUrl.value=value;registrationInternalInput=true;

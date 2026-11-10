@@ -37,9 +37,31 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now),body=await readJson(request);
   const ip=request.headers.get('CF-Connecting-IP')||'unknown';
+  if(path==='/api/phone/claim/cancel'){
+    const requestId=body.request_id;if(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId))throw new HttpError(400,'A valid connection request reference is required.');
+    await limit(env.DB,'claim-cancel-session',current.token_hash,30,60,now);await limit(env.DB,'claim-cancel-global','all',120,60,now);
+    const target='SELECT c.radio_id FROM pair_claims c JOIN phone_pair_requests r ON r.claim_id=c.id WHERE r.session_hash=? AND r.request_id=? AND c.session_hash=r.session_hash';
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO phone_pair_requests(session_hash,request_id,state,created_at,expires) VALUES (?,?,'cancelled',?,?)
+        ON CONFLICT(session_hash,request_id) DO UPDATE SET state='cancelled',expires=MAX(phone_pair_requests.expires,excluded.expires)`).bind(current.token_hash,requestId,now,now+900),
+      env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND id=(SELECT claim_id FROM phone_pair_requests WHERE session_hash=? AND request_id=?) AND state IN ('waiting','approved')").bind(current.token_hash,current.token_hash,requestId),
+      // Only this approval's source can revoke a grant. Prior legacy grants and
+      // independently approved attempts are retained at their own expiry.
+      env.DB.prepare(`UPDATE phone_radios SET expires=(SELECT MAX(s.expires) FROM phone_pair_grant_sources s WHERE s.session_hash=phone_radios.session_hash AND s.radio_id=phone_radios.radio_id AND s.scope IN ('base','baseline') AND s.claim_id!=(SELECT claim_id FROM phone_pair_requests WHERE session_hash=? AND request_id=?) AND s.expires>?)
+        WHERE session_hash=? AND radio_id=(${target}) AND EXISTS(SELECT 1 FROM phone_pair_grant_sources own WHERE own.session_hash=phone_radios.session_hash AND own.radio_id=phone_radios.radio_id AND own.scope='base' AND own.claim_id=(SELECT claim_id FROM phone_pair_requests WHERE session_hash=? AND request_id=?))
+        AND EXISTS(SELECT 1 FROM phone_pair_grant_sources other WHERE other.session_hash=phone_radios.session_hash AND other.radio_id=phone_radios.radio_id AND other.scope IN ('base','baseline') AND other.claim_id!=(SELECT claim_id FROM phone_pair_requests WHERE session_hash=? AND request_id=?) AND other.expires>?)`).bind(current.token_hash,requestId,now,current.token_hash,current.token_hash,requestId,current.token_hash,requestId,current.token_hash,requestId,now),
+      env.DB.prepare(`DELETE FROM phone_radios WHERE session_hash=? AND radio_id=(${target})
+        AND EXISTS(SELECT 1 FROM phone_pair_grant_sources own WHERE own.session_hash=phone_radios.session_hash AND own.radio_id=phone_radios.radio_id AND own.scope='base' AND own.claim_id=(SELECT claim_id FROM phone_pair_requests WHERE session_hash=? AND request_id=?))
+        AND NOT EXISTS(SELECT 1 FROM phone_pair_grant_sources other WHERE other.session_hash=phone_radios.session_hash AND other.radio_id=phone_radios.radio_id AND other.scope IN ('base','baseline') AND other.claim_id!=(SELECT claim_id FROM phone_pair_requests WHERE session_hash=? AND request_id=?) AND other.expires>?)`).bind(current.token_hash,current.token_hash,requestId,current.token_hash,requestId,current.token_hash,requestId,now),
+      env.DB.prepare('DELETE FROM phone_pair_grant_sources WHERE session_hash=? AND claim_id=(SELECT claim_id FROM phone_pair_requests WHERE session_hash=? AND request_id=?)').bind(current.token_hash,current.token_hash,requestId),
+      env.DB.prepare(`UPDATE radio_commands SET state='failed' WHERE session_hash=? AND radio_id=(${target}) AND state IN ('pending','delivered') AND NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.session_hash=radio_commands.session_hash AND p.radio_id=radio_commands.radio_id AND p.expires>?)`).bind(current.token_hash,current.token_hash,requestId,now)
+    ]);
+    return json({state:'cancelled'});
+  }
   if(path==='/api/phone/unlink'){
     const id=String(body.radio_id||'');await env.DB.batch([
       ...revokeControlStatements(env,id,current.token_hash),
+      env.DB.prepare('DELETE FROM phone_pair_grant_sources WHERE session_hash=? AND radio_id=?').bind(current.token_hash,id),
       env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND radio_id=? AND state IN ('waiting','approved')").bind(current.token_hash,id),
       env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE session_hash=? AND radio_id=? AND state IN ('pending','delivered')").bind(current.token_hash,id),
       env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=? AND radio_id=?').bind(current.token_hash,id)
@@ -47,15 +69,26 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     return json({status:'ok'});
   }
   if(path==='/api/phone/logout'){
-    await env.DB.batch([env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND state IN ('waiting','approved')").bind(current.token_hash),env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE session_hash=? AND state IN ('pending','delivered')").bind(current.token_hash),env.DB.prepare('DELETE FROM radio_control_grants WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').bind(now,current.token_hash)]);return json({status:'ok'});
+    await env.DB.batch([env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE session_hash=? AND state IN ('waiting','approved')").bind(current.token_hash),env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE session_hash=? AND state IN ('pending','delivered')").bind(current.token_hash),env.DB.prepare('DELETE FROM radio_control_grants WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM phone_pair_grant_sources WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('DELETE FROM phone_radios WHERE session_hash=?').bind(current.token_hash),env.DB.prepare('UPDATE sessions SET expires=? WHERE token_hash=?').bind(now,current.token_hash)]);return json({status:'ok'});
   }
   if(path==='/api/phone/claim'){
+    const requestId=body.request_id===undefined?'':body.request_id;if(typeof requestId!=='string'||(body.request_id!==undefined&&!/^[a-f0-9]{32}$/.test(requestId)))throw new HttpError(400,'A valid connection request reference is required.');
     await limit(env.DB,'claim-ip',ip,5,900,now);
     await limit(env.DB,'claim-global','all',60,60,now);
+    if(requestId){
+      await env.DB.prepare("INSERT INTO phone_pair_requests(session_hash,request_id,state,created_at,expires) VALUES (?,?,'active',?,?) ON CONFLICT DO NOTHING").bind(current.token_hash,requestId,now,now+900).run();
+      const attempt=await env.DB.prepare('SELECT state,expires FROM phone_pair_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();
+      if(attempt?.state!=='active'||attempt.expires<=now)throw new HttpError(409,'This connection request was cancelled or expired. Try again.');
+    }
     await deps.human(request,env,body.turnstile_token,'radio-link',now);
     const code=String(body.device_code||'').replace(/[-\s]/g,'').toUpperCase();
     if(!/^(?:[0-9]{4,8}|[A-Z0-9]{8})$/.test(code))throw new HttpError(400,'Check the device code on your radio.');
     const codeHash=await mac(env,'device-code:'+code);
+    if(requestId){
+      await env.DB.prepare("UPDATE phone_pair_requests SET code_hash=? WHERE session_hash=? AND request_id=? AND state='active' AND expires>? AND (code_hash='' OR code_hash=?)").bind(codeHash,current.token_hash,requestId,now,codeHash).run();
+      const attempt=await env.DB.prepare('SELECT state,expires,code_hash FROM phone_pair_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();
+      if(attempt?.state!=='active'||attempt.expires<=now||attempt.code_hash!==codeHash)throw new HttpError(409,'This connection request was cancelled or already used. Try again.');
+    }
     const pair=await env.DB.prepare(`SELECT radio_id FROM radio_pairs WHERE code_hash=? AND (expires=0 OR expires>?)`)
       .bind(codeHash,now).first();
     if(!pair)throw new HttpError(400,'Check the device code on your radio.');
@@ -67,16 +100,21 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     const id=randomHex(16),check=otp().slice(0,4);
     // Reset/logout may complete after the lookup above. The write itself must
     // still see the same usable Device Code and a live initiating session.
-    await env.DB.prepare(`INSERT INTO pair_claims(id,radio_id,session_hash,confirmation_code,state,expires,created_at)
+    const insert=env.DB.prepare(`INSERT INTO pair_claims(id,radio_id,session_hash,confirmation_code,state,expires,created_at)
       SELECT ?,?,?,?,'waiting',?,? WHERE EXISTS(SELECT 1 FROM radio_pairs WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?))
-      AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires>?) ON CONFLICT DO NOTHING`)
-      .bind(id,pair.radio_id,current.token_hash,check,now+180,now,pair.radio_id,codeHash,now,current.token_hash,now).run();
-    const claim=await env.DB.prepare(`SELECT id,confirmation_code,session_hash FROM pair_claims
+      AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires>?) ${requestId?"AND EXISTS(SELECT 1 FROM phone_pair_requests r WHERE r.session_hash=? AND r.request_id=? AND r.code_hash=? AND r.state='active' AND r.expires>? AND r.claim_id IS NULL)":''} ON CONFLICT DO NOTHING`)
+      .bind(id,pair.radio_id,current.token_hash,check,now+180,now,pair.radio_id,codeHash,now,current.token_hash,now,...(requestId?[current.token_hash,requestId,codeHash,now]:[]));
+    if(requestId)await env.DB.batch([insert,env.DB.prepare(`UPDATE phone_pair_requests SET claim_id=? WHERE session_hash=? AND request_id=? AND state='active' AND claim_id IS NULL AND EXISTS(SELECT 1 FROM pair_claims c WHERE c.id=? AND c.session_hash=phone_pair_requests.session_hash)`).bind(id,current.token_hash,requestId,id)]);else await insert.run();
+    const claim=requestId?await env.DB.prepare(`SELECT c.id,c.confirmation_code,c.session_hash FROM pair_claims c JOIN phone_pair_requests r ON r.claim_id=c.id
+      WHERE r.session_hash=? AND r.request_id=? AND r.code_hash=? AND r.state='active' AND r.expires>? AND c.session_hash=r.session_hash AND c.radio_id=?
+      AND EXISTS(SELECT 1 FROM radio_pairs WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?))
+      AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires>?)`).bind(current.token_hash,requestId,codeHash,now,pair.radio_id,pair.radio_id,codeHash,now,current.token_hash,now).first():await env.DB.prepare(`SELECT id,confirmation_code,session_hash FROM pair_claims
       WHERE radio_id=? AND state='waiting' AND expires>?
       AND EXISTS(SELECT 1 FROM radio_pairs WHERE radio_id=? AND code_hash=? AND (expires=0 OR expires>?))
       AND EXISTS(SELECT 1 FROM sessions WHERE token_hash=? AND expires>?)`).bind(pair.radio_id,now,pair.radio_id,codeHash,now,current.token_hash,now).first();
     if(!claim){
       if(!await env.DB.prepare('SELECT 1 FROM sessions WHERE token_hash=? AND expires>?').bind(current.token_hash,now).first())throw new HttpError(401,'Please reload this page.');
+      if(requestId)throw new HttpError(409,'This connection request was cancelled or another request is waiting. Try again.');
       throw new HttpError(400,'Check the current device code on your radio and try again.');
     }
     if(claim.session_hash!==current.token_hash)throw new HttpError(409,'Another request is waiting on this radio. Try again shortly.');

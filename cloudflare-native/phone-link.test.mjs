@@ -14,6 +14,7 @@ async function fixture(){
   sqlite.exec(readFileSync(new URL('./migrations/0010_saved_inventory.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('./migrations/0012_radio_controls.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('./migrations/0015_station_command_origin.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('./migrations/0016_current_station_presence.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0019_pairing_cancellation.sql',import.meta.url),'utf8'));
   const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(qs){sqlite.exec('BEGIN');try{for(const q of qs)await q.run();sqlite.exec('COMMIT');}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
   const env={DB,DATA_ENCRYPTION_KEY:'e'.repeat(64)};
   sqlite.prepare('INSERT INTO radios VALUES (?,?,?,?,?)').run(radio,await digest(secret),'My radio',now,now);

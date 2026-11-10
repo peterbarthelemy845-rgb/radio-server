@@ -181,3 +181,25 @@ test('changing the selected radio during an inventory check never transfers the 
  const initial=deferred(),f=fixture({inventory:id=>id==='one'?initial.promise:Promise.resolve({known:true,codes:new Set()})});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:true},{id:'two',online:true}]});const opening=f.open('10',true,true);await until(()=>f.inventoryCalls.length===1);f.form.elements.radio_id.value='two';await f.get('updateStationConfirmation()');initial.resolve({known:true,codes:new Set()});await opening;
  assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,0);assert.equal(f.form.elements.radio_id.value,'two');assert.equal(f.id('shareSubmit').disabled,false);assert.equal(f.dialogs.length,0);
 });
+
+
+test('one linked radio uses compact Device Code text while keeping the hidden destination',async()=>{
+ const f=fixture();f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',device_code:'3961',online:true}]});await f.open('10',true);
+ assert.equal(f.id('radioLabel').hidden,true);assert.equal(f.id('shareSingleRadio').hidden,false);assert.equal(f.id('shareSingleRadioCode').textContent,'3961');assert.equal(f.form.elements.radio_id.value,'one');assert.equal(f.id('deviceLabel').hidden,true);
+ f.answers.push({command_id:'one-command'},{state:'added'});await f.submit();assert.equal(f.calls.find(call=>call.path==='/api/phone/add').body.radio_id,'one');
+});
+
+test('multiple linked radios keep the chooser and hide the single destination text',async()=>{
+ const f=fixture({selectedId:'two'});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',device_code:'1234',online:true},{id:'two',device_code:'3961',online:true}]});await f.open('10',true);
+ assert.equal(f.id('radioLabel').hidden,false);assert.equal(f.id('shareSingleRadio').hidden,true);assert.equal(f.id('shareSingleRadioCode').textContent,'');assert.equal(f.form.elements.radio_id.value,'two');
+});
+
+test('switching from a compact destination to a new Device Code hides the prior code',async()=>{
+ const f=fixture();f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',device_code:'3961',online:true}]});await f.open('10',true);f.id('otherRadio').onclick();
+ assert.equal(f.id('radioLabel').hidden,true);assert.equal(f.id('shareSingleRadio').hidden,true);assert.equal(f.id('shareSingleRadioCode').textContent,'');assert.equal(f.id('deviceLabel').hidden,false);assert.equal(f.form.elements.device_code.required,true);assert.equal(f.calls.length,2);
+});
+
+test('a first physical approval keeps one radio compact without asking for a redundant selection',async()=>{
+ const f=fixture({useDeviceCode:true});f.answers.push({claim_id:'claim',confirmation_code:'0583'},{state:'approved',radio_id:'one'},{command_id:'added'},{state:'failed'});await f.submit();
+ assert.equal(f.id('deviceLabel').hidden,true);assert.equal(f.id('radioLabel').hidden,true);assert.equal(f.id('shareSingleRadio').hidden,false);assert.equal(f.id('shareSingleRadioCode').textContent,'3961');assert.equal(f.form.elements.radio_id.value,'one');
+});

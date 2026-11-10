@@ -121,6 +121,7 @@ function confirmationFixture(){
   const nodes=new Map(),statuses=[],selections=[],requests=[],answers=[];
   const $=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,disabled:false,textContent:'',dataset:{}});return nodes.get(id);};
   $('shareForm').elements={radio_id:{value:'radio-one'}};
+  $('deviceLabel').hidden=true;
   const context={$,window:{appI18n:{t:key=>key==='busy.checking'?'Checking…':key}},rememberSelectedRadio:radio=>selections.push(radio),loadRadioInventory:async radio=>{requests.push(radio);if(!answers.length)throw Error('Missing inventory response');return await answers.shift();},setSharedStatus:(text,kind)=>statuses.push({text,kind})};
   runInNewContext("let sharedCode='10',sharedOpenGeneration=1,shareRunning=false,sharedOfflineRadios=new Set();"+siteUi.slice(siteUi.indexOf('function setSharedSavedState('),siteUi.indexOf('function renderSharedWaitButton('))+listenerUi.slice(listenerUi.indexOf('let sharedConfirmationGeneration='),listenerUi.indexOf("$('shareForm').elements.radio_id.addEventListener")),context);
   return {$,statuses,selections,requests,answers,check:runInNewContext('updateStationConfirmation',context),set:code=>runInNewContext(code,context)};
@@ -147,6 +148,12 @@ test('saved inventory and offline status are independent and offer Wi-Fi help wi
   assert.equal(f.$('shareSavedNotice').hidden,false);assert.equal(f.$('shareSubmit').hidden,true);assert.equal(f.$('shareWifiHelp').hidden,false);assert.equal(f.$('shareForm').dataset.radioOffline,'1');assert.equal(f.statuses.at(-1).text,'Radio offline. Check power and Wi-Fi.');assert.equal(f.statuses.at(-1).kind,'error');assert.deepEqual(f.requests,['radio-one']);
 });
 
+test('a single linked radio can hide its selector without invalidating its inventory result',async()=>{
+  const f=confirmationFixture();f.$('radioLabel').hidden=true;f.answers.push({known:true,codes:new Set(['10'])});
+  assert.equal(await f.check(),true);assert.deepEqual(f.requests,['radio-one']);
+  assert.equal(f.$('shareSavedNotice').hidden,false);assert.equal(f.$('shareSubmit').textContent,'Add again');assert.equal(f.$('shareSubmit').disabled,false);
+});
+
 test('a late inventory response for the previous selection cannot unlock or overwrite a newer check',async()=>{
   const f=confirmationFixture(),old=pendingInventory(),current=pendingInventory();f.answers.push(old.promise,current.promise);
   const first=f.check();f.$('shareForm').elements.radio_id.value='radio-two';const second=f.check();
@@ -160,8 +167,8 @@ test('a repeated check for the same radio only lets the latest response restore 
   current.resolve({known:true,codes:new Set(['10'])});assert.equal(await second,true);assert.equal(f.$('shareSubmit').disabled,false);assert.equal(f.$('shareSavedNotice').hidden,false);
 });
 
-test('hidden pairing controls, another station, a reopened popup or active delivery invalidate inventory results',async()=>{
-  for(const change of [f=>{f.$('radioLabel').hidden=true;},f=>f.set("sharedCode='11'"),f=>f.set('sharedOpenGeneration++'),f=>f.set('shareRunning=true')]){
+test('manual pairing controls, another station, a reopened popup or active delivery invalidate inventory results',async()=>{
+  for(const change of [f=>{f.$('deviceLabel').hidden=false;},f=>f.set("sharedCode='11'"),f=>f.set('sharedOpenGeneration++'),f=>f.set('shareRunning=true')]){
     const f=confirmationFixture(),pending=pendingInventory();f.answers.push(pending.promise);const checked=f.check();change(f);pending.resolve({known:true,codes:new Set(['10'])});assert.equal(await checked,undefined);
     assert.equal(f.$('shareSavedNotice').hidden,true);assert.equal(f.statuses.length,0);
   }
