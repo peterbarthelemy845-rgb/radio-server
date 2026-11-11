@@ -30,7 +30,13 @@ test('an initial session failure still exposes the radio page and completes star
 });
 
 test('owner startup still resolves its session and editor before announcing readiness',async()=>{
- const directory=deferred(),f=fixture({path:'/add-station',hash:'',session:{owner_station:'13'},directory:directory.promise});await f.start();assert.deepEqual(f.pages,['login']);assert.deepEqual(f.order,['editor','community','radio-locals-ready']);directory.resolve([]);
+ const directory=deferred(),f=fixture({path:'/add-station',hash:'',session:{owner_station:'13'},directory:directory.promise});await f.start();assert.deepEqual(f.pages,['register']);assert.deepEqual(f.order,['editor','community','radio-locals-ready']);directory.resolve([]);
+});
+
+test('direct Add Station and hash entry show Create Station first while explicit station-edit remains sign-in',async()=>{
+ for(const route of [{path:'/add-station',hash:''},{path:'/',hash:'#add-station'},{path:'/create-station',hash:''}]){const session=deferred(),f=fixture({...route,session:session.promise}),starting=f.start();assert.deepEqual(f.pages,['register']);assert.equal(f.order.includes('editor'),false);session.resolve({owner_station:null});await starting;assert.deepEqual(f.pages,['register']);assert.equal(f.order.includes('editor'),false);assert.deepEqual(f.events,['radio-locals-ready']);}
+ const signIn=fixture({path:'/station-edit',hash:'',session:{owner_station:null}});await signIn.start();assert.ok(signIn.pages.every(page=>page==='login'));assert.equal(signIn.order.includes('editor'),false);
+ for(const route of [{path:'/add-station',hash:''},{path:'/',hash:'#add-station'},{path:'/station-edit',hash:''}]){const owner=fixture({...route,session:{owner_station:'13'}});await owner.start();assert.equal(owner.order.filter(step=>step==='editor').length,1);}
 });
 
 test('fast startup waits for later deferred scripts to install their ready handlers',async()=>{

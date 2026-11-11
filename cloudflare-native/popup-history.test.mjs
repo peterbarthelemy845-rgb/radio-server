@@ -32,6 +32,28 @@ test('verification-to-success replacement before the asynchronous close event le
  const f=fixture(),verification=new f.Dialog('verification'),success=new f.Dialog('success');verification.showModal();verification.close();success.showModal();f.flush();assert.equal(success.open,true);assert.equal(f.index(),1);assert.equal(f.entries.length,2);assert.equal(f.history.state.appDialog.id,'success');success.close();f.flush();assert.equal(f.index(),0);assert.equal(f.unhandled(),0);
 });
 
+test('reopening the same stream dialog before its old close event preserves the new popup and its Back entry',()=>{
+ const f=fixture({screen:'register',radioLocalsApp:{page:'register'}}),dialog=new f.Dialog('streamSetupDialog');dialog.showModal();const oldToken=f.history.state.appDialog.token;dialog.close('saved');dialog.showModal();const currentToken=f.history.state.appDialog.token;assert.notEqual(currentToken,oldToken);assert.equal(f.entries.length,2,'The obsolete popup marker is replaced, not stacked');f.flush();
+ assert.equal(dialog.open,true);assert.equal(f.index(),1);assert.equal(f.history.state.appDialog.token,currentToken);assert.equal(f.unhandled(),0);f.history.back();f.flush();assert.equal(dialog.open,false);assert.equal(dialog.returnValue,'cancelled');assert.equal(f.index(),0);assert.equal(f.history.state.radioLocalsApp.page,'register');assert.equal(f.unhandled(),0);
+ dialog.showModal();dialog.close('cancelled');f.flush();assert.equal(f.index(),0,'The current opening still has a working close listener');assert.equal(f.unhandled(),0);
+});
+
+test('same-dialog close, reopen and close before queued events consumes one marker without replaying anything',()=>{
+ const f=fixture(),dialog=new f.Dialog('streamSetupDialog');dialog.showModal();dialog.close('saved');dialog.showModal();dialog.close('cancelled');f.flush();assert.equal(dialog.open,false);assert.equal(f.index(),0);assert.equal(f.unhandled(),0);assert.equal(f.entries.length,2);f.history.forward();f.flush();assert.equal(dialog.open,false);assert.equal(f.history.state.appDialog,undefined);assert.equal(f.unhandled(),0);
+});
+
+test('reopening a nested child before its queued close preserves the parent and uses only one child marker',()=>{
+ const f=fixture(),parent=new f.Dialog('parent'),child=new f.Dialog('streamSetupDialog');parent.showModal();const parentToken=f.history.state.appDialog.token;child.showModal();child.close();child.showModal();f.flush();assert.equal(parent.open,true);assert.equal(child.open,true);assert.equal(f.index(),2);assert.equal(f.entries.length,3);f.history.back();f.flush();assert.equal(child.open,false);assert.equal(parent.open,true);assert.equal(f.history.state.appDialog.token,parentToken);f.history.back();f.flush();assert.equal(parent.open,false);assert.equal(f.index(),0);assert.equal(f.unhandled(),0);
+});
+
+test('reopening a closed parent above a still-open child makes the latest opening the active popup',()=>{
+ const f=fixture(),parent=new f.Dialog('parent'),child=new f.Dialog('child');parent.showModal();child.showModal();const childToken=f.history.state.appDialog.token;parent.close();parent.showModal();f.flush();assert.equal(parent.open,true);assert.equal(child.open,true);assert.equal(f.index(),3);f.history.back();f.flush();assert.equal(parent.open,false);assert.equal(child.open,true);assert.equal(f.history.state.appDialog.token,childToken);child.close();f.flush();assert.equal(f.index(),0);assert.equal(f.unhandled(),0);
+});
+
+test('a native error from repeated showModal on an already open dialog leaves its history tracking intact',()=>{
+ const f=fixture(),dialog=new f.Dialog('streamSetupDialog');dialog.showModal();const token=f.history.state.appDialog.token;assert.throws(()=>dialog.showModal(),/Already open/);assert.equal(f.index(),1);assert.equal(f.entries.length,2);assert.equal(f.history.state.appDialog.token,token);f.history.back();f.flush();assert.equal(dialog.open,false);assert.equal(f.index(),0);assert.equal(f.unhandled(),0);
+});
+
 test('a closed nested parent is skipped when the last child closes or receives Back',()=>{
  for(const back of [false,true]){const f=fixture(),parent=new f.Dialog('parent'),child=new f.Dialog('child');parent.showModal();child.showModal();parent.close();f.flush();assert.equal(f.index(),2);assert.equal(child.open,true);if(back)f.history.back();else child.close();f.flush();assert.equal(child.open,false);assert.equal(f.index(),0);assert.equal(f.unhandled(),0);}
 });

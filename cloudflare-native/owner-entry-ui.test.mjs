@@ -39,6 +39,31 @@ function fixture({sdkReady=true}={}){
  return {get,nodes,widgets,removed,scripts,calls,verified,answers,context,sdk,timers,focused:()=>focused,submit,page:id=>context.page(id),busy:id=>context.formIsBusy(get(id)),loadSdk(){window.turnstile=sdk;scripts[0].onload();}};
 }
 
+function ownerNavigationFixture({owner=null,session=Promise.resolve(),feature=Promise.resolve()}={}){
+ const f=fixture(),events=[],history=[];f.context.window.loadAppFeature=async name=>{events.push(['feature',name]);await feature;};f.context.history={replaceState(_state,_title,url){history.push(url);}};
+ f.context.loadOwnerSession=async()=>{events.push(['session']);await session;f.context.state.owner_station=owner;};f.context.editor=async(preserve,generation)=>{events.push(['editor',preserve,generation]);f.page('editor');};
+ vm.runInContext(between("$('openLogin').onclick=", ";$('navAdd').onclick="),f.context);
+ vm.runInContext(between("$('navAdd').onclick=async()=>", ";$('navLibrary').onclick="),f.context);
+ return {...f,navigation:events,history,open:()=>f.get('navAdd').onclick()};
+}
+
+test('Add Station opens Create Station for an unowned session and Sign in remains an explicit tab',async()=>{
+ const f=ownerNavigationFixture();f.page('myRadio');await f.open();assert.equal(f.get('register').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.get('myRadio').hidden,true);assert.deepEqual(f.history,['/#add-station']);assert.deepEqual(f.navigation,[['feature','owner'],['session']]);
+ f.get('openLogin').onclick();assert.equal(f.get('login').hidden,false);assert.equal(f.get('register').hidden,true);assert.equal(f.focused(),f.get('signInTab'));
+ f.get('openRegister').onclick();assert.equal(f.get('register').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.focused(),f.get('createStationTab'));assert.equal(f.calls.length,0);assert.equal(f.widgets.length,0);
+});
+
+test('Add Station retains the authenticated editor path with its existing draft-preservation contract',async()=>{
+ const f=ownerNavigationFixture({owner:'13'});f.page('myRadio');await f.open();assert.equal(f.get('editor').hidden,false);assert.equal(f.get('register').hidden,true);assert.equal(f.get('login').hidden,true);assert.deepEqual(f.navigation.map(event=>event[0]),['feature','session','editor']);assert.equal(f.navigation[2][1],true);assert.equal(typeof f.navigation[2][2],'number');assert.equal(f.context.state.owner_station,'13');
+});
+
+test('leaving while Add Station loads cannot open Create Station or an owner editor afterwards',async()=>{
+ for(const waiting of ['feature','session'])for(const owner of [null,'13']){
+  const pause=deferred(),f=ownerNavigationFixture({owner,[waiting]:pause.promise});f.page('myRadio');const opening=f.open();await settle();f.page('support');pause.resolve();await opening;
+  assert.equal(f.get('support').hidden,false,waiting);assert.equal(f.get('register').hidden,true,waiting);assert.equal(f.get('editor').hidden,true,waiting);assert.equal(f.navigation.some(event=>event[0]==='editor'),false);
+ }
+});
+
 test('leaving sign-in promptly unlocks its fields and removes only its security widget',async()=>{
  const f=fixture(),pending=f.submit('loginForm');await settle();assert.equal(f.widgets.length,1);assert.equal(f.busy('loginForm'),true);
  f.page('support');assert.equal(f.busy('loginForm'),false);assert.equal(f.get('loginForm').elements.email.disabled,false);assert.deepEqual(f.removed,['widget-1']);

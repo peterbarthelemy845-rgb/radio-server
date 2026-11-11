@@ -17,7 +17,7 @@ test('HEAD does not execute private POST routes or expose an error body',async()
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,before);
 });
 test('direct public pages receive meaningful server titles',async()=>{
- const f=await fixture();for(const [path,title] of [['/','Radio'],['/support','Support'],['/add-station','Station sign in'],['/create-station','Create your station'],['/station-edit','Edit your station'],['/wifi-setup','Wi-Fi setup']])assert.ok((await(await f.fetch(path)).text()).includes('<title>'+title+' · Radio Locals</title>'),path);
+ const f=await fixture();for(const [path,title] of [['/','Radio'],['/support','Support'],['/add-station','Create your station'],['/create-station','Create your station'],['/station-edit','Edit your station'],['/wifi-setup','Wi-Fi setup']])assert.ok((await(await f.fetch(path)).text()).includes('<title>'+title+' · Radio Locals</title>'),path);
 });
 test('published station links contain escaped WhatsApp/social metadata and canonical public URLs',async()=>{
  const f=await fixture(),key='b'.repeat(64)+'.png',name='News " & <script>alert(1)</script>',bio='Local <b>news</b> & "community"';f.sqlite.prepare('UPDATE stations SET name=?,bio=?,artwork_key=? WHERE code=?').run(name,bio,key,f.station);

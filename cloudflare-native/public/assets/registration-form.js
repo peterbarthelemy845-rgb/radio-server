@@ -6,9 +6,12 @@
  if(!registrationForm||registrationIds.some(id=>!registrationNodes[id]))return;
  const registrationUrl=registrationNodes.streamUrlInput,registrationName=registrationForm.elements?.name,registrationBuilder=[registrationNodes.streamHost,registrationNodes.streamPort,registrationNodes.streamProtocol,registrationNodes.streamPath];
  const registrationProviderFields=[...(registrationForm.querySelectorAll?.('input[name="stream_provider"]')||[])],registrationProviderHelpNode=document.getElementById('streamProviderHelp'),registrationUrlLabel=document.getElementById('streamUrlLabel');
+ const registrationSetupIds=['streamSetupDialog','streamSetupSave','streamSetupCancel','streamSetupSummary','streamSetupSummaryText','streamSetupEdit','streamSetupTitle','registrationStreamValue'],registrationSetup=Object.fromEntries(registrationSetupIds.map(id=>[id,document.getElementById(id)]));
+ const registrationHasSetup=registrationProviderFields.length>0&&registrationSetupIds.every(id=>registrationSetup[id]);
  const registrationHasProviders=registrationProviderFields.length>0;
  let registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast',registrationSource='url',registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
  let registrationManualUrl='',registrationManualSource='ip',registrationManualEdited=false,registrationDirectDraft=registrationUrl.value,registrationDirectEdited=Boolean(registrationUrl.value);
+ let registrationCommittedProvider=registrationHasSetup?registrationProviderFields.find(field=>field.checked)?.value||null:null;
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
  function registrationManualMode(){return registrationHasProviders&&registrationProvider!=='other';}
  function registrationBusy(){return ['1','true'].includes(registrationForm.dataset.busy)||registrationForm.querySelector('button[type="submit"]')?.disabled===true;}
@@ -22,18 +25,21 @@
   const manual=registrationManualMode();registrationNodes.streamManualSetup.hidden=!manual;registrationNodes.streamManualSetup.open=manual;registrationNodes.streamAddressFields.hidden=!manual;registrationUrl.readOnly=manual;
   if(registrationUrlLabel){const key=manual?'registration.generated':'registration.streamUrl',fallback=manual?'Generated stream URL':'Stream URL';registrationUrlLabel.setAttribute('data-i18n',key);registrationUrlLabel.textContent=registrationText(key,fallback);}
   const placeholderKey=manual?'registration.generatedPlaceholder':'registration.directPlaceholder';registrationUrl.dataset.i18nPlaceholder=placeholderKey;registrationUrl.placeholder=registrationText(placeholderKey,manual?'Your stream URL appears here':'https://example.com/stream.mp3');
-  for(const field of registrationBuilder){field.required=false;field.disabled=!manual||registrationBusy();field.setCustomValidity('');}
+  for(const field of registrationBuilder){field.required=false;field.disabled=!manual||registrationBusy()||registrationHasSetup&&!registrationSetup.streamSetupDialog.open;field.setCustomValidity('');}
+  if(registrationHasSetup){const title=registrationProvider==='shoutcast'?['registration.setupShoutcast','SHOUTcast setup']:registrationProvider==='other'?['registration.setupStreamUrl','Stream URL setup']:['registration.setupIcecast','Icecast setup'];registrationSetup.streamSetupTitle.setAttribute('data-i18n',title[0]);registrationSetup.streamSetupTitle.textContent=registrationText(...title);registrationUrl.disabled=!registrationSetup.streamSetupDialog.open||registrationBusy();registrationUrl.required=false;}
  }
  // Each entry mode keeps its draft. Only a newly edited, valid direct URL
  // replaces the server details; switching providers never guesses a mount.
- for(const field of registrationProviderFields)field.addEventListener('change',()=>{
-  if(!field.checked)return;
-  if(registrationBusy()){for(const choice of registrationProviderFields)choice.checked=choice.value===registrationProvider;return;}
-  const wasManual=registrationManualMode(),nextManual=field.value!=='other';
+ function registrationSelectProvider(value){
+  const wasManual=registrationManualMode(),nextManual=value!=='other';
   if(wasManual&&!nextManual){registrationManualUrl=registrationUrl.value;registrationManualSource=registrationSource;if(registrationValid&&registrationManualEdited)registrationDirectDraft=registrationUrl.value;registrationDirectEdited=false;registrationManualEdited=false;registrationUrl.value=registrationDirectDraft;registrationSource='url';}
   else if(!wasManual&&nextManual){registrationDirectDraft=registrationUrl.value;if(registrationDirectEdited){try{registrationSyncBuilder(registrationParse(registrationDirectDraft));registrationManualUrl=registrationDirectDraft;registrationManualSource='url';}catch{}}registrationUrl.value=registrationManualUrl;registrationSource=registrationManualSource;registrationDirectEdited=false;registrationManualEdited=false;}
-  registrationProvider=field.value;registrationInvalidate();registrationRenderMode();registrationValidate();
- });
+  registrationProvider=value;registrationInvalidate();registrationRenderMode();registrationValidate();
+ }
+ for(const field of registrationProviderFields){
+  field.addEventListener('change',()=>{if(!field.checked)return;if(registrationHasSetup){registrationOpenSetup(field.value);return;}if(registrationBusy()){for(const choice of registrationProviderFields)choice.checked=choice.value===registrationProvider;return;}registrationSelectProvider(field.value);});
+  if(registrationHasSetup)field.addEventListener('click',()=>{if(field.checked)registrationOpenSetup(field.value);});
+ }
  function registrationStatus(key,fallback,state=''){
   const target=registrationNodes.streamTestStatus;target.dataset.state=state;registrationStatusKey=key;registrationStatusFallback=fallback;
   if(key)target.setAttribute('data-i18n',key);else target.removeAttribute('data-i18n');
@@ -73,7 +79,7 @@
  function registrationSetUrl(value){
   if(registrationUrl.value===value)return;
   registrationUrl.value=value;registrationInternalInput=true;
-  try{registrationUrl.dispatchEvent(new Event('input',{bubbles:true}));}finally{registrationInternalInput=false;}
+  try{if(!registrationHasSetup)registrationUrl.dispatchEvent(new Event('input',{bubbles:true}));}finally{registrationInternalInput=false;}
  }
  function registrationSyncBuilder(parsed){
   registrationNodes.streamHost.value=parsed?.hostname||'';registrationNodes.streamPort.value=parsed?.port||'';
@@ -81,9 +87,11 @@
  }
  function registrationControls(){
   const submitting=registrationBusy();
-  if(registrationHasProviders)for(const field of registrationBuilder)field.disabled=!registrationManualMode()||submitting;
-  registrationNodes.testStream.disabled=Boolean(registrationActiveTest)||!registrationValid||submitting;
-  registrationNodes.copyGeneratedStream.disabled=!registrationValid||submitting;
+  const closed=registrationHasSetup&&!registrationSetup.streamSetupDialog.open;
+  if(registrationHasProviders)for(const field of registrationBuilder)field.disabled=!registrationManualMode()||submitting||closed;
+  if(registrationHasSetup){registrationUrl.disabled=closed||submitting;registrationSetup.streamSetupSave.disabled=submitting;}
+  registrationNodes.testStream.disabled=Boolean(registrationActiveTest)||!registrationValid||submitting||closed;
+  registrationNodes.copyGeneratedStream.disabled=!registrationValid||submitting||closed;
  }
  function registrationCompose(){
   const host=registrationNodes.streamHost.value.trim(),port=registrationNodes.streamPort.value.trim(),protocol=registrationNodes.streamProtocol.value,path=registrationNodes.streamPath.value.trim()||'/';
@@ -103,34 +111,68 @@
   }catch(error){
    registrationValid=false;
    const field=error.field||(registrationManualMode()?registrationNodes.streamHost:registrationUrl),safe=error.message||'Check the stream address and try again.';
-   field.setCustomValidity(safe);
+   if(!registrationHasSetup||registrationSetup.streamSetupDialog.open)field.setCustomValidity(safe);
    if(registrationSource==='ip')registrationSetUrl('');else if(!registrationHasProviders)registrationSyncBuilder(null);
    registrationControls();
    if(report){if(registrationBuilder.includes(field))registrationNodes.streamManualSetup.open=true;registrationStatus(error.key||'',error.fallback||safe,'invalid');field.focus();field.reportValidity();}
    return false;
   }
  }
- registrationUrl.addEventListener('input',()=>{if(registrationInternalInput||registrationBusy()||registrationManualMode())return;registrationSource='url';registrationDirectDraft=registrationUrl.value;registrationDirectEdited=true;registrationInvalidate();registrationValidate();});
+ registrationUrl.addEventListener('input',()=>{if(registrationInternalInput||registrationBusy()||registrationManualMode()||registrationHasSetup&&!registrationSetup.streamSetupDialog.open)return;registrationSource='url';registrationDirectDraft=registrationUrl.value;registrationDirectEdited=true;registrationInvalidate();registrationValidate();});
  for(const field of registrationBuilder){
   field.addEventListener('invalid',()=>{registrationNodes.streamManualSetup.open=true;});
-  for(const event of ['input','change'])field.addEventListener(event,()=>{if(registrationBusy()||registrationHasProviders&&!registrationManualMode())return;registrationSource='ip';registrationManualEdited=true;registrationInvalidate();registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
+  for(const event of ['input','change'])field.addEventListener(event,()=>{if(registrationBusy()||registrationHasProviders&&!registrationManualMode()||registrationHasSetup&&!registrationSetup.streamSetupDialog.open)return;registrationSource='ip';registrationManualEdited=true;registrationInvalidate();registrationValidate();if(!registrationHasSetup)registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
  }
  if(registrationName)registrationName.addEventListener('input',()=>registrationValidateName());
- window.prepareRegistrationStream=()=>registrationValidateName(true)&&registrationValidate(true,true);
+ function registrationSummary(){
+  if(!registrationHasSetup)return;
+  let value='';try{value=registrationParse(registrationSetup.registrationStreamValue.value).href;}catch{}
+  registrationSetup.streamSetupSummary.hidden=!value;registrationSetup.streamSetupSummaryText.textContent=value;registrationSetup.streamSetupSummaryText.title=value;registrationSetup.streamSetupSummaryText.dataset.i18nSkip='true';
+ }
+ function registrationRestoreChoice(){for(const field of registrationProviderFields)field.checked=field.value===registrationCommittedProvider;}
+ function registrationOpenSetup(value=registrationCommittedProvider||registrationProvider){
+  if(!registrationHasSetup)return false;
+  if(registrationBusy()||document.getElementById('register').hidden){registrationRestoreChoice();return false;}
+  const dialog=registrationSetup.streamSetupDialog;if(dialog.open)return true;
+  registrationSelectProvider(['icecast','shoutcast','other'].includes(value)?value:'icecast');for(const field of registrationProviderFields)field.checked=field.value===registrationProvider;
+  dialog.returnValue='';dialog.showModal();registrationRenderMode();registrationValidate();(registrationManualMode()?registrationNodes.streamHost:registrationUrl).focus();return true;
+ }
+ function registrationCloseSetup(){
+  if(registrationSetup.streamSetupDialog.open)return;
+  registrationInvalidate();registrationRestoreChoice();registrationRenderMode();registrationUrl.setCustomValidity('');for(const field of registrationBuilder)field.setCustomValidity('');registrationControls();
+ }
+ function registrationSaveSetup(){
+  if(!registrationHasSetup||!registrationSetup.streamSetupDialog.open||registrationBusy()||!registrationValidate(true,true))return false;
+  const value=registrationParse(registrationUrl.value).href,canonical=registrationSetup.registrationStreamValue;registrationCommittedProvider=registrationProvider;
+  if(canonical.value!==value){canonical.value=value;canonical.dispatchEvent(new Event('input',{bubbles:true}));}
+  registrationSummary();registrationSetup.streamSetupDialog.close('saved');registrationCloseSetup();return true;
+ }
+ window.prepareRegistrationStream=()=>{
+  if(!registrationValidateName(true))return false;
+  if(!registrationHasSetup)return registrationValidate(true,true);
+  try{registrationParse(registrationSetup.registrationStreamValue.value);return true;}catch{if(registrationOpenSetup())registrationValidate(true,true);return false;}
+ };
+ if(registrationHasSetup){
+  registrationSetup.streamSetupSave.onclick=registrationSaveSetup;
+  registrationSetup.streamSetupCancel.onclick=()=>{if(registrationSetup.streamSetupDialog.open){registrationSetup.streamSetupDialog.close('cancelled');registrationCloseSetup();}};
+  registrationSetup.streamSetupEdit.onclick=()=>registrationOpenSetup();
+  registrationSetup.streamSetupDialog.addEventListener('close',registrationCloseSetup);
+  registrationSetup.streamSetupDialog.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing&&[registrationUrl,...registrationBuilder].includes(event.target)&&event.target!==registrationNodes.streamProtocol){event.preventDefault();registrationSaveSetup();}});
+ }
  registrationForm.addEventListener('form-busy-changed',registrationControls);
  registrationNodes.copyGeneratedStream.onclick=async()=>{
-  if(registrationBusy()||!registrationValidate(true,true))return;const value=registrationUrl.value;
-  try{if(!window.isSecureContext||!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText(value);registrationStatus('registration.urlCopied','Stream URL copied.','copy');}
-  catch{registrationUrl.focus();registrationUrl.select();registrationStatus('registration.copyManually','Select and copy the stream URL shown above.','copy');}
+  if(registrationBusy()||registrationHasSetup&&!registrationSetup.streamSetupDialog.open||!registrationValidate(true,true))return;const value=registrationUrl.value,version=registrationVersion,current=()=>registrationVersion===version&&registrationUrl.value===value&&!document.getElementById('register').hidden&&(!registrationHasSetup||registrationSetup.streamSetupDialog.open);
+  try{if(!window.isSecureContext||!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText(value);if(current())registrationStatus('registration.urlCopied','Stream URL copied.','copy');}
+  catch{if(current()){registrationUrl.focus();registrationUrl.select();registrationStatus('registration.copyManually','Select and copy the stream URL shown above.','copy');}}
  };
  registrationNodes.testStream.onclick=async()=>{
-  if(registrationBusy()||registrationActiveTest||!registrationValidate(true,true))return;
+  if(registrationBusy()||registrationHasSetup&&!registrationSetup.streamSetupDialog.open||registrationActiveTest||!registrationValidate(true,true))return;
   const target=new URL(registrationUrl.value);
   if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){registrationStatus('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save and check it on your radio.','unconfirmed');return;}
   if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationStatus('registration.playlistTestUnavailable','This is a playlist link. Automatic testing cannot confirm it; use a direct listening link when available. You can still save.','unconfirmed');return;}
   const version=registrationVersion,value=registrationUrl.value,attempt={};registrationActiveTest=attempt;registrationControls();
   registrationStatus('registration.checking','Checking the stream. No audio will play.','checking');
-  const current=()=>registrationActiveTest===attempt&&registrationVersion===version&&registrationUrl.value===value&&!document.getElementById('register').hidden;
+  const current=()=>registrationActiveTest===attempt&&registrationVersion===version&&registrationUrl.value===value&&!document.getElementById('register').hidden&&(!registrationHasSetup||registrationSetup.streamSetupDialog.open);
   try{
    const turnstile_token=await human(registrationNodes.streamTestHuman,'stream-check');if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:value,turnstile_token});if(!current())return;
@@ -140,11 +182,12 @@
   }catch(error){if(current())registrationStatus('',String(error.message||'The stream check did not complete. You can still save it.').slice(0,400),'error');}
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };
- new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
+ new MutationObserver(()=>{if(document.getElementById('register').hidden){if(registrationHasSetup&&registrationSetup.streamSetupDialog.open)registrationSetup.streamSetupDialog.close('cancelled');registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
  window.addEventListener('app-language-changed',()=>{registrationRenderMode();registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
- registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast';registrationSource=registrationManualMode()?'ip':'url';registrationManualUrl='';registrationManualSource='ip';registrationManualEdited=false;registrationDirectDraft='';registrationDirectEdited=false;registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationRenderMode();registrationValidateName();registrationValidate();});});
+ registrationForm.addEventListener('reset',()=>{registrationInvalidate();if(registrationHasSetup&&registrationSetup.streamSetupDialog.open)registrationSetup.streamSetupDialog.close('cancelled');queueMicrotask(()=>{registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast';registrationSource=registrationManualMode()?'ip':'url';registrationManualUrl='';registrationManualSource='ip';registrationManualEdited=false;registrationDirectDraft='';registrationDirectEdited=false;registrationUrl.value='';if(registrationHasSetup){registrationCommittedProvider=null;registrationSetup.registrationStreamValue.value='';registrationRestoreChoice();registrationSummary();}registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationRenderMode();registrationValidateName();registrationValidate();});});
  for(const field of registrationBuilder){field.disabled=false;field.required=false;field.setCustomValidity('');}
  registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=false;registrationNodes.streamManualSetup.open=false;
+ if(registrationHasSetup){try{registrationUrl.value=registrationParse(registrationSetup.registrationStreamValue.value).href;registrationCommittedProvider||='other';registrationProvider=registrationCommittedProvider;registrationDirectDraft=registrationUrl.value;registrationDirectEdited=true;}catch{}registrationRestoreChoice();registrationSummary();}
  if(registrationManualMode()){registrationSource='ip';try{registrationSyncBuilder(registrationParse(registrationUrl.value));registrationSource='url';registrationManualUrl=registrationUrl.value;registrationManualSource='url';}catch{}registrationDirectEdited=false;}
  registrationRenderMode();registrationValidate();
 })();
