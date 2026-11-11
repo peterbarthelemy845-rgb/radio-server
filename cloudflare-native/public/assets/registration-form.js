@@ -5,18 +5,35 @@
  const registrationNodes=Object.fromEntries(registrationIds.map(id=>[id,document.getElementById(id)]));
  if(!registrationForm||registrationIds.some(id=>!registrationNodes[id]))return;
  const registrationUrl=registrationNodes.streamUrlInput,registrationName=registrationForm.elements?.name,registrationBuilder=[registrationNodes.streamHost,registrationNodes.streamPort,registrationNodes.streamProtocol,registrationNodes.streamPath];
- const registrationProviderFields=[...(registrationForm.querySelectorAll?.('input[name="stream_provider"]')||[])],registrationProviderHelpNode=document.getElementById('streamProviderHelp');
- let registrationSource='url',registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
+ const registrationProviderFields=[...(registrationForm.querySelectorAll?.('input[name="stream_provider"]')||[])],registrationProviderHelpNode=document.getElementById('streamProviderHelp'),registrationUrlLabel=document.getElementById('streamUrlLabel');
+ const registrationHasProviders=registrationProviderFields.length>0;
+ let registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast',registrationSource='url',registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
+ let registrationManualUrl='',registrationManualSource='ip',registrationManualEdited=false,registrationDirectDraft=registrationUrl.value,registrationDirectEdited=Boolean(registrationUrl.value);
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
+ function registrationManualMode(){return registrationHasProviders&&registrationProvider!=='other';}
+ function registrationBusy(){return ['1','true'].includes(registrationForm.dataset.busy)||registrationForm.querySelector('button[type="submit"]')?.disabled===true;}
  function registrationProviderHelp(){
   if(!registrationProviderHelpNode)return;
-  const selected=registrationProviderFields.find(field=>field.checked)?.value;
-  const [key,fallback]=selected==='shoutcast'?['registration.providerShoutcast','Use the public SHOUTcast listening link or mount point supplied by your provider. Keep its exact path and query string.']:selected==='other'?['registration.providerOther','Use any compatible public listening link supplied by your stream provider.']:['registration.providerIcecast','Use the public Icecast listening link from your provider, including its mount point (for example, /live).'];
+  const [key,fallback]=registrationProvider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:registrationProvider==='other'?['registration.providerOther','Paste your complete public listening URL.']:['registration.providerIcecast','Enter your public server, port and mount point.'];
   registrationProviderHelpNode.setAttribute('data-i18n',key);registrationProviderHelpNode.textContent=registrationText(key,fallback);
  }
- // Provider choices explain the address supplied by the provider. They never
- // infer mount points, change inputs or relax the public-URL safety rules.
- for(const field of registrationProviderFields)field.addEventListener('change',registrationProviderHelp);
+ function registrationRenderMode(){
+  registrationProviderHelp();if(!registrationHasProviders)return;
+  const manual=registrationManualMode();registrationNodes.streamManualSetup.hidden=!manual;registrationNodes.streamManualSetup.open=manual;registrationNodes.streamAddressFields.hidden=!manual;registrationUrl.readOnly=manual;
+  if(registrationUrlLabel){const key=manual?'registration.generated':'registration.streamUrl',fallback=manual?'Generated stream URL':'Stream URL';registrationUrlLabel.setAttribute('data-i18n',key);registrationUrlLabel.textContent=registrationText(key,fallback);}
+  const placeholderKey=manual?'registration.generatedPlaceholder':'registration.directPlaceholder';registrationUrl.dataset.i18nPlaceholder=placeholderKey;registrationUrl.placeholder=registrationText(placeholderKey,manual?'Your stream URL appears here':'https://example.com/stream.mp3');
+  for(const field of registrationBuilder){field.required=false;field.disabled=!manual||registrationBusy();field.setCustomValidity('');}
+ }
+ // Each entry mode keeps its draft. Only a newly edited, valid direct URL
+ // replaces the server details; switching providers never guesses a mount.
+ for(const field of registrationProviderFields)field.addEventListener('change',()=>{
+  if(!field.checked)return;
+  if(registrationBusy()){for(const choice of registrationProviderFields)choice.checked=choice.value===registrationProvider;return;}
+  const wasManual=registrationManualMode(),nextManual=field.value!=='other';
+  if(wasManual&&!nextManual){registrationManualUrl=registrationUrl.value;registrationManualSource=registrationSource;if(registrationValid&&registrationManualEdited)registrationDirectDraft=registrationUrl.value;registrationDirectEdited=false;registrationManualEdited=false;registrationUrl.value=registrationDirectDraft;registrationSource='url';}
+  else if(!wasManual&&nextManual){registrationDirectDraft=registrationUrl.value;if(registrationDirectEdited){try{registrationSyncBuilder(registrationParse(registrationDirectDraft));registrationManualUrl=registrationDirectDraft;registrationManualSource='url';}catch{}}registrationUrl.value=registrationManualUrl;registrationSource=registrationManualSource;registrationDirectEdited=false;registrationManualEdited=false;}
+  registrationProvider=field.value;registrationInvalidate();registrationRenderMode();registrationValidate();
+ });
  function registrationStatus(key,fallback,state=''){
   const target=registrationNodes.streamTestStatus;target.dataset.state=state;registrationStatusKey=key;registrationStatusFallback=fallback;
   if(key)target.setAttribute('data-i18n',key);else target.removeAttribute('data-i18n');
@@ -63,7 +80,8 @@
   registrationNodes.streamProtocol.value=parsed?parsed.protocol.slice(0,-1):'https';registrationNodes.streamPath.value=parsed?parsed.pathname+parsed.search:'';
  }
  function registrationControls(){
-  const submitting=registrationForm.querySelector('button[type="submit"]')?.disabled===true;
+  const submitting=registrationBusy();
+  if(registrationHasProviders)for(const field of registrationBuilder)field.disabled=!registrationManualMode()||submitting;
   registrationNodes.testStream.disabled=Boolean(registrationActiveTest)||!registrationValid||submitting;
   registrationNodes.copyGeneratedStream.disabled=!registrationValid||submitting;
  }
@@ -80,33 +98,33 @@
   try{
    const parsed=registrationSource==='ip'?registrationCompose():registrationParse(registrationUrl.value);
    if(registrationSource==='ip'||canonicalize)registrationSetUrl(parsed.href);
-   if(registrationSource==='url')registrationSyncBuilder(parsed);
+   if(registrationSource==='url'&&!registrationHasProviders)registrationSyncBuilder(parsed);
    registrationValid=true;registrationControls();return true;
   }catch(error){
    registrationValid=false;
-   const field=error.field||registrationUrl,safe=error.message||'Check the stream address and try again.';
+   const field=error.field||(registrationManualMode()?registrationNodes.streamHost:registrationUrl),safe=error.message||'Check the stream address and try again.';
    field.setCustomValidity(safe);
-   if(registrationSource==='ip')registrationSetUrl('');else registrationSyncBuilder(null);
+   if(registrationSource==='ip')registrationSetUrl('');else if(!registrationHasProviders)registrationSyncBuilder(null);
    registrationControls();
    if(report){if(registrationBuilder.includes(field))registrationNodes.streamManualSetup.open=true;registrationStatus(error.key||'',error.fallback||safe,'invalid');field.focus();field.reportValidity();}
    return false;
   }
  }
- registrationUrl.addEventListener('input',()=>{if(registrationInternalInput)return;registrationSource='url';registrationInvalidate();registrationValidate();});
+ registrationUrl.addEventListener('input',()=>{if(registrationInternalInput||registrationBusy()||registrationManualMode())return;registrationSource='url';registrationDirectDraft=registrationUrl.value;registrationDirectEdited=true;registrationInvalidate();registrationValidate();});
  for(const field of registrationBuilder){
   field.addEventListener('invalid',()=>{registrationNodes.streamManualSetup.open=true;});
-  for(const event of ['input','change'])field.addEventListener(event,()=>{registrationSource='ip';registrationInvalidate();registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
+  for(const event of ['input','change'])field.addEventListener(event,()=>{if(registrationBusy()||registrationHasProviders&&!registrationManualMode())return;registrationSource='ip';registrationManualEdited=true;registrationInvalidate();registrationValidate();registrationForm.dispatchEvent(new Event('input',{bubbles:true}));});
  }
  if(registrationName)registrationName.addEventListener('input',()=>registrationValidateName());
  window.prepareRegistrationStream=()=>registrationValidateName(true)&&registrationValidate(true,true);
  registrationForm.addEventListener('form-busy-changed',registrationControls);
  registrationNodes.copyGeneratedStream.onclick=async()=>{
-  if(!registrationValidate(true,true))return;const value=registrationUrl.value;
+  if(registrationBusy()||!registrationValidate(true,true))return;const value=registrationUrl.value;
   try{if(!window.isSecureContext||!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText(value);registrationStatus('registration.urlCopied','Stream URL copied.','copy');}
   catch{registrationUrl.focus();registrationUrl.select();registrationStatus('registration.copyManually','Select and copy the stream URL shown above.','copy');}
  };
  registrationNodes.testStream.onclick=async()=>{
-  if(registrationActiveTest||!registrationValidate(true,true))return;
+  if(registrationBusy()||registrationActiveTest||!registrationValidate(true,true))return;
   const target=new URL(registrationUrl.value);
   if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){registrationStatus('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save and check it on your radio.','unconfirmed');return;}
   if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationStatus('registration.playlistTestUnavailable','This is a playlist link. Automatic testing cannot confirm it; use a direct listening link when available. You can still save.','unconfirmed');return;}
@@ -123,8 +141,10 @@
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };
  new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
- window.addEventListener('app-language-changed',()=>{registrationProviderHelp();registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
- registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationSource='url';registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationProviderHelp();registrationValidateName();registrationValidate();});});
+ window.addEventListener('app-language-changed',()=>{registrationRenderMode();registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
+ registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast';registrationSource=registrationManualMode()?'ip':'url';registrationManualUrl='';registrationManualSource='ip';registrationManualEdited=false;registrationDirectDraft='';registrationDirectEdited=false;registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationRenderMode();registrationValidateName();registrationValidate();});});
  for(const field of registrationBuilder){field.disabled=false;field.required=false;field.setCustomValidity('');}
- registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=false;registrationNodes.streamManualSetup.open=false;registrationProviderHelp();registrationValidate();
+ registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=false;registrationNodes.streamManualSetup.open=false;
+ if(registrationManualMode()){registrationSource='ip';try{registrationSyncBuilder(registrationParse(registrationUrl.value));registrationSource='url';registrationManualUrl=registrationUrl.value;registrationManualSource='url';}catch{}registrationDirectEdited=false;}
+ registrationRenderMode();registrationValidate();
 })();

@@ -27,22 +27,26 @@
 #register .stream-provider-brand{display:flex;align-items:center;justify-content:center;gap:7px;min-width:0;font-size:16px;font-weight:700}
 #register .stream-provider-choice img{display:block;object-fit:contain;max-width:100%;flex-shrink:0}
 #register .stream-provider-choice .shoutcast-wordmark{width:112px;height:25px;max-width:100%}
-#register .stream-provider-other{grid-column:1/-1;display:inline-flex;align-items:center;gap:7px;width:fit-content;min-height:44px;margin:0;color:#536782;font-size:13px;cursor:pointer}
-#register .stream-provider-other>input[type=radio]{flex:0 0 18px;width:18px;height:18px;min-height:0;padding:0;margin:0;accent-color:#0863df}
-#register .stream-provider-other:has(input:checked){color:#1553a5;font-weight:700}
-#register #streamProviderHelp{margin:0 0 8px;font-size:12px}
+#register .stream-provider-other{grid-column:1/-1;min-height:44px;font-size:14px;color:#1553a5;font-weight:650}
+#register #streamProviderHelp{margin:8px 0;font-size:12px}
 #register .registration-stream-url{display:block}
 #register .registration-stream-url>span{display:block;margin-bottom:4px}
 #register #streamUrlInput{min-width:0;margin:0}
+#register #streamUrlInput[readonly]{background:#edf3fb;color:#334e72}
 #register .registration-url-help{font-size:11px;line-height:1.4;color:#617694;margin:5px 0 0}
 #register .stream-manual-setup{margin:8px 0 0}
+#register .stream-manual-setup[hidden]{display:none}
+#register .stream-manual-setup>summary[hidden]{display:none}
 #register .stream-manual-setup>summary{font-size:12px;font-weight:700;color:#1553a5;cursor:pointer;padding:12px 0;min-height:44px}
 #register .stream-address-fields{padding:10px;border:1px solid #dce7f6;border-radius:9px;background:#f7faff}
 #register .stream-address-fields>label:first-child{margin-top:0}
+#register .stream-manual-setup+.registration-stream-url{margin-top:10px}
 #register .stream-port-protocol,#register .registration-details{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 #register .stream-port-protocol>label,#register .registration-details>label{min-width:0}
 #register #copyGeneratedStream{min-height:44px;padding:8px 12px;margin:8px 0 0;font-size:12px}
 #register .stream-test-row{display:flex;align-items:center;gap:9px;margin-top:8px}
+#register .stream-test-row>button{width:auto;flex:0 0 auto}
+#register .stream-test-row #copyGeneratedStream{margin:0;background:#e6effd;color:#1553a5}
 #register #testStream{min-height:44px;margin:0;padding:8px 12px;font-size:12px;background:#e6effd;color:#1553a5}
 #register .stream-test-row>span{font-size:10px;line-height:1.4;color:#617694}
 #register #streamTestStatus{font-size:12px;line-height:1.45;margin:8px 0 0;overflow-wrap:anywhere}
@@ -60,8 +64,4 @@
 #register #registerForm>button[type=submit]{min-height:48px;font-size:15px;padding:10px;margin-top:10px;background:#0863df;border-radius:7px}
 #register>#openLogin{min-height:44px;margin-top:8px;padding:8px;font-size:12px}
 @media(max-width:420px){#register .registration-details{grid-template-columns:minmax(0,1fr);gap:0}#register .registration-heading h1{font-size:21px}#register .cover-actions{flex-wrap:wrap}#register .cover-actions input{flex-basis:160px}#register .cover-actions button{min-height:44px;padding:6px 8px}}
-.stream-provider-compatibility{display:flex;align-items:center;justify-content:center;gap:18px;max-width:100%;margin:0 auto 5px;color:#233a5b}
-.stream-provider-compatibility .icecast-compatibility{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:650}
-.stream-provider-compatibility img{display:block;object-fit:contain}
-#login .stream-provider-caption{margin:0 0 12px;text-align:center;font-size:12px;line-height:1.4;color:#617694}
 @media(forced-colors:active){#register .stream-provider-choice{border:1px solid ButtonText}#register .stream-provider-choice:has(input:checked){outline:2px solid Highlight}#register .stream-provider-choice:has(input:checked)::after{color:Highlight}}
