@@ -4,10 +4,11 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {authRoutes,processMail,streamUrl} from './owner-auth.mjs';
 import {decrypt,human,encrypt} from './security.mjs';
+import {beginStreamCheck,completeStreamCheck} from './stream-verification.mjs';
 const now=1800000000,host='https://radio-locals-native.example';
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64'));
 async function fixture(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql','0021_station_edits.sql','0023_station_edit_names.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql','0021_station_edits.sql','0023_station_edit_names.sql','0024_stream_verification.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
   let batchLock=Promise.resolve(),imageReads=0;
   const DB={sqlite,failBatchAfter:null,prepare(sql){let args=[];const statement=sqlite.prepare(sql);const q={bind(...values){args=values;return q;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){return statement.run(...args);},async execute(){return statement.columns().length?{results:statement.all(...args)}:statement.run(...args);}};return q;},
     async batch(queries){const task=async()=>{sqlite.exec('BEGIN');try{const results=[];let completed=0;for(const q of queries){results.push(await q.execute());if(++completed===DB.failBatchAfter)throw new Error('Simulated database write failure');}sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}};const result=batchLock.then(task);batchLock=result.catch(()=>{});return result;}};
@@ -404,4 +405,24 @@ test('pending changes keep the approved station live and stale editor forms cann
 test('two authenticated owner sessions cannot save over each other from the same loaded revision',async()=>{
  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});f.sqlite.exec("UPDATE stations SET status='published'");const first=await f.owner(),response=await authRoutes(new Request(host+'/api/session'),f.env,now),otherState=await response.json(),headers={Cookie:response.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':otherState.csrf},challenge=await ownerLoginChallenge(f,headers);await f.post('/api/owner/verify',{verification_id:challenge.verification_id,code:challenge.code},headers);const other=(await(await authRoutes(new Request(host+'/api/owner/station',{headers}),f.env,now)).json()).station;assert.equal(first.revision,other.revision);
  await f.post('/api/owner/station',{revision:first.revision,stream_url:'https://example.com/first',bio:'First session edit'});await assert.rejects(f.post('/api/owner/station',{revision:other.revision,stream_url:'https://example.com/second',bio:'Stale second session'},headers),e=>e.status===409);assert.equal(f.sqlite.prepare('SELECT bio FROM station_edits').get().bio,'First session edit');assert.equal(f.sqlite.prepare('SELECT status FROM stations').get().status,'published');
+});
+
+
+test('email verification keeps an unchecked or expired-check signup private despite safe content',async()=>{
+ for(const kind of ['missing','expired']){
+  const f=await registered();f.env.OPENAI_API_KEY='test-only';let scans=0;
+  if(kind==='expired'){const hash=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash,id=await beginStreamCheck(f.env,hash,f.registration.stream_url,now-3601);await completeStreamCheck(f.env,hash,f.registration.stream_url,id,true,now-3601);}
+  const previous=globalThis.fetch;globalThis.fetch=async()=>{scans++;throw Error('Unverified streams must not reach the creative scanner.');};
+  try{const result=await(await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code})).json();assert.equal(result.stream_check_required,true,kind);assert.equal(result.registration_completed,true);assert.equal(result.review_required,true);assert.equal(f.sqlite.prepare('SELECT status FROM stations').get().status,'pending_review');assert.equal(scans,0);assert.equal((await f.owner()).stream_check.status,'needs_check');}finally{globalThis.fetch=previous;}
+ }
+});
+
+test('signup attaches its session check and publishes after both email verification and a safe creative scan',async()=>{
+ const f=await fixture(),hash=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash,id=await beginStreamCheck(f.env,hash,f.registration.stream_url,now);await completeStreamCheck(f.env,hash,f.registration.stream_url,id,true,now);
+ const result=await(await f.post('/api/owner/register',f.registration)).json(),job=f.sqlite.prepare('SELECT * FROM mail_outbox').get(),code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];
+ assert.equal(f.sqlite.prepare('SELECT revision FROM station_stream_checks').get().revision,'initial');assert.equal(f.sqlite.prepare('SELECT status FROM stations').get().status,'pending_email');
+ const get=f.env.MEDIA.get;f.env.MEDIA.get=async key=>{const value=await get(key);return value?{...value,size:12,arrayBuffer:async()=>new Uint8Array(12).buffer}:null;};f.env.OPENAI_API_KEY='test-only';
+ const categories=Object.fromEntries(['sexual','sexual/minors','violence','violence/graphic','hate','harassment','self-harm'].map(key=>[key,false])),previous=globalThis.fetch;let scans=0;
+ globalThis.fetch=async url=>{assert.equal(url,'https://api.openai.com/v1/moderations');scans++;return Response.json({results:[{flagged:false,categories,category_scores:Object.fromEntries(Object.keys(categories).map(key=>[key,0.001]))}]});};
+ try{const verified=await(await f.post('/api/owner/verify',{verification_id:result.verification_id,code})).json();assert.equal(verified.stream_check_required,false);assert.equal(verified.review_required,false);assert.equal(f.sqlite.prepare('SELECT status FROM stations').get().status,'published');assert.equal(scans,1);assert.equal((await f.owner()).stream_check.status,'passed');}finally{globalThis.fetch=previous;}
 });

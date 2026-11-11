@@ -65,7 +65,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     return directoryResponse(request,env);
   }
   if(request.method==='GET'&&path==='/api/stations/batch')return publicStationBatch(request,env);
-  if(request.method==='GET'&&path==='/api/device/default-station')return json({name:'La Voix Divine',url:'https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live',listener_code:'',logo_url:'/assets/radiolavoixdivine.png'});
+  if(request.method==='GET'&&path==='/api/device/default-station')return json({message:'Add a published station using its station code.'},404);
   if(request.method==='GET'&&path==='/api/device/station-revisions'){
     const values=url.searchParams.getAll('codes'),input=values[0]||'';
     const codes=input.split(',');
@@ -189,6 +189,8 @@ export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
   await env.DB.batch([
     env.DB.prepare("UPDATE mail_outbox SET state='failed',encrypted_payload='',lease=0 WHERE expires<=? AND state!='sent'").bind(now),
     env.DB.prepare('DELETE FROM rate_limits WHERE expires<?').bind(now),
+    env.DB.prepare('DELETE FROM stream_check_results WHERE expires<=?').bind(now),
+    env.DB.prepare(`DELETE FROM station_stream_checks WHERE NOT EXISTS(SELECT 1 FROM stations live WHERE live.code=station_stream_checks.station_code AND live.status NOT IN ('deleted','suspended') AND (live.stream_url=station_stream_checks.stream_url OR EXISTS(SELECT 1 FROM station_edits proposal WHERE proposal.station_code=live.code AND proposal.stream_url=station_stream_checks.stream_url)))`),
     env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE state='waiting' AND expires<=?").bind(now),
     env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE state IN ('pending','delivered') AND expires<=?").bind(now),
     env.DB.prepare(`UPDATE radio_commands SET state='failed' WHERE state IN ('pending','delivered')

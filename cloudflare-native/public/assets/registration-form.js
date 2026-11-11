@@ -145,17 +145,17 @@
  registrationNodes.testStream.onclick=async()=>{
   if(registrationBusy()||!registrationExpanded||registrationActiveTest||!registrationValidate(true,true))return;
   const target=new URL(registrationUrl.value);
-  if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){registrationTerminal('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save and check it on your radio.','unconfirmed');return;}
-  if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationTerminal('registration.playlistTestUnavailable','This is a playlist link. Automatic testing cannot confirm it; use a direct listening link when available. You can still save.','unconfirmed');return;}
+  if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){registrationTerminal('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save privately and request review.','unconfirmed');return;}
+  if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationTerminal('registration.playlistTestUnavailable','This playlist link cannot be checked automatically. You can still save privately and request review.','unconfirmed');return;}
   const version=registrationVersion,value=registrationUrl.value,attempt={};registrationActiveTest=attempt;registrationControls();
   registrationStatus('registration.checking','Checking the stream. No audio will play.','checking');
   const current=()=>registrationActiveTest===attempt&&registrationVersion===version&&registrationUrl.value===value&&!registrationBusy()&&!document.getElementById('register').hidden&&registrationExpanded;
   try{
    const turnstile_token=await human(registrationNodes.streamTestHuman,'stream-check');if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:value,turnstile_token});if(!current())return;
-   if(response.result==='audio_response'&&response.audio_response===true)registrationTerminal('registration.audioResponse','Stream responded with audio data. Playback is not verified.','success');
-   else if(response.result==='not_confirmed'&&response.audio_response===false)registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save it.','unconfirmed');
-   else registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save it.','unconfirmed');
+   if(response.result==='audio_response'&&response.audio_response===true)registrationTerminal('registration.audioResponse','Stream check passed. Save your station to continue. Playback is not verified.','success');
+   else if(response.result==='not_confirmed'&&response.audio_response===false)registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save privately and request review.','unconfirmed');
+   else registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save privately and request review.','unconfirmed');
   }catch(error){if(current())registrationTerminal('',String(error.message||'The stream check did not complete. You can still save it.').slice(0,400),'error');}
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };

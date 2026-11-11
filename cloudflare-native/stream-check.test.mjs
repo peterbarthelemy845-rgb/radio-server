@@ -4,11 +4,13 @@ import {operationsFixture} from './operations-fixture.mjs';
 import {streamCheckRoutes} from './stream-check.mjs';
 import {publicStreamUrl} from './public-stream-url.mjs';
 import {HttpError} from './security.mjs';
+import {attachStreamCheck} from './stream-verification.mjs';
 
 const origin='https://radiolocals.com',path='/api/owner/stream-check',audioUrl='https://stream.example.com/live';
 const mp3=()=>{const data=new Uint8Array(417);data.set([255,251,144,0]);return data;};
 async function fixture(){const f=await operationsFixture();f.env.STREAM_CHECK_PUBLIC_FETCH='true';f.env.PUBLIC_ORIGIN=origin;return f;}
 const body=stream_url=>({stream_url,turnstile_token:'test-only-token'});
+function deferred(){let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};}
 async function check(f,url=audioUrl,fetcher=async()=>new Response(mp3(),{headers:{'Content-Type':'audio/mpeg'}})){
  return (await streamCheckRoutes(f.request(path,body(url)),f.env,f.now,{human:async()=>{},fetch:fetcher})).json();
 }
@@ -67,6 +69,18 @@ test('a bounded audio sample is reported without claiming playback or forwarding
  assert.deepEqual(result,{result:'audio_response',audio_response:true,message:'Stream responded with audio data. Playback is not verified.'});
  await new Promise(resolve=>setTimeout(resolve,0));assert.equal(cancelled,true);assert.ok(read<=2);
 });
+test('passing checks persist a session receipt for the canonical original URL, never a redirect or automatic publication',async()=>{
+ const f=await fixture();let calls=0;const original='http://STREAM.example.com/live?sid=2';const result=await check(f,original,async()=>++calls===1?new Response(null,{status:302,headers:{Location:'https://redirected.example.com/audio'}}):new Response(mp3(),{headers:{'Content-Type':'audio/mpeg'}}));assert.equal(result.audio_response,true);const receipt=f.sqlite.prepare('SELECT * FROM stream_check_results').get();assert.equal(receipt.session_hash,f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash);assert.equal(receipt.stream_url,'http://stream.example.com/live?sid=2');assert.equal(receipt.checked_at,f.now);assert.equal(receipt.expires,f.now+3600);assert.match(receipt.check_id,/^[a-f0-9]{32}$/);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM station_stream_checks').get().n,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM station_edits').get().n,0);
+});
+
+test('a later unconfirmed check clears its receipt and associated proof without trusting the browser',async()=>{
+ const f=await fixture();f.sqlite.prepare("UPDATE stations SET stream_url=?,status='pending_review',email_verified_at=? WHERE code=?").run(audioUrl,f.now,f.station);await check(f);const hash=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash;assert.equal(await attachStreamCheck(f.env,hash,f.station,audioUrl,'initial',f.now),true);const result=await check(f,audioUrl,async()=>new Response('<html>no audio</html>',{headers:{'Content-Type':'text/html'}}));assert.equal(result.audio_response,false);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM stream_check_results').get().n,0);const proof=f.sqlite.prepare('SELECT checked_at,expires FROM station_stream_checks').get();assert.equal(proof.checked_at,0);assert.equal(proof.expires,0);assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(f.station).status,'pending_review');
+});
+
+test('overlapping server checks keep only the newest attempt outcome for a session and URL',async()=>{
+ for(const olderPass of [true,false]){const f=await fixture(),gate=deferred(),entered=deferred();const old=check(f,audioUrl,async()=>{entered.resolve();return gate.promise;});await entered.promise;const latest=await check(f,audioUrl,async()=>new Response(olderPass?'<html>no audio</html>':mp3(),{headers:{'Content-Type':olderPass?'text/html':'audio/mpeg'}}));gate.resolve(new Response(olderPass?mp3():'<html>old failure</html>',{headers:{'Content-Type':olderPass?'audio/mpeg':'text/html'}}));const obsolete=await old;assert.equal(obsolete.audio_response,false);assert.equal(latest.audio_response,!olderPass);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM stream_check_results WHERE checked_at>0').get().n,olderPass?0:1);}
+});
+
 test('HTML, MIME-only, ID3-only, empty and oversized unrelated responses never count as audio',async()=>{
  const f=await fixture();let count=0;
  for(const [data,type] of [[new TextEncoder().encode('<html>not an audio stream</html>'),'audio/mpeg'],[mp3(),'text/html'],[new Uint8Array(0),'audio/mpeg'],[new TextEncoder().encode('ID3'+String.fromCharCode(4,0,0,0,0,0,0)+'metadata only'),'audio/mpeg'],[new Uint8Array(32768),'application/octet-stream']]){

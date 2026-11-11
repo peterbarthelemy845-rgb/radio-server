@@ -2,6 +2,7 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 import {HttpError,json,digest,randomHex,mac,otp,encrypt,decrypt,limit,readJson,session,browserWrite,human} from './security.mjs';
 import {screenStation} from './moderation.mjs';
 import {stationState,ownerRevision,stationStateGuard,stationName} from './station-edits.mjs';
+import {attachStreamCheck,streamPublicationAllowed,requestStreamReview,streamOwnerStatus} from './stream-verification.mjs';
 const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
 const emailPattern=/^[^\s@\r\n]{1,64}@[^\s@\r\n]+\.[^\s@\r\n]+$/;
@@ -54,12 +55,13 @@ async function verification(env,current,station,purpose,now,deletion=false){
   return {verification_id:id,verification_email:mask(station.contact_email),expires_in:900};
 }
 async function registrationResponse(env,current,row,now){
-  const saved=await env.DB.prepare(`SELECT v.id,v.expires,v.consumed_at,s.contact_email,s.email_verified_at,s.status FROM email_verifications v
+  const saved=await env.DB.prepare(`SELECT v.id,v.expires,v.consumed_at,s.contact_email,s.email_verified_at,s.status,s.stream_url FROM email_verifications v
     JOIN stations s ON s.code=v.station_code WHERE v.id=? AND v.session_hash=? AND v.station_code=? AND v.purpose='registration'`)
     .bind(row.verification_id,current.token_hash,row.station_code).first();
   if(!saved||['deleted','suspended'].includes(saved.status))throw new HttpError(409,'This signup is no longer available. Please start again.');
   if(saved.email_verified_at!==null)throw new HttpError(409,'This station is already registered. Sign in to edit it.');
   if(saved.consumed_at!==null)throw new HttpError(409,'This sign-in was cancelled. Reload the page and start again.');
+  await attachStreamCheck(env,current.token_hash,row.station_code,saved.stream_url,'initial',now);
   return json({status:'ok',verification_id:saved.id,verification_email:mask(saved.contact_email),expires_in:Math.max(0,saved.expires-now)});
 }
 export async function processMail(env,now=Math.floor(Date.now()/1000)){
@@ -114,7 +116,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!object||object.customMetadata?.sanitizer_version!=='1')throw new HttpError(404,'Artwork not found.');
     return new Response(object.body,{headers:{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}});
   }
-  if(!['/api/owner/register','/api/owner/login','/api/owner/recover-code','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/delete'].includes(path))return null;
+  if(!['/api/owner/register','/api/owner/login','/api/owner/recover-code','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/delete','/api/owner/stream-review'].includes(path))return null;
   if(path==='/api/owner/station'&&request.method==='GET'){
     const current=await session(request,env,now);
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -122,7 +124,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!station)return json({message:'Station not found.'},404);
     if(['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     const draft=pending||station,revision=await ownerRevision(env,station,pending);
-    return json({owner_expires:current.owner_expires,server_time:now,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,status:station.status}}});
+    return json({owner_expires:current.owner_expires,server_time:now,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash),approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,status:station.status}}});
   }
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now);
@@ -136,6 +138,17 @@ export async function authRoutes(request,env,now,deps={human}){
       env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL WHERE token_hash=?').bind(current.token_hash)
     ]);
     return json({status:'ok'});
+  }
+  if(path==='/api/owner/stream-review'){
+    if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
+    const {station,pending}=await stationState(env,current.owner_station);
+    if(!station||!station.email_verified_at||['deleted','suspended','pending_email'].includes(station.status))throw new HttpError(403,'Station cannot be reviewed.');
+    if(typeof body.revision!=='string'||body.revision!==await ownerRevision(env,station,pending))throw new HttpError(409,'This station changed. Save or refresh your station before requesting review.');
+    if(await streamPublicationAllowed(env,station,pending,now))return json({status:'ok',message:'Stream check passed. Save your station to continue.',stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash)});
+    await limit(env.DB,'stream-review-station',String(station.code),3,86400,now);
+    const requested=await requestStreamReview(env,station,pending,now);
+    if(!['passed','review_requested'].includes(requested.status))throw new HttpError(409,'This station changed. Refresh the saved station before requesting review.');
+    return json({status:'ok',message:requested.status==='passed'?'Stream check passed. Save your station to continue.':'Review requested. Your saved stream remains private until approved.',stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash)});
   }
   if(path==='/api/owner/delete'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -285,8 +298,11 @@ export async function authRoutes(request,env,now,deps={human}){
     const results=await env.DB.batch(updates);
     const consumed=results[0]?.results?.[0];
     if(!consumed)throw new HttpError(400,'Incorrect or expired code.');
-    const approved=await screenStation(env,consumed.station_code);
-    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),owner_expires:now+1800,server_time:now,registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved});
+    const currentStation=await stationState(env,consumed.station_code);
+    if(currentStation.station)await attachStreamCheck(env,current.token_hash,consumed.station_code,(currentStation.pending||currentStation.station).stream_url,currentStation.pending?.revision||'initial',now);
+    const approved=await screenStation(env,consumed.station_code,fetch,now);
+    const afterCheck=await stationState(env,consumed.station_code),streamRequired=afterCheck.station?!await streamPublicationAllowed(env,afterCheck.station,afterCheck.pending,now):true;
+    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?(streamRequired?'Email verified. Your station is saved privately. Check your stream or request review.':'Email verified. Your station is awaiting safety review.'):'Signed in.',station_code:String(consumed.station_code),owner_expires:now+1800,server_time:now,registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved,stream_check_required:streamRequired});
   }
   if(path==='/api/owner/station'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -299,13 +315,20 @@ export async function authRoutes(request,env,now,deps={human}){
     const guard=stationStateGuard(station,pending),editRevision=randomHex(16);
     if(name===draft.name&&url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key){
       if(!await env.DB.prepare('SELECT 1 WHERE '+guard.sql).bind(...guard.values).first())throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
-      return json({status:'ok',unchanged:true,review_required:!!pending,message:'No changes to save.'});
+      await attachStreamCheck(env,current.token_hash,station.code,url,pending?.revision||'initial',now);
+      const approved=station.status==='published'&&!pending?true:await screenStation(env,station.code,fetch,now,pending?.revision);
+      const latest=await stationState(env,station.code);
+      const sameTarget=latest.pending?.revision===pending?.revision&&(latest.pending||latest.station?.name===name&&latest.station?.stream_url===url&&latest.station?.bio===bio&&latest.station?.artwork_key===key),promoted=approved&&!latest.pending&&latest.station?.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key;
+      if(!latest.station||['deleted','suspended'].includes(latest.station.status)||!sameTarget&&!promoted)throw new HttpError(409,'This station changed. Refresh and review it again.');
+      const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);
+      return json({status:'ok',unchanged:station.status==='published'&&!pending||!approved,review_required:!approved,stream_check_required:streamRequired,message:station.status==='published'&&!pending?'No changes to save.':approved?'Station saved successfully.':streamRequired?'Station saved privately. Check your stream or request review.':'Station saved for safety review.'});
     }
     const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name)
       SELECT ?,?,?,?,?,?,?,? WHERE ${guard.sql}
       ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at,name=excluded.name RETURNING revision`)
       .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,...guard.values).first();
     if(!changed)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
+    await attachStreamCheck(env,current.token_hash,station.code,url,editRevision,now);
     let approved=await screenStation(env,station.code,fetch,now,editRevision);
     const latest=await stationState(env,station.code);
     if(!latest.station||['deleted','suspended'].includes(latest.station.status))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
@@ -313,7 +336,8 @@ export async function authRoutes(request,env,now,deps={human}){
       approved=!latest.pending&&latest.station.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key;
       if(!approved)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     }
-    return json({status:'ok',review_required:!approved,message:approved?'Changes saved successfully.':'Changes saved for safety review.'});
+    const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);
+    return json({status:'ok',review_required:!approved,stream_check_required:streamRequired,message:approved?'Changes saved successfully.':streamRequired?'Changes saved privately. Check your stream or request review.':'Changes saved for safety review.'});
   }
   return null;
 }

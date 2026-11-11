@@ -1,4 +1,5 @@
 import {mac,HttpError} from './security.mjs';
+import {streamPublicationGuard} from './stream-verification.mjs';
 export const stationColumns='code,name,bio,stream_url,contact_email,artwork_key,status,email_verified_at,updated_at';
 export function stationName(value){
  const name=String(value||'').trim();if(!name)throw new HttpError(400,'Enter a station name.');
@@ -19,8 +20,8 @@ export function stationStateGuard(station,pending){
  const values=[station.code,station.name,station.bio,station.stream_url,station.contact_email,station.artwork_key,station.status,station.email_verified_at,station.updated_at,station.code,...(pending?[pending.revision,pending.name]:[])];
  return {sql,values};
 }
-export function publishStationEdit(env,station,pending,now){
- const guard=stationStateGuard(station,pending);
- return env.DB.prepare(`UPDATE stations SET name=?,stream_url=?,bio=?,artwork_key=?,status='published',updated_at=? WHERE code=? AND ${guard.sql}`)
-  .bind(stationName(pending.name),pending.stream_url,pending.bio,pending.artwork_key,Math.max(now,station.updated_at+1),station.code,...guard.values);
+export function publishStationEdit(env,station,pending,now,streamOverride=false){
+ const guard=stationStateGuard(station,pending),stream=streamOverride?{sql:'1=1',values:[]}:streamPublicationGuard(station,pending,now);
+ return env.DB.prepare(`UPDATE stations SET name=?,stream_url=?,bio=?,artwork_key=?,status='published',updated_at=? WHERE code=? AND ${guard.sql} AND ${stream.sql}`)
+  .bind(stationName(pending.name),pending.stream_url,pending.bio,pending.artwork_key,Math.max(now,station.updated_at+1),station.code,...guard.values,...stream.values);
 }

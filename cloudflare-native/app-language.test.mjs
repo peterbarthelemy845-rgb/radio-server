@@ -89,3 +89,9 @@ test('new recovery, support, search and share controls translate without changin
  f.api.setLanguage('ht');await f.mutate();assert.match(error.textContent,new RegExp('Referans: '+reference+'\\.$'));assert.equal(share.textContent,'Pataje');assert.equal(share.getAttribute('aria-label'),'Pataje Étoile FM');
  f.api.setLanguage('en');assert.equal(error.textContent,'The website is temporarily unavailable. Please try again. Reference: '+reference+'.');assert.equal(share.getAttribute('aria-label'),'Share Étoile FM');
 });
+
+test('publication guidance translates without confusing a stream check with guaranteed playback',()=>{
+ const f=fixture(),keys=['registration.optional','registration.audioResponse','registration.notConfirmed','registration.ipTestUnavailable','registration.playlistTestUnavailable','owner.streamPassed','owner.streamNeedsCheck','owner.streamReviewRequested','owner.streamSaveFirst','owner.streamOriginalLive','owner.streamApprovedLive','owner.streamReady','owner.streamReviewPrivate','owner.streamPrivate','owner.requestStreamReview','owner.streamReviewSent','owner.streamReviewFailed','owner.streamReviewChanged'];
+ for(const key of keys){const english=f.api.t(key);assert.notEqual(english,key);f.api.setLanguage('ht');assert.notEqual(f.api.t(key),key);assert.notEqual(f.api.t(key),english);f.api.setLanguage('en');}
+ assert.match(f.api.t('registration.optional'),/before publishing/);assert.match(f.api.t('registration.audioResponse'),/Save your station/);assert.match(f.api.t('registration.audioResponse'),/Playback is not verified/);assert.match(f.api.t('registration.notConfirmed'),/save privately/);assert.match(f.api.t('owner.streamOriginalLive'),/approved stream stays live/);
+});

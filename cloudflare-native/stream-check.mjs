@@ -1,5 +1,6 @@
 import {browserWrite,human,HttpError,json,limit,readJson} from './security.mjs';
 import {publicStreamUrl,isIPv4} from './public-stream-url.mjs';
+import {beginStreamCheck,completeStreamCheck} from './stream-verification.mjs';
 
 // Deployment requirement, not replaceable by a DNS preflight lookup:
 // https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public
@@ -65,10 +66,12 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
  const body=await readJson(request,4096),validated=publicStreamUrl(body.stream_url);
  await (deps.human||human)(request,env,body.turnstile_token,'stream-check',now);
  if(env.STREAM_CHECK_PUBLIC_FETCH!=='true')throw new HttpError(503,'Stream checking is temporarily unavailable.');
- let url;try{url=target(validated,request,env);}catch{return negative();}
+ const checkId=await beginStreamCheck(env,current.token_hash,validated,now);
+ const finish=async passed=>{const stored=await completeStreamCheck(env,current.token_hash,validated,checkId,passed,now);return passed&&stored?positive():negative();};
+ let url;try{url=target(validated,request,env);}catch{return finish(false);}
  // Cloudflare documents fetch-to-IP as unsupported. Public IPv4 is valid for
  // saved radio configuration, but this optional check makes no network attempt.
- if(isIPv4(url.hostname))return negative();
+ if(isIPv4(url.hostname))return finish(false);
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
  let reader;
  try{
@@ -77,30 +80,30 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
     method:'GET',redirect:'manual',cache:'no-store',signal:controller.signal,
     headers:{Accept:'audio/*, application/ogg;q=0.9, application/octet-stream;q=0.5','Range':'bytes=0-8191','Icy-MetaData':'0'}
    }),controller.signal);
-   if(response.redirected){cancel(response.body);return negative();}
+   if(response.redirected){cancel(response.body);return await finish(false);}
    if([301,302,303,307,308].includes(response.status)){
-    cancel(response.body);const location=response.headers.get('Location');if(!location||hop===MAX_REDIRECTS)return negative();
+    cancel(response.body);const location=response.headers.get('Location');if(!location||hop===MAX_REDIRECTS)return await finish(false);
     const next=target(new URL(location,url).href,request,env);
-    if(isIPv4(next.hostname)||(url.protocol==='https:'&&next.protocol!=='https:'))return negative();
+    if(isIPv4(next.hostname)||(url.protocol==='https:'&&next.protocol!=='https:'))return await finish(false);
     url=next;continue;
    }
-   if(!response.ok||!response.body){cancel(response.body);return negative();}
+   if(!response.ok||!response.body){cancel(response.body);return await finish(false);}
    const type=(response.headers.get('Content-Type')||'').split(';',1)[0].trim().toLowerCase();
-   if(!/^(?:audio\/(?:mpeg|mp3|aac|aacp|ogg|wav|wave|x-wav|flac|x-flac)|application\/(?:ogg|octet-stream))$/.test(type)){cancel(response.body);return negative();}
+   if(!/^(?:audio\/(?:mpeg|mp3|aac|aacp|ogg|wav|wave|x-wav|flac|x-flac)|application\/(?:ogg|octet-stream))$/.test(type)){cancel(response.body);return await finish(false);}
    reader=response.body.getReader();const sample=new Uint8Array(MAX_SAMPLE);let size=0,reads=0;
    while(size<MAX_SAMPLE&&reads++<64){
     const {done,value}=await abortable(reader.read(),controller.signal);if(done)break;
     if(!value?.byteLength)continue;const take=Math.min(value.byteLength,MAX_SAMPLE-size);sample.set(value.subarray(0,take),size);size+=take;
-    if(audioSample(sample.subarray(0,size),type))return positive();
+    if(audioSample(sample.subarray(0,size),type))return await finish(true);
    }
-   return negative();
+   return await finish(false);
   }
- }catch{return negative();}
+ }catch{return await finish(false);}
  finally{
   clearTimeout(timer);controller.abort();
   // Do not await an upstream's cancellation promise: cancellation itself must
   // never extend the overall deadline or retain the audio stream indefinitely.
   cancel(reader);try{reader?.releaseLock();}catch{}
  }
- return negative();
+ return finish(false);
 }

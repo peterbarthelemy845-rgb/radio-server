@@ -84,3 +84,10 @@
 #editor #ownerStreamTestStatus[data-state=success]{color:#177347}
 #editor .stream-setup-panel :is(input,select){min-height:44px;font-size:16px;line-height:1.25;padding:8px 10px}
 #editor #testOwnerStream{min-height:44px;margin:0;padding:8px 12px;font-size:12px;background:#e6effd;color:#1553a5}
+#editor .owner-stream-publication{margin:10px 0;padding:10px 12px;background:#f1f6ff;border:1px solid #d5e3f6;border-radius:9px;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+#editor .owner-stream-publication[hidden]{display:none}
+#editor .owner-stream-publication strong{display:block;font-size:13px}
+#editor .owner-stream-publication p{margin:5px 0 0}
+#editor #requestOwnerStreamReview{width:auto;min-height:44px;padding:8px 12px;margin:8px 0 0;font-size:12px;background:#e0eafb;color:#164f95}
+#editor .owner-stream-publication[data-state=passed]{border-color:#bbdfce;background:#f0faf4}
+#editor #ownerStreamPublicationMessage{color:#244c78}
