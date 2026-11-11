@@ -55,14 +55,14 @@ const appCreole={
 };
 Object.assign(appEnglish,{
  'registration.setupUnavailable':'Stream address validation is unavailable. Refresh and try again.',
- 'registration.server':'Stream setup','registration.otherProvider':'Stream URL','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Your stream URL appears here',
+ 'registration.server':'Stream setup','registration.chooseOne':'Choose one','registration.serverPort':'Server + port','registration.pasteLink':'Paste a listening link','registration.otherProvider':'Stream URL','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Your stream URL appears here',
  'registration.providerIcecast':'Enter your public server, port and mount point.',
  'registration.providerShoutcast':'Enter your public server, port and listening path.',
  'registration.providerOther':'Paste your complete public listening URL.'
 });
 Object.assign(appCreole,{
  'registration.setupUnavailable':'Nou pa ka valide adrès difizyon an. Rafrechi paj la epi eseye ankò.',
- 'registration.server':'Konfigirasyon difizyon','registration.otherProvider':'Adrès difizyon','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Adrès difizyon ou ap parèt la',
+ 'registration.server':'Konfigirasyon difizyon','registration.chooseOne':'Chwazi youn','registration.serverPort':'Sèvè + pò','registration.pasteLink':'Kole yon lyen pou koute','registration.otherProvider':'Adrès difizyon','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Adrès difizyon ou ap parèt la',
  'registration.providerIcecast':'Antre sèvè piblik ou, pò a ak chemen difizyon an.',
  'registration.providerShoutcast':'Antre sèvè piblik ou, pò a ak chemen pou koute a.',
  'registration.providerOther':'Kole tout adrès piblik pou koute difizyon ou a.'
