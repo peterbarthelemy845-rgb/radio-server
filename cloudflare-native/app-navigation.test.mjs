@@ -4,11 +4,11 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
 function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLifecycle=false,reducedMotion=false,i18n=null}={}){
- const events=new Map(),frames=[],mediaEvents={},nodes=new Map(),stationOpenings=[];let loads=0,supportLoads=0,sharedGeneration=0;
+ const events=new Map(),frames=[],mediaEvents={},nodes=new Map(),stationOpenings=[],connectionSteps=[];let loads=0,supportLoads=0,sharedGeneration=0;
  function node(id='',tag='DIV'){
   const listeners={};const n={id,tagName:tag,hidden:false,dataset:{},children:[],scrollLeft:0,isConnected:true,textContent:'',attrs:{},classList:{values:new Set(),toggle(name,on){if(on)this.values.add(name);else this.values.delete(name);}},setAttribute(key,value){this.attrs[key]=value;},addEventListener(key,fn){(listeners[key]??=[]).push(fn);},append(...items){this.children.push(...items);},before(...items){(this.beforeNodes??=[]).push(...items);},scrollTo(options){this.lastScroll=options;this.scrollLeft=options.left;this.dispatch('scroll');},focus(){document.activeElement=this;},querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;queueMicrotask(()=>{for(const fn of listeners.close||[])fn({});});},dispatch(name,event={}){for(const fn of listeners[name]||[])fn(event);}};if(id)nodes.set(id,n);return n;
  }
- const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','shareWifiHelp','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;
+ const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','wifiContinueConnection','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','shareWifiHelp','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;nodes.get('wifiContinueConnection').hidden=true;
  for(const id of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(id).hidden=id!==initial;
  const supportLink=node('supportLink','A');supportLink.href='https://radio.example/support';const wifiLink=nodes.get('openWifiSetup');wifiLink.tagName='A';wifiLink.href='https://radio.example/wifi-setup';
  const document={body:node(),activeElement:null,querySelector(selector){return selector.startsWith('nav a')?supportLink:null;},createElement:tag=>node('',tag.toUpperCase())};nodes.get('ticketForm').elements=Object.fromEntries(['name','email','device_code','subject','message','station_code'].map(key=>[key,Object.assign(node('ticket-'+key,'INPUT'),{value:''})]));
@@ -17,8 +17,8 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  const entries=[{url:location.href,state:null}];let index=0;
  const history={scrollRestoration:'auto',get state(){return entries[index].state;},replaceState(state,unused,url){entries[index]={state,url:new URL(url,location.href).href};update(entries[index].url);},pushState(state,unused,url){entries.splice(index+1);entries.push({state,url:new URL(url,location.href).href});index++;update(entries[index].url);},back(){this.go(-1);},forward(){this.go(1);},go(amount){const next=index+amount;if(next<0||next>=entries.length)return;index=next;update(entries[index].url);for(const fn of events.get('popstate')||[])fn({state:entries[index].state});}};
  const stationPopup=node('stationAddPopup','DIALOG'),stationPopupClose=node('stationPopupClose','BUTTON');
- const window={scrollX:0,scrollY:0,appI18n:i18n,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
- const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:query=>({matches:query==='(prefers-reduced-motion: reduce)'?reducedMotion:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,
+ const window={showRadioCodeEntry(){connectionSteps.push('code');nodes.get('search').focus();},showRadioConnectionChoices(){connectionSteps.push('choices');},scrollX:0,scrollY:0,appI18n:i18n,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
+ const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:query=>({matches:query==='(prefers-reduced-motion: reduce)'?reducedMotion:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,radioCardViews:new Map(),
   page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0,stopWaitingForSharedStation(){context.shareRunning=false;context.sharedOpenGeneration++;},invalidateSharedView(){context.shareRunning=false;context.sharedOpenGeneration++;}});
  if(ownerLifecycle){
   const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
@@ -30,7 +30,7 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  function flush(){while(frames.length)frames.shift()();}
  async function settle(){await Promise.resolve();await Promise.resolve();flush();}
  function click(target){const event={target:{closest:()=>target},button:0,preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};for(const fn of events.get('click')||[])fn(event);flush();return event;}
- return {context,nodes,document,window,history,entries,supportLink,wifiLink,stationPopup,stationPopupClose,stationOpenings,click,flush,settle,dispatchWindow(name,event={}){for(const fn of events.get(name)||[])fn(event);},loads:()=>loads,supportLoads:()=>supportLoads};
+ return {context,nodes,document,window,history,entries,supportLink,wifiLink,stationPopup,stationPopupClose,stationOpenings,connectionSteps,click,flush,settle,dispatchWindow(name,event={}){for(const fn of events.get(name)||[])fn(event);},loads:()=>loads,supportLoads:()=>supportLoads};
 }
 
 function guideControls(f,offsets=[24,324,624]){
@@ -199,4 +199,39 @@ test('station Wi-Fi help replaces the sheet and browser Back returns to Radio wi
 
 test('Wi-Fi help cannot abandon a still-running station request',async()=>{
  const f=fixture();await vm.runInContext("openStationPopup('13');shareRunning=true",f.context);f.nodes.get('shareWifiHelp').onclick();await f.settle();assert.equal(f.stationPopup.open,true);assert.equal(f.nodes.get('wifiSetup').hidden,true);assert.equal(f.history.state.radioLocalsApp.panel,'station');
+});
+
+
+test('guided Wi-Fi setup returns to the Device Code step without storing connection data in history',async()=>{
+ const f=fixture({app:true});f.window.scrollY=180;f.nodes.get('stations').scrollLeft=120;
+ assert.equal(f.window.openGuidedRadioWifi(),true);f.flush();assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.equal(f.nodes.get('wifiContinueConnection').hidden,false);assert.equal(f.entries.at(-1).url,'https://radio.example/wifi-setup?app=1');assert.equal(f.entries.length,2);
+ const event=f.click(f.nodes.get('wifiContinueConnection'));await f.settle();assert.equal(event.prevented,true);assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);assert.deepEqual(f.connectionSteps,['code']);assert.equal(f.document.activeElement,f.nodes.get('search'));assert.equal(f.window.scrollY,180);assert.equal(f.nodes.get('stations').scrollLeft,120);assert.equal(f.entries.at(-1).url,'https://radio.example/?app=1#radio');assert.equal(f.loads(),1);
+ assert.equal(JSON.stringify(f.entries).includes('guided'),false);f.history.back();await f.settle();f.history.forward();await f.settle();assert.deepEqual(f.connectionSteps,['code']);
+});
+
+test('guided Wi-Fi Back and Radio tab return to the chooser without automatically entering a code',async()=>{
+ for(const method of ['back','button','radio']){const f=fixture();f.window.openGuidedRadioWifi();f.flush();if(method==='back')f.history.back();else f.click(f.nodes.get(method==='button'?'wifiBackToRadio':'navRadio'));await f.settle();assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);assert.deepEqual(f.connectionSteps,['choices']);
+  f.history.forward();await f.settle();assert.deepEqual(f.connectionSteps,['choices']);if(!f.nodes.get('wifiSetup').hidden)assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);
+ }
+});
+
+test('normal and directly opened Wi-Fi help never show guided continuation',async()=>{
+ for(const options of [{},{path:'/wifi-setup',initial:'wifiSetup'}]){const f=fixture(options);if(options.initial!=='wifiSetup')f.click(f.wifiLink);assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);f.click(f.nodes.get('wifiContinueConnection'));assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.deepEqual(f.connectionSteps,[]);f.click(f.nodes.get('wifiBackToRadio'));await f.settle();assert.deepEqual(f.connectionSteps,[]);}
+});
+
+test('leaving guided setup clears its intent so browser Back cannot resume a stale link flow',async()=>{
+ for(const destination of ['support','owner']){const f=fixture();f.window.openGuidedRadioWifi();f.flush();if(destination==='support')f.click(f.supportLink);else vm.runInContext("page('login')",f.context);assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);if(destination==='support'){f.history.back();await f.settle();assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);f.click(f.nodes.get('wifiBackToRadio'));}else vm.runInContext("page('myRadio')",f.context);assert.deepEqual(f.connectionSteps,[]);}
+});
+
+test('a known linked radio skips code entry when returning from guided Wi-Fi setup',async()=>{
+ for(const method of ['continue','back']){const f=fixture();f.window.openGuidedRadioWifi();f.context.radioCardViews.set('known',{radio:{id:'known',online:true}});if(method==='continue')f.click(f.nodes.get('wifiContinueConnection'));else f.history.back();await f.settle();assert.equal(f.nodes.get('myRadio').hidden,false);assert.deepEqual(f.connectionSteps,[]);assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);assert.equal(f.loads(),1);}
+});
+
+test('guided Wi-Fi setup cannot abandon pending station, control or pairing requests',()=>{
+ for(const mode of ['station','controls','pairing','wrong-page']){const f=fixture();if(mode==='station')f.context.shareRunning=true;if(mode==='controls')f.window.radioControlsBusy=true;if(mode==='pairing')f.context.radioPairingBusy=true;if(mode==='wrong-page')vm.runInContext("page('support')",f.context);assert.equal(f.window.openGuidedRadioWifi(),false);assert.equal(f.nodes.get('wifiSetup').hidden,true);assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);assert.equal(f.entries.length,1);}
+});
+
+
+test('history entries without application state clear a guided Wi-Fi continuation',()=>{
+ const f=fixture();f.window.openGuidedRadioWifi();assert.equal(f.nodes.get('wifiContinueConnection').hidden,false);f.dispatchWindow('popstate',{state:null});assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);f.click(f.nodes.get('wifiContinueConnection'));assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.deepEqual(f.connectionSteps,[]);
 });

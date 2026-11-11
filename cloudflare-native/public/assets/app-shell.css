@@ -105,3 +105,12 @@ body.app-keyboard-open.app-listener-page nav[aria-label="Main navigation"]{displ
 .radio-wifi-link:focus-visible,.wifi-setup-open:focus-visible{outline:3px solid #2377ff;outline-offset:3px}
 body.app-large-text .wifi-setup-steps h2{font-size:1.125rem}
 body.app-large-text #wifiSetup p,body.app-large-text .wifi-setup-help summary,body.app-large-text #wifiBackToRadio{font-size:1.0625rem}
+
+/* One connection action, with Wi-Fi and the one-time phone link in order. */
+#myRadio #connectRadio,#myRadio .radio-connection-choices>button,#wifiContinueConnection{display:block;width:100%;min-height:48px;margin:8px 0 0;font-size:1rem;line-height:1.4}
+#myRadio #connectRadio[hidden],#myRadio .radio-connection-choices[hidden],#wifiContinueConnection[hidden]{display:none}
+#myRadio .radio-connection-choices h2{font-size:1.125rem;line-height:1.4;margin:0 0 6px}
+#myRadio .radio-connection-choices p,#myRadio .radio-code-instructions{font-size:.9375rem;line-height:1.5;color:#536782;margin:0 0 12px}
+#myRadio .radio-connection-choices>.link,#myRadio #radioCodeBack{min-height:44px;font-size:.9375rem;margin:6px 0 0;padding:8px 12px}
+#wifiContinueConnection{margin-bottom:10px}
+body.app-large-text #myRadio .radio-connection-choices p,body.app-large-text #myRadio .radio-code-instructions,body.app-large-text #myRadio .radio-connection-choices>button,body.app-large-text #wifiContinueConnection{font-size:1.125rem}

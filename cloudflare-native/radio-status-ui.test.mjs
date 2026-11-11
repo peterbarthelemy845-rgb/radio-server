@@ -10,7 +10,7 @@ function fixture(){
    setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){document.activeElement=this;},
    querySelector(selector){if(selector==='button')return this.button;return null;},reset(){}};
  }
- for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','cancelRadioConnection','radioConnectStatus','refreshRadios','navRadio','openWifiSetup'])ids.set(id,node());ids.get('openWifiSetup').hidden=true;ids.get('cancelRadioConnection').hidden=true;
+ for(const id of ['myRadio','linkedRadios','connectRadio','connectRadioForm','cancelRadioConnection','radioConnectStatus','refreshRadios','navRadio','openWifiSetup','radioConnectionChoices','setupRadioWifi','radioAlreadyOnline','radioCodeBack','radioConnectionExit'])ids.set(id,node());ids.get('openWifiSetup').hidden=true;ids.get('cancelRadioConnection').hidden=true;
  ids.get('connectRadioForm').button=node('button');ids.get('connectRadioForm').elements={device_code:{value:'3961',focus(){}}};
  const navigator={onLine:true},document={hidden:false,activeElement:null,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
@@ -52,24 +52,24 @@ test('a refresh only reveals retry after failure and explicit retry clears old e
 });
 
 test('an unlinked radio page does not claim a device status was checked',async()=>{
- const f=fixture();f.answers.push({radios:[]});await f.load();assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');assert.equal(f.ids.get('connectRadioForm').hidden,false);
+ const f=fixture();f.answers.push({radios:[]});await f.load();assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');assert.equal(f.ids.get('connectRadioForm').hidden,true);assert.equal(f.ids.get('connectRadio').hidden,false);assert.equal(f.ids.get('radioConnectionChoices').hidden,true);assert.equal(f.views().length,0);
  f.answers.push(response());await f.load(true);assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');
  f.answers.push({radios:[]});await f.load(true);assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');
  f.answers.push(Error('Status unavailable'));await f.load(true);assert.equal(f.freshness.hidden,false);assert.equal(f.ids.get('refreshRadios').hidden,false);
 });
 
-test('Wi-Fi help is available before linking and for the selected offline radio',async()=>{
+test('Wi-Fi help is available for an offline linked radio while first setup uses Connect',async()=>{
  const f=fixture(),help=f.ids.get('openWifiSetup');assert.equal(help.hidden,true);
- for(const [answer,visible] of [[{radios:[]},true],[response(),false],[response({online:false}),true],[response({online:false}),true],[Error('Status failed'),true],[response({online:false}),true],[response(),false],[{radios:[]},true]]){f.answers.push(answer);await f.load(true);assert.equal(!help.hidden,visible);}
+ for(const [answer,visible] of [[{radios:[]},false],[response(),false],[response({online:false}),true],[response({online:false}),true],[Error('Status failed'),true],[response({online:false}),true],[response(),false],[{radios:[]},false]]){f.answers.push(answer);await f.load(true);assert.equal(!help.hidden,visible);}
  f.answers.push(response({online:false}));await f.load();assert.equal(help.hidden,false);f.navigator.onLine=false;f.windowEvents.offline();assert.equal(help.hidden,false);
 });
 
 test('an expired phone session removes stale radio actions and opens reconnect without a reload',async()=>{
  const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const old=f.views()[0],unlink=old.children[2],report=old.children[3];f.inventories.set('one',{known:true,codes:new Set(['10'])});
  f.answers.push(Object.assign(Error('Please reload this page.'),{status:401}));await f.load(true);
- assert.equal(f.views().length,0);assert.equal(f.ids.get('connectRadioForm').hidden,false);assert.equal(f.ids.get('connectRadio').hidden,true);assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('openWifiSetup').hidden,false);assert.equal(f.freshness.hidden,true);assert.match(f.ids.get('radioConnectStatus').textContent,/Enter the Device Code to reconnect/);assert.equal(f.selections.at(-1),'');assert.equal(f.inventories.size,0);assert.equal(f.statusEvents.at(-1).detail.radios.length,0);
+ assert.equal(f.views().length,0);assert.equal(f.ids.get('connectRadioForm').hidden,true);assert.equal(f.ids.get('connectRadio').hidden,false);assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('openWifiSetup').hidden,true);assert.equal(f.freshness.hidden,true);assert.match(f.ids.get('radioConnectStatus').textContent,/Connect your radio again/);assert.equal(f.selections.at(-1),'');assert.equal(f.inventories.size,0);assert.equal(f.statusEvents.at(-1).detail.radios.length,0);
  await unlink.onclick();report.onclick();assert.equal(f.dialogs.length,0);assert.equal(f.reports.length,0);assert.equal(f.calls.includes('/api/phone/unlink'),false);
- f.answers.push({radios:[]});await f.load(true);assert.equal(f.ids.get('connectRadioForm').hidden,false);assert.equal(f.ids.get('openWifiSetup').hidden,false);
+ f.answers.push({radios:[]});await f.load(true);assert.equal(f.ids.get('connectRadioForm').hidden,true);assert.equal(f.ids.get('openWifiSetup').hidden,true);
 });
 
 test('a late unauthorized check cannot replace another page with the reconnect form',async()=>{
@@ -128,16 +128,16 @@ test('leaving an unlink confirmation cancels its request even if an old prompt r
 test('an in-flight unlink stays locked when polling replaces the radio card',async()=>{
  const f=fixture();f.answers.push(response());await f.load();const pending=deferred();f.answers.push(pending.promise);const first=f.views()[0].children[2].onclick();await until(()=>f.calls.includes('/api/phone/unlink'));
  f.answers.push(response({current_station:'Another station'}));await f.load(true);const replacement=f.views()[0].children[2];await replacement.onclick();assert.equal(f.calls.filter(path=>path==='/api/phone/unlink').length,1);assert.deepEqual(f.dialogs,['Unlink radio?']);assert.equal(replacement.disabled,true);
- f.answers.push({radios:[]});pending.resolve({ok:true});await first;assert.equal(f.views().length,1);assert.deepEqual(f.dialogs,['Unlink radio?','Radio unlinked']);
+ f.answers.push({radios:[]});pending.resolve({ok:true});await first;assert.equal(f.views().length,0);assert.equal(f.ids.get('connectRadio').hidden,false);assert.deepEqual(f.dialogs,['Unlink radio?','Radio unlinked']);
 });
 test('detached radio card handlers cannot unlink a radio removed by a newer status check',async()=>{
  const f=fixture();f.answers.push(response());await f.load();const unlink=f.views()[0].children[2];f.answers.push({radios:[]});await f.load(true);await unlink.onclick();assert.equal(f.calls.includes('/api/phone/unlink'),false);assert.equal(f.dialogs.length,0);
 });
 
 
-test('initial status failures keep Wi-Fi help reachable without falsely reporting an offline radio',async()=>{
+test('initial status failures keep Connect and its Wi-Fi choice reachable without claiming a radio is offline',async()=>{
  const f=fixture();f.answers.push(Error('Service unavailable'));await f.load();
- assert.equal(f.ids.get('openWifiSetup').hidden,false);assert.equal(f.views().length,0);assert.equal(f.ids.get('refreshRadios').hidden,false);assert.doesNotMatch(f.ids.get('radioConnectStatus').textContent,/Radio offline/);
+ assert.equal(f.ids.get('openWifiSetup').hidden,true);assert.equal(f.views().length,0);assert.equal(f.ids.get('connectRadio').hidden,false);assert.equal(f.ids.get('connectRadioForm').hidden,true);assert.equal(f.ids.get('refreshRadios').hidden,false);assert.doesNotMatch(f.ids.get('radioConnectStatus').textContent,/Radio offline/);f.ids.get('connectRadio').onclick();assert.equal(f.ids.get('radioConnectionChoices').hidden,false);
  f.answers.push(response());await f.load();assert.equal(f.ids.get('openWifiSetup').hidden,true);
 });
 

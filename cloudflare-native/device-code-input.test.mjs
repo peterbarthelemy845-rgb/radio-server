@@ -65,7 +65,7 @@ test('inline feedback stays outside the accessible label and follows the manual 
 test('the real Radio submit hook stops invalid codes before session, busy, security and network work',async()=>{
  const f=fixture(),calls=[];
  Object.assign(f.context,{$:id=>f.nodes.get(id),AbortController,crypto:{randomUUID:()=>{calls.push('uuid');return 'test-request';}},busy:()=>calls.push('busy'),loadOwnerSession:async()=>calls.push('session'),human:async()=>calls.push('security'),api:async()=>calls.push('request'),currentRadioPairing:()=>true,cancelRadioPairingRequest:()=>calls.push('cancel')});
- vm.runInContext("let radioPairingBusy=false,radioPairingGeneration=0,radioPairingAttempt=null,radioSessionExpired=true,radioPairingCancellation=Promise.resolve();",f.context);
+ vm.runInContext("let radioPairingBusy=false,radioPairingGeneration=0,radioPairingAttempt=null,radioViewGeneration=0,radioSessionExpired=true,radioPairingCancellation=Promise.resolve();",f.context);
  vm.runInContext(radioSource.slice(radioSource.indexOf("$('connectRadioForm').onsubmit="),radioSource.indexOf("window.addEventListener('radio-locals-ready'")),f.context);
  for(const value of ['123','123456789','1234!','１２３４']){f.main.value=value;await f.nodes.get('connectRadioForm').onsubmit({preventDefault(){},target:f.nodes.get('connectRadioForm')});assert.deepEqual(calls,[]);assert.equal(vm.runInContext('radioPairingBusy',f.context),false);assert.equal(f.main.error.hidden,false);}
 });
@@ -74,7 +74,7 @@ test('the real Radio submit hook sends a normalized zero-prefixed code without n
  const f=fixture(),requests=[];let checks=0;f.main.value=' 00-39 ';
  f.nodes.set('cancelRadioConnection',{hidden:true});f.nodes.set('radioConnectStatus',{textContent:''});
  Object.assign(f.context,{$:id=>f.nodes.get(id),AbortController,crypto:{randomUUID:()=> 'local-request'},busy(){},human:async()=>{checks++;return 'checked-token';},api:async(path,body)=>{requests.push({path,body});throw Error('Test response');},currentRadioPairing:()=>true,cancelRadioPairingRequest(){}});
- vm.runInContext("let radioPairingBusy=false,radioPairingGeneration=0,radioPairingAttempt=null,radioSessionExpired=false,radioPairingCancellation=Promise.resolve();",f.context);
+ vm.runInContext("let radioPairingBusy=false,radioPairingGeneration=0,radioPairingAttempt=null,radioViewGeneration=0,radioSessionExpired=false,radioPairingCancellation=Promise.resolve();",f.context);
  vm.runInContext(radioSource.slice(radioSource.indexOf("$('connectRadioForm').onsubmit="),radioSource.indexOf("window.addEventListener('radio-locals-ready'")),f.context);
  await f.nodes.get('connectRadioForm').onsubmit({preventDefault(){},target:f.nodes.get('connectRadioForm')});
  assert.equal(checks,1);assert.equal(requests.length,1);assert.equal(requests[0].path,'/api/phone/claim');assert.equal(requests[0].body.device_code,'0039');assert.equal(requests[0].body.turnstile_token,'checked-token');assert.equal(f.main.value,'0039');assert.equal(f.main.error.hidden,true);

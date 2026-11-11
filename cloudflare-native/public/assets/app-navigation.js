@@ -2,7 +2,7 @@
 // Listener navigation stays inside this document. Drafts and scroll positions
 // remain in memory; no device codes, ticket text or credentials enter history.
 const appPagePositions=new Map(),appDisplayMode=matchMedia('(display-mode: standalone)');
-let appCurrentPage=appVisiblePage(),appRestoring=false,appNavigationGeneration=0,appPanelOrigin=null,appSupportPromise=null,appControlOrigin=null,appLastControlId=null;
+let appCurrentPage=appVisiblePage(),appRestoring=false,appNavigationGeneration=0,appPanelOrigin=null,appSupportPromise=null,appControlOrigin=null,appLastControlId=null,appGuidedRadioWifi=false;
 function appVisiblePage(){return ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'].find(id=>$(id)&&!$(id).hidden)||(location.pathname==='/wifi-setup'?'wifiSetup':location.pathname==='/support'?'support':'myRadio');}
 function appIsListenerPage(id){return ['myRadio','support','wifiSetup'].includes(id);}
 function appListenerMode(){return new URLSearchParams(location.search).get('app')==='1'||appDisplayMode.matches||navigator.standalone===true;}
@@ -84,6 +84,7 @@ window.addEventListener('app-language-changed',()=>{appUpdatePageTitle();appUpda
 const appOriginalPage=page;
 page=function(id){
  const next=id==='library'?'myRadio':id;
+ if(next!=='wifiSetup')appClearGuidedRadioWifi();
  if(next!==appCurrentPage){appRememberPosition();if(appCurrentPage==='support')appPauseSupportMedia();}
  appOriginalPage(id);appCurrentPage=next;appApplyMode();if(next==='support')appRestoreSupportMedia();
 };
@@ -104,12 +105,28 @@ function appShowPage(pageId,{push=false,replace=false,focus=null}={}){
  page(pageId);appRestorePosition(pageId,focus);
  if(pageId==='support')appEnsureSupport();else if(pageId==='myRadio')loadMyRadios(true);
 }
+// Guided setup remembers only the current in-document choice. A reload, route
+// change or Back clears it; browser history never stores a Device Code.
+function appClearGuidedRadioWifi(){
+ appGuidedRadioWifi=false;const continueButton=$('wifiContinueConnection');if(continueButton)continueButton.hidden=true;
+}
+function appHasLinkedRadio(){return typeof radioCardViews!=='undefined'&&radioCardViews.size>0;}
+function appResumeRadioConnection(enterCode=false){
+ if(appHasLinkedRadio())return;
+ if(enterCode)window.showRadioCodeEntry?.();else window.showRadioConnectionChoices?.();
+}
+window.openGuidedRadioWifi=function(){
+ if(appCurrentPage!=='myRadio'||shareRunning||window.radioControlsBusy||(typeof radioPairingBusy!=='undefined'&&radioPairingBusy))return false;
+ appGuidedRadioWifi=true;const continueButton=$('wifiContinueConnection');if(continueButton)continueButton.hidden=false;
+ appShowPage('wifiSetup',{push:true,focus:$('listenerAppTitle')});return true;
+};
 function appCloseStationPanel(){
  if(shareRunning&&typeof stopWaitingForSharedStation==='function')stopWaitingForSharedStation();
  if(history.state?.radioLocalsApp?.panel==='station')history.back();else stationPopup.close();
 }
 function appOpenStationWifiHelp(){
  if(shareRunning||$('shared').hidden)return;
+ appClearGuidedRadioWifi();
  const panel=history.state?.radioLocalsApp?.panel==='station';
  if(stationPopup.open){appPanelOrigin=null;stationPopup.close();}
  appShowPage('wifiSetup',{replace:panel,push:!panel,focus:$('listenerAppTitle')});
@@ -166,13 +183,14 @@ window.addEventListener('radio-controls-closed',()=>{
 window.addEventListener('popstate',event=>{
  const next=event.state?.radioLocalsApp;
  if(window.radioControlsDialog?.open&&window.radioControlsBusy&&next?.panel!=='controls'){history.go(1);window.closeRadioControls();return;}
- if(!next){if(stationPopup.open){if(typeof stopWaitingForSharedStation==='function')stopWaitingForSharedStation();stationPopup.close();}return;}
+ if(!next){appClearGuidedRadioWifi();if(stationPopup.open){if(typeof stopWaitingForSharedStation==='function')stopWaitingForSharedStation();stationPopup.close();}return;}
  appRestoring=true;
  try{
-  const origin=appPanelOrigin||appControlOrigin,returningFromWifi=appCurrentPage==='wifiSetup'&&next.page==='myRadio';
+  const origin=appPanelOrigin||appControlOrigin,returningFromWifi=appCurrentPage==='wifiSetup'&&next.page==='myRadio',guidedReturn=returningFromWifi&&appGuidedRadioWifi;
   if(window.radioControlsDialog?.open&&next.panel!=='controls')window.closeRadioControls();
   if(stationPopup.open&&next.panel!=='station')stationPopup.close();
-  appShowPage(next.page,{focus:origin?.focus||(returningFromWifi?$('openWifiSetup')||$('navRadio'):null)});
+  appShowPage(next.page,{focus:guidedReturn?null:origin?.focus||(returningFromWifi?$('openWifiSetup')||$('navRadio'):null)});
+  if(guidedReturn)appResumeRadioConnection();
   if(next.panel==='station'&&!stationPopup.open)openStationPopup(next.code);
   if(next.panel==='controls'&&!window.radioControlsDialog?.open&&appLastControlId&&typeof openRadioControls==='function')openRadioControls(appLastControlId);
  }finally{appRestoring=false;}
@@ -180,17 +198,21 @@ window.addEventListener('popstate',event=>{
 // Window capture runs before the legacy form-leaving guard. Listener navigation
 // preserves the ticket form in this document, so nothing is discarded.
 window.addEventListener('click',event=>{
- const target=event.target.closest?.('nav button,nav a,#openWifiSetup,#wifiBackToRadio');
+ const target=event.target.closest?.('nav button,nav a,#openWifiSetup,#wifiBackToRadio,#wifiContinueConnection');
  if(!target||!appIsListenerPage(appCurrentPage)||event.button>0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
  const support=target.tagName==='A'&&new URL(target.href,location.origin).pathname==='/support';
- const wifi=target.id==='openWifiSetup',backToRadio=target.id==='wifiBackToRadio';
- const radio=['navRadio','navLibrary'].includes(target.id)||backToRadio;if(!support&&!radio&&!wifi)return;
+ const wifi=target.id==='openWifiSetup',backToRadio=target.id==='wifiBackToRadio',continueConnection=target.id==='wifiContinueConnection';
+ const radio=['navRadio','navLibrary'].includes(target.id)||backToRadio||continueConnection;if(!support&&!radio&&!wifi)return;
  event.preventDefault();event.stopImmediatePropagation();if(shareRunning||window.radioControlsBusy)return;
+ if(continueConnection&&(!appGuidedRadioWifi||appCurrentPage!=='wifiSetup'||target.hidden))return;
+ const guidedReturn=appCurrentPage==='wifiSetup'&&appGuidedRadioWifi&&radio;
+ if(wifi)appClearGuidedRadioWifi();
  const next=wifi?'wifiSetup':support?'support':'myRadio';if(next===appCurrentPage){if(next==='myRadio')appShowPage(next,{replace:true});return;}
  // The visible Back button always returns to Radio, even when a browser has
  // no usable previous history entry. Keep in-memory drafts and positions.
- if(backToRadio){appShowPage('myRadio',{replace:true,focus:$('openWifiSetup').hidden?$('navRadio'):$('openWifiSetup')});return;}
- appShowPage(next,{push:!backToRadio,replace:backToRadio,focus:next==='myRadio'?$('navRadio'):$('listenerAppTitle')});
+ if(backToRadio||continueConnection){appShowPage('myRadio',{replace:true,focus:guidedReturn?null:$('openWifiSetup').hidden?$('navRadio'):$('openWifiSetup')});if(guidedReturn)appResumeRadioConnection(continueConnection);return;}
+ appShowPage(next,{push:!backToRadio,replace:backToRadio,focus:guidedReturn?null:next==='myRadio'?$('navRadio'):$('listenerAppTitle')});
+ if(guidedReturn)appResumeRadioConnection();
 },true);
 const appHelp=document.createElement('button');appHelp.id='listenerSupportHelp';appHelp.type='button';appHelp.className='support-help';appHelp.textContent='Get help';appHelp.setAttribute('aria-expanded','false');
 appHelp.onclick=()=>{const expanded=!appHelp.dataset.expanded;if(expanded)appHelp.dataset.expanded='1';else delete appHelp.dataset.expanded;$('ticketForm').hidden=!expanded;appHelp.setAttribute('aria-expanded',String(expanded));if(expanded)$('ticketForm').elements.name.focus();};$('ticketForm').before(appHelp);
