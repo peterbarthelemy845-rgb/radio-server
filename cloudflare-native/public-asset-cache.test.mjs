@@ -1,5 +1,12 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {fetchHandler} from './worker.mjs';
+import {readFileSync} from 'node:fs';
 const origin='https://radiolocals.com',etag='"public-release-seven"';
+test('images shipped in the app shell are served through the real public GET and HEAD routes',async()=>{
+ const html=readFileSync(new URL('./public/index.html',import.meta.url),'utf8'),paths=[...new Set([...html.matchAll(/<img\b[^>]*\bsrc="(\/assets\/[^"?#]+)"/g)].map(match=>match[1]))];
+ assert.ok(paths.includes('/assets/icecast-logo.svg'));assert.ok(paths.includes('/assets/shoutcast-logo.svg'));
+ const seen=[],env={ASSETS:{async fetch(request){const path=new URL(request.url).pathname;seen.push(path);const body=readFileSync(new URL('./public'+path,import.meta.url));return new Response(body,{headers:{'Content-Type':path.endsWith('.svg')?'image/svg+xml':path.endsWith('.webp')?'image/webp':'image/png'}});}}};
+ for(const path of paths){const get=await fetchHandler(new Request(origin+path),env),head=await fetchHandler(new Request(origin+path,{method:'HEAD'}),env);assert.equal(get.status,200,path);assert.match(get.headers.get('Content-Type'),/^image\//,path);assert.ok((await get.arrayBuffer()).byteLength>0,path);assert.equal(head.status,200,path);assert.equal(head.headers.get('Content-Type'),get.headers.get('Content-Type'),path);assert.equal(await head.text(),'');assert.equal(seen.filter(value=>value===path).length,2,path);}
+});
 test('public assets retain ETag and conditional304 metadata, never mutate the source response or require cookie variation',async()=>{
  const seen=[],sources=[],env={ASSETS:{async fetch(request){seen.push(request);const unchanged=request.headers.get('If-None-Match')===etag;const response=new Response(unchanged?null:'safe public javascript',{status:unchanged?304:200,headers:{ETag:etag,'Content-Type':'text/javascript',Vary:'Accept-Encoding'}});sources.push(response);return response;}}};
  const first=await fetchHandler(new Request(origin+'/assets/site.js'),env);assert.equal(await first.text(),'safe public javascript');assert.equal(first.headers.get('cache-control'),'public, max-age=0, must-revalidate');
