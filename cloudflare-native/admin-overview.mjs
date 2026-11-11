@@ -7,7 +7,7 @@ export async function overviewRoutes(request,env,now){
  const current=await administrator(request,env,now);
  await limit(env.DB,'admin-overview',current.token_hash,30,60,now);
  const results=await env.DB.batch([
-  env.DB.prepare("SELECT count(*) AS count FROM stations WHERE status='pending_review' AND email_verified_at IS NOT NULL"),
+  env.DB.prepare("SELECT count(*) AS count FROM stations s WHERE s.email_verified_at IS NOT NULL AND s.status IN ('published','pending_review') AND (s.status='pending_review' OR EXISTS(SELECT 1 FROM station_edits e WHERE e.station_code=s.code))"),
   env.DB.prepare("SELECT count(*) AS count FROM local_ads a JOIN stations s ON s.code=a.station_code WHERE a.status='pending_review' AND s.status!='deleted'"),
   env.DB.prepare("SELECT count(*) AS count FROM legal_requests WHERE kind='support' AND state!='closed'"),
   env.DB.prepare('SELECT count(*) AS count FROM radios WHERE last_seen>?').bind(now-120),

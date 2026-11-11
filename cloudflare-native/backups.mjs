@@ -1,11 +1,21 @@
 import {json,encrypt,decrypt,randomHex,readJson,limit,HttpError} from './security.mjs';import {administrator} from './access.mjs';
-export const BACKUP_TABLES=['stations','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies'];
+import {publicStreamUrl} from './public-stream-url.mjs';
+export const BACKUP_TABLES=['stations','station_edits','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies'];
 const MAX_RECORDS=50000,MAX_MEDIA=250,MAX_MANIFEST_BYTES=8*1024*1024,MAX_MEDIA_BYTES=50*1024*1024;
 // AES-GCM adds a 16-byte tag; the existing envelope hex-encodes ciphertext
 // plus its 12-byte IV and one separator. Every accepted manifest must restore.
 const MAX_ENCRYPTED_MANIFEST_BYTES=MAX_MANIFEST_BYTES*2+57;
 const RETRY_SECONDS=15*60,RUN_LEASE_SECONDS=60*60;
 const validMedia=key=>/^(?:sanitized\/[a-f0-9]{64}\.png|ad-pixels\/[a-f0-9]{64}\.bin)$/.test(key);
+function validateStationEditSnapshot(stations,edits,media){
+ const approved=new Map(stations.map(row=>[row.code,row])),seen=new Set();
+ for(const edit of edits){
+  const station=approved.get(edit.station_code);
+  if(!Number.isSafeInteger(edit.station_code)||seen.has(edit.station_code)||!station||!['published','pending_review'].includes(station.status)||!station.email_verified_at||!Number.isSafeInteger(edit.base_updated_at)||edit.base_updated_at!==station.updated_at||typeof edit.revision!=='string'||!/^[a-f0-9]{32}$/.test(edit.revision)||typeof edit.stream_url!=='string'||edit.stream_url.length>1024||typeof edit.bio!=='string'||edit.bio.length>250||!Number.isSafeInteger(edit.created_at)||edit.created_at<0||edit.artwork_key!==null&&(typeof edit.artwork_key!=='string'||!/^[a-f0-9]{64}\.png$/.test(edit.artwork_key)))throw new HttpError(400,'Invalid proposed station changes in backup.');
+  try{publicStreamUrl(edit.stream_url);}catch{throw new HttpError(400,'Invalid proposed station changes in backup.');}
+  if(media&&edit.artwork_key&&!media.has('sanitized/'+edit.artwork_key))throw new HttpError(400,'Backup media is incomplete.');seen.add(edit.station_code);
+ }
+}
 function backupLimit(reason){const error=new Error(reason);error.backupReason=reason;return error;}
 function auditStatement(env,actor,action,now){return env.DB.prepare('INSERT INTO admin_audit(id,actor_hash,action,created_at) VALUES (?,?,?,?)').bind(randomHex(16),actor,action,now);}
 async function audit(env,actor,action,now){await auditStatement(env,actor,action,now).run();}
@@ -41,7 +51,8 @@ export async function createBackup(env,now,kind='manual'){
   if(preflight.error)throw backupLimit(preflight.error);
   for(let i=0;i<BACKUP_TABLES.length;i++){const rows=results[i+1].results||[];count+=rows.length;if(rows.length>MAX_RECORDS||count>MAX_RECORDS)throw backupLimit('Backup capacity reached: more than 50,000 records.');tables[BACKUP_TABLES[i]]=rows;}
   if(count!==preflight.record_count)throw backupLimit('Backup snapshot was incomplete. Try again.');
-  const keys=new Set();for(const row of [...tables.stations,...tables.local_ads])if(row.artwork_key)keys.add('sanitized/'+row.artwork_key);for(const row of tables.ad_policy)if(row.pixels_key)keys.add('ad-pixels/'+row.pixels_key);
+  validateStationEditSnapshot(tables.stations,tables.station_edits);
+  const keys=new Set();for(const row of [...tables.stations,...tables.station_edits,...tables.local_ads])if(row.artwork_key)keys.add('sanitized/'+row.artwork_key);for(const row of tables.ad_policy)if(row.pixels_key)keys.add('ad-pixels/'+row.pixels_key);
   if(keys.size>MAX_MEDIA)throw backupLimit('Backup capacity reached: more than 250 media files.');let size=0;const media=[];
   for(const key of keys){if(!validMedia(key))throw backupLimit('Backup contains an unexpected media path.');const object=await env.MEDIA.get(key);if(!object)throw backupLimit('A referenced media file is missing.');size+=object.size;if(size>MAX_MEDIA_BYTES)throw backupLimit('Backup capacity reached: media exceeds 50 MiB.');await env.MEDIA.put('backups/'+id+'/media/'+key,object.body,{httpMetadata:object.httpMetadata,customMetadata:object.customMetadata});media.push(key);}
   const snapshot={version:1,created_at:now,tables,media},serialized=JSON.stringify(snapshot);if(new TextEncoder().encode(serialized).length>MAX_MANIFEST_BYTES)throw backupLimit('Backup capacity reached: database snapshot exceeds 8 MiB.');await env.MEDIA.put('backups/'+id+'/manifest.enc',await encrypt(env,serialized),{httpMetadata:{contentType:'application/octet-stream'}});
@@ -55,12 +66,16 @@ export async function restoreBackup(env,id,now,actor=null){
  for(const table of BACKUP_TABLES){
   // Older snapshots omit tables added in migrations 0010 and 0011. Preserve
   // newer inventory reports and support correspondence during a legacy restore.
-  const rows=['radio_station_inventory','support_replies'].includes(table)&&!Object.hasOwn(snapshot.tables,table)?[]:snapshot.tables[table];
+  const rows=['radio_station_inventory','support_replies','station_edits'].includes(table)&&!Object.hasOwn(snapshot.tables,table)?[]:snapshot.tables[table];
   if(!Array.isArray(rows)||rows.length>MAX_RECORDS)throw new HttpError(400,'Invalid backup table.');const schema=(await env.DB.prepare('PRAGMA table_info('+table+')').all()).results,columns=schema.map(c=>c.name),primary=schema.filter(c=>c.pk).map(c=>c.name),updates=columns.filter(c=>!primary.includes(c)).map(c=>c+'=excluded.'+c).join(','),sql='INSERT INTO '+table+'('+columns.join(',')+') VALUES ('+columns.map(()=>'?').join(',')+') ON CONFLICT DO UPDATE SET '+updates;for(let row of rows){count++;
   // Snapshots made before migration 0009 cannot recover a display code from its
   // HMAC. Only this newly added nullable column may be absent in older rows.
   if(table==='radio_pairs'&&row&&typeof row==='object'&&!Array.isArray(row)&&columns.includes('code_encrypted')&&!Object.hasOwn(row,'code_encrypted'))row={...row,code_encrypted:null};
   if(count>MAX_RECORDS||!row||Object.keys(row).length!==columns.length||Object.keys(row).some(c=>!columns.includes(c))||Object.values(row).some(v=>v!==null&&!['string','number'].includes(typeof v)))throw new HttpError(400,'Invalid backup row.');statements.push(env.DB.prepare(sql).bind(...columns.map(c=>row[c])));}}
+ const edits=snapshot.tables.station_edits||[];validateStationEditSnapshot(snapshot.tables.stations,edits,new Set(snapshot.media));
+ // The approved station row and its proposals are one snapshot. In particular,
+ // a legacy snapshot must not leave a newer proposal attached to restored data.
+ statements.unshift(env.DB.prepare('DELETE FROM station_edits WHERE station_code IN (SELECT value FROM json_each(?))').bind(JSON.stringify(snapshot.tables.stations.map(row=>row.code))));
  // Check every saved media object before touching the live database. R2 copies
  // are prepared first and cannot be rolled back by the later D1 transaction.
  for(const key of snapshot.media){if(!validMedia(key)||!await env.MEDIA.head('backups/'+id+'/media/'+key))throw new HttpError(400,'Backup media is incomplete.');}
@@ -70,7 +85,7 @@ export async function restoreBackup(env,id,now,actor=null){
  await env.DB.batch(statements);return {records:count};
 }
 export async function backupRoutes(request,env,now){const url=new URL(request.url),path=url.pathname;if(path!=='/api/admin/backups')return null;const current=await administrator(request,env,now);
- if(request.method==='GET'){const backups=(await env.DB.prepare('SELECT id,day,kind,state,created_at,completed_at,record_count,media_count,error FROM backup_runs ORDER BY created_at DESC LIMIT 50').all()).results;return json({backups,note:'Encrypted snapshots include station data and copies of referenced media. Restore merges saved records and replaces matching IDs; newer records are kept. Owner and phone sessions are revoked. Database restore and its audit commit together; media copies happen first. Capacity is 50,000 records, an 8 MiB manifest, and 250 media files totaling 50 MiB; larger snapshots fail explicitly. Failed daily attempts retry after 15 minutes. Daily retention is 14 days. Cloudflare secrets are not included.'});}
+ if(request.method==='GET'){const backups=(await env.DB.prepare('SELECT id,day,kind,state,created_at,completed_at,record_count,media_count,error FROM backup_runs ORDER BY created_at DESC LIMIT 50').all()).results;return json({backups,note:'Encrypted snapshots include station data, proposed changes and copies of referenced media. Restore merges saved records and replaces matching IDs; newer records are kept. Proposed changes for each restored station are replaced by its snapshot, or cleared for older backups. Owner and phone sessions are revoked. Database restore and its audit commit together; media copies happen first. Capacity is 50,000 records, an 8 MiB manifest, and 250 media files totaling 50 MiB; larger snapshots fail explicitly. Failed daily attempts retry after 15 minutes. Daily retention is 14 days. Cloudflare secrets are not included.'});}
  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');await limit(env.DB,'backup-admin',current.token_hash,6,3600,now);const body=await readJson(request,2048);
  if(body.action==='create'){const backup=await createBackup(env,now);await audit(env,current.token_hash,'backup-create:'+backup.id,now);return json({backup,message:'Backup created.'});}
  if(body.action==='restore'&&body.confirm==='RESTORE'&&/^[a-f0-9]{32}$/.test(body.id||'')){const result=await restoreBackup(env,body.id,now,current.token_hash);return json({message:'Saved records and media restored. Station owners and phones must sign in or link again.',...result});}

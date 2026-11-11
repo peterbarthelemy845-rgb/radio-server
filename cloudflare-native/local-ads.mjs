@@ -1,8 +1,10 @@
-import {json,readJson,session,browserWrite,limit,human,randomHex,digest,HttpError} from './security.mjs';
+import {json,readJson,session,browserWrite,limit,human,randomHex,digest,mac,HttpError} from './security.mjs';
 import {artwork} from './owner-auth.mjs';import {scanCreative} from './moderation.mjs';import {adPixels} from './ad-pixels.mjs';import {authenticate} from './devices.mjs';
 import {decisionReason,ownerNotification,commitOwnerNotification} from './notifications.mjs';
 const RIGHTS='I am authorized to advertise this business and have rights to the submitted text and artwork. I permit screening and display on compatible radios.';
 const VERSION='local-business-submissions-2026-11-03';
+const activeAds="a.status IN ('pending_review','approved') AND (p.end_at IS NULL OR p.end_at>?)";
+function adSubmissionResponse(row){return json({status:'ok',reference:row.ad_id,message:row.scanner_passed?'Advertisement submitted for station-owner approval.':'Advertisement submitted for administrator and station-owner review.'});}
 async function admin(env,current,now){return env.ADMIN_TOTP_SECRET&&await env.DB.prepare('SELECT 1 FROM admin_sessions a JOIN admin_mfa_sessions m ON a.session_hash=m.session_hash WHERE a.session_hash=? AND a.expires>? AND m.expires>?').bind(current.token_hash,now,now).first();}
 async function owner(env,current,code,now){return current.owner_expires>now&&current.owner_station===code;}
 export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative,adPixels}){
@@ -10,30 +12,53 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
  if(path.startsWith('/api/radio/'))return radioAds(request,env,now);
  const current=request.method==='GET'?await session(request,env,now):await browserWrite(request,env,now);
  if(path==='/api/ads/submit'&&request.method==='POST'){
-  const ip=request.headers.get('CF-Connecting-IP')||'unknown';await limit(env.DB,'ad-submit-ip',ip,5,86400,now);await limit(env.DB,'ad-submit-attempt-global','all',60,60,now);
+  const ip=request.headers.get('CF-Connecting-IP')||'unknown';await limit(env.DB,'ad-submit-attempt-ip',ip,20,900,now);await limit(env.DB,'ad-submit-attempt-global','all',60,60,now);
   const body=await readJson(request,4300000);await deps.human(request,env,body.turnstile_token,'advertise-submit',now);
-  const code=Number(body.station_code);if(!await env.DB.prepare("SELECT 1 FROM stations WHERE code=? AND status='published'").bind(code).first())throw new HttpError(404,'Station not found.');
+  const code=Number(body.station_code);if(!Number.isInteger(code)||code<10||code>999999)throw new HttpError(400,'Choose a valid station.');
   for(const [field,max] of [['business',32],['message',42],['email',254]])if(typeof body[field]!=='string'||!body[field].trim()||body[field].length>max||/[\x00-\x1f]/.test(body[field]))throw new HttpError(400,'Check the business name, message, phone and email.');
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)||body.rights_confirmed!==true)throw new HttpError(400,'Enter your email and confirm advertisement rights.');
-  const quota=await env.DB.prepare("SELECT (SELECT count(*) FROM local_ads WHERE station_code=? AND status!='deleted') station_count,(SELECT count(*) FROM local_ads WHERE status!='deleted') total_count").bind(code).first();if(quota.station_count>=20||quota.total_count>=200)throw new HttpError(409,'Ad limit reached.');
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email.trim())||body.rights_confirmed!==true)throw new HttpError(400,'Enter your email and confirm advertisement rights.');
   if(typeof body.phone!=='string'||body.phone.length>32||/[\x00-\x1f]/.test(body.phone))throw new HttpError(400,'Check the phone number.');
   const parseDate=value=>{if(!value)return null;if(!/^20\d{2}-\d{2}-\d{2}$/.test(value))throw new HttpError(400,'Check advertisement dates.');const stamp=Date.parse(value+'T00:00:00Z')/1000;if(!Number.isFinite(stamp)||new Date(stamp*1000).toISOString().slice(0,10)!==value)throw new HttpError(400,'Check advertisement dates.');return stamp;};
-  const startAt=parseDate(body.start_date)||now,endDate=parseDate(body.end_date),endAt=endDate?endDate+86400:startAt+30*86400;if(startAt<now-86400||startAt>now+365*86400||endAt<=startAt||endAt>startAt+90*86400)throw new HttpError(400,'Choose an ad period of up to 90 days.');
+  const startDate=parseDate(body.start_date),endDate=parseDate(body.end_date),payloadHash=await digest(JSON.stringify([code,body.business.trim(),body.message.trim(),body.email.trim().toLowerCase(),body.phone.trim(),body.start_date||'',body.end_date||'',VERSION,body.artwork?.name,body.artwork?.base64]));
+  let requestId=body.request_id;if(requestId!==undefined&&(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)))throw new HttpError(400,'Refresh the advertisement form and try again.');
+  // Existing open forms also get a stable session-scoped retry identity.
+  if(requestId===undefined)requestId=(await mac(env,'legacy-ad:'+current.token_hash+':'+payloadHash)).slice(0,32);
+  const prior=await env.DB.prepare('SELECT * FROM ad_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();
+  if(prior&&prior.payload_hash!==payloadHash)throw new HttpError(409,'Advertisement details changed. Start a new submission.');
+  if(prior?.expires<=now)throw new HttpError(409,'This advertisement request expired. Start a new submission.');
+  if(prior?.state==='complete')return adSubmissionResponse(prior);
+  if(prior?.lease_until>now)throw new HttpError(409,'This advertisement is still processing. Please try again shortly.');
+  if(!await env.DB.prepare("SELECT 1 FROM stations WHERE code=? AND status='published'").bind(code).first())throw new HttpError(404,'Station not found.');
+  const quota=await env.DB.prepare(`SELECT (SELECT count(*) FROM local_ads a LEFT JOIN ad_policy p ON p.ad_id=a.id WHERE a.station_code=? AND ${activeAds}) station_count,(SELECT count(*) FROM local_ads a LEFT JOIN ad_policy p ON p.ad_id=a.id WHERE ${activeAds}) total_count`).bind(code,now,now).first();if(quota.station_count>=20||quota.total_count>=200)throw new HttpError(409,'Ad limit reached.');
+  const startAt=startDate||prior?.created_at||now,endAt=endDate?endDate+86400:startAt+30*86400;if(startAt<now-86400||startAt>now+365*86400||endAt<=startAt||endAt>startAt+90*86400)throw new HttpError(400,'Choose an ad period of up to 90 days.');
+  const lease=randomHex(16),claimed=await env.DB.prepare(`INSERT INTO ad_requests(session_hash,request_id,payload_hash,lease_token,lease_until,ad_id,created_at,expires)
+   VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(session_hash,request_id) DO UPDATE SET lease_token=excluded.lease_token,lease_until=excluded.lease_until
+   WHERE state='pending' AND lease_until<=? AND payload_hash=excluded.payload_hash RETURNING *`).bind(current.token_hash,requestId,payloadHash,lease,now+120,randomHex(16),now,now+86400,now).first();
+  if(!claimed)throw new HttpError(409,'This advertisement is still processing. Please try again shortly.');
   // Keep an early short abuse window, but reserve the day-long processing
   // allowance for validated submissions that passed the bot check.
-  await limit(env.DB,'ad-submit-authorized','all',60,86400,now);
-  const key=await deps.artwork(env,body.artwork),object=await env.MEDIA.get('sanitized/'+key);let pixels;
-  try{const resized=(await env.IMAGES.input(object.body).transform({width:256,height:76,fit:'cover'}).output({format:'image/png',anim:false})).response();if(!resized.ok)throw Error();pixels=await deps.adPixels(await resized.arrayBuffer());}catch{await env.MEDIA.delete?.('sanitized/'+key);throw new HttpError(400,'The sponsor image could not be prepared. Try another image.');}
-  const pixelsKey=randomHex()+'.bin';await env.MEDIA.put('ad-pixels/'+pixelsKey,pixels,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{pixel_version:'1'}});
-  const safe=await deps.scanCreative(env,body.business+'\n'+body.message+'\n'+body.phone,key),id=randomHex(16);
-  try{await env.DB.batch([
+  try{
+   if(!claimed.allowance_reserved){await limit(env.DB,'ad-submit-ip',ip,5,86400,now);await limit(env.DB,'ad-submit-authorized','all',60,86400,now);await env.DB.prepare("UPDATE ad_requests SET allowance_reserved=1 WHERE session_hash=? AND request_id=? AND lease_token=? AND state='pending'").bind(current.token_hash,requestId,lease).run();}
+   // Separate pilot processing budgets bound repeated failed attempts of one
+   // draft. Completed retries above never spend this CPU/media allowance.
+   // Increase these alongside the validated-submission limits as usage grows.
+   await limit(env.DB,'ad-processing-ip',ip,15,86400,now);await limit(env.DB,'ad-processing-global','all',120,86400,now);
+   // One stable private object per draft lets a failed transaction retry without
+   // creating orphan copies. Do not delete these keys in a stale lease's catch:
+   // a newer retry may already be using the same objects.
+   const key=await deps.artwork(env,body.artwork,await mac(env,'ad-artwork:'+current.token_hash+':'+requestId)+'.png'),object=await env.MEDIA.get('sanitized/'+key);let pixels;
+   try{const resized=(await env.IMAGES.input(object.body).transform({width:256,height:76,fit:'cover'}).output({format:'image/png',anim:false})).response();if(!resized.ok)throw Error();pixels=await deps.adPixels(await resized.arrayBuffer());}catch{throw new HttpError(400,'The sponsor image could not be prepared. Try another image.');}
+   const pixelsKey=await mac(env,'ad-pixels:'+current.token_hash+':'+requestId)+'.bin';await env.MEDIA.put('ad-pixels/'+pixelsKey,pixels,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{pixel_version:'1'}});
+   const safe=await deps.scanCreative(env,body.business+'\n'+body.message+'\n'+body.phone,key),id=claimed.ad_id,guard="session_hash=? AND request_id=? AND lease_token=? AND state='pending'",values=[current.token_hash,requestId,lease];
+   await env.DB.batch([
    env.DB.prepare(`INSERT INTO local_ads(id,station_code,business,contact_email,message,artwork_key,created_at)
-    SELECT ?,?,?,?,?,?,? WHERE (SELECT count(*) FROM local_ads WHERE station_code=? AND status!='deleted')<20 AND (SELECT count(*) FROM local_ads WHERE status!='deleted')<200 AND EXISTS (SELECT 1 FROM stations WHERE code=? AND status='published')`)
-    .bind(id,code,body.business.trim(),body.email.trim().toLowerCase(),body.message.trim(),key,now,code,code),
-   env.DB.prepare('INSERT INTO ad_policy(ad_id,phone,scanner_passed,pixels_key,start_at,end_at,rights_version,rights_hash) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM local_ads WHERE id=?)').bind(id,body.phone.trim(),safe?1:0,pixelsKey,startAt,endAt,VERSION,await digest(RIGHTS),id)
-  ]);if(!await env.DB.prepare('SELECT 1 FROM local_ads WHERE id=?').bind(id).first())throw new HttpError(409,'Ad limit reached or station unavailable.');}
-  catch(error){await env.MEDIA.delete?.(['sanitized/'+key,'ad-pixels/'+pixelsKey]);throw error;}
-  return json({status:'ok',message:safe?'Advertisement submitted for station-owner approval.':'Advertisement submitted for administrator and station-owner review.'});
+    SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM ad_requests WHERE ${guard}) AND (SELECT count(*) FROM local_ads a LEFT JOIN ad_policy p ON p.ad_id=a.id WHERE a.station_code=? AND ${activeAds})<20 AND (SELECT count(*) FROM local_ads a LEFT JOIN ad_policy p ON p.ad_id=a.id WHERE ${activeAds})<200 AND EXISTS (SELECT 1 FROM stations WHERE code=? AND status='published')`)
+    .bind(id,code,body.business.trim(),body.email.trim().toLowerCase(),body.message.trim(),key,claimed.created_at,...values,code,now,now,code),
+   env.DB.prepare(`INSERT INTO ad_policy(ad_id,phone,scanner_passed,pixels_key,start_at,end_at,rights_version,rights_hash) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM local_ads WHERE id=?) AND EXISTS(SELECT 1 FROM ad_requests WHERE ${guard})`).bind(id,body.phone.trim(),safe?1:0,pixelsKey,startAt,endAt,VERSION,await digest(RIGHTS),id,...values),
+   env.DB.prepare(`UPDATE ad_requests SET state='complete',scanner_passed=?,lease_until=0 WHERE ${guard} AND EXISTS(SELECT 1 FROM ad_policy WHERE ad_id=ad_requests.ad_id)`).bind(safe?1:0,...values)
+   ]);
+   const completed=await env.DB.prepare("SELECT * FROM ad_requests WHERE session_hash=? AND request_id=? AND state='complete'").bind(current.token_hash,requestId).first();if(!completed)throw new HttpError(409,'Ad limit reached or station unavailable.');return adSubmissionResponse(completed);
+  }catch(error){try{await env.DB.prepare("UPDATE ad_requests SET lease_until=0 WHERE session_hash=? AND request_id=? AND lease_token=? AND state='pending'").bind(current.token_hash,requestId,lease).run();}catch{}throw error;}
  }
  const isAdmin=await admin(env,current,now);
  const art=path.match(/^\/api\/ad-artwork\/([a-f0-9]{32})$/);

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('./public/assets/my-radio.js',import.meta.url),'utf8');
 function fixture(){
- const ids=new Map(),windowEvents={},documentEvents={},observers=[],answers=[],calls=[],dialogs=[],dialogAnswers=[],reports=[],selections=[],statusEvents=[];let clock=Date.UTC(2026,10,7,12,30),selectedRadio='one';
+ const ids=new Map(),windowEvents={},documentEvents={},observers=[],answers=[],calls=[],dialogs=[],dialogAnswers=[],reports=[],selections=[],statusEvents=[],timers=new Map();let clock=Date.UTC(2026,10,7,12,30),selectedRadio='one',timerId=0;
  function node(tag='div'){
   return {tag,children:[],hidden:false,textContent:'',className:'',attributes:{},replacements:0,disabled:false,
    setAttribute(key,value){this.attributes[key]=value;},append(...children){this.children.push(...children);},replaceChildren(...children){this.replacements++;this.children=children;},before(other){this.beforeNode=other;},focus(){document.activeElement=this;},
@@ -17,10 +17,10 @@ function fixture(){
  const context={document,navigator,Date:FakeDate,URLSearchParams,location:{search:'',hash:'#radio'},history:{replaceState(){}},
   CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{openStationProblemReport:station=>reports.push(station),dispatchEvent(event){statusEvents.push(event);},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
   $:id=>ids.get(id),api:async path=>{calls.push(path);const next=answers.shift();if(next instanceof Error)throw next;if(typeof next==='function')return next();if(!next)throw Error('No fixture response');return next;},
-  reconcileSelectedRadio:radios=>selectedRadio=radios.length===1?radios[0].id:radios.some(r=>r.id===selectedRadio)?selectedRadio:'',loadRadioInventory(){},readRadioInventory:id=>context.radioInventories.get(id),readSelectedRadio(){return selectedRadio;},rememberSelectedRadio(id){selectedRadio=id;selections.push(id);},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(){return 1;},clearTimeout(){}};
+  reconcileSelectedRadio:radios=>selectedRadio=radios.length===1?radios[0].id:radios.some(r=>r.id===selectedRadio)?selectedRadio:'',loadRadioInventory(){},readRadioInventory:id=>context.radioInventories.get(id),readSelectedRadio(){return selectedRadio;},rememberSelectedRadio(id){selectedRadio=id;selections.push(id);},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);}};
  runInNewContext(source,context);
  const load=runInNewContext('loadMyRadios',context),freshness=ids.get('radioConnectStatus').beforeNode;
- return {ids,load,answers,calls,dialogs,dialogAnswers,reports,selections,statusEvents,inventories:context.radioInventories,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,
+ return {ids,load,answers,calls,dialogs,dialogAnswers,reports,selections,statusEvents,timers,inventories:context.radioInventories,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,schedule:runInNewContext('scheduleRadioRefresh',context),refreshDelay:runInNewContext('radioRefreshDelay',context),scheduled:()=>[...timers.values()].at(-1),async poll(){const [id,timer]=[...timers].at(-1)||[];assert.ok(timer,'Expected one scheduled status poll');timers.delete(id);await timer.fn();},
   advance(ms){clock+=ms;},visibility(){observers[0].fn();},async flush(){await new Promise(resolve=>setImmediate(resolve));}};
 }
 const radio={id:'one',device_code:'3961',online:true,current_station:'Community Radio'};
@@ -158,4 +158,37 @@ test('a confirmed empty online radio gets a useful next step while unknown, offl
 test('changing the selected radio and response order updates selection without rebuilding either card',async()=>{
  const f=fixture(),second={...radio,id:'two',device_code:'7777'};f.answers.push({radios:[radio,second]});await f.load();const [one,two]=f.views(),chooseTwo=two.children[2],replacements=f.ids.get('linkedRadios').replacements;chooseTwo.focus();f.answers.push({radios:[second,radio]});chooseTwo.onclick();await f.flush();
  assert.equal(f.views()[0],one);assert.equal(f.views()[1],two);assert.equal(one.children[2].attributes['aria-pressed'],'false');assert.equal(chooseTwo.attributes['aria-pressed'],'true');assert.equal(f.document.activeElement,chooseTwo);assert.equal(f.ids.get('linkedRadios').replacements,replacements);
+});
+
+test('failed automatic status checks back off to 20, 40, 80 and at most 120 seconds',async()=>{
+ const f=fixture();f.answers.push(response());await f.load();f.schedule();assert.equal(f.scheduled().delay,10000);
+ for(const delay of [20000,40000,80000,120000,120000]){f.answers.push(Error('Temporary status failure'));await f.poll();assert.equal(f.scheduled().delay,delay);assert.equal(f.timers.size,1,'Only one next poll may remain scheduled');}
+ assert.equal(f.calls.filter(path=>path==='/api/phone/radios').length,6);
+ f.answers.push(response());await f.poll();assert.equal(f.scheduled().delay,10000,'A successful response restores the regular interval');assert.equal(f.views()[0].children[0].textContent,'Online');
+});
+
+test('an explicit status retry resets the accumulated automatic backoff',async()=>{
+ const f=fixture();f.answers.push(response());await f.load();f.schedule();for(let n=0;n<4;n++){f.answers.push(Error('Temporary failure'));await f.poll();}assert.equal(f.scheduled().delay,120000);
+ const retry=deferred();f.answers.push(retry.promise);const request=f.ids.get('refreshRadios').onclick();assert.equal(f.refreshDelay(),10000,'The user-requested retry starts a fresh backoff cycle');retry.resolve(response());await request;assert.equal(f.scheduled().delay,10000);
+ f.answers.push(Error('Another failure'));await f.poll();assert.equal(f.scheduled().delay,20000,'A new failure begins at the first retry interval');
+});
+
+test('network recovery checks immediately and resets status polling after its successful response',async()=>{
+ const f=fixture();f.answers.push(response());await f.load();f.schedule();for(let n=0;n<3;n++){f.answers.push(Error('Temporary failure'));await f.poll();}assert.equal(f.scheduled().delay,80000);
+ f.navigator.onLine=false;f.windowEvents.offline();assert.equal(f.scheduled().delay,120000);const before=f.calls.length,recovered=deferred();f.answers.push(recovered.promise);f.navigator.onLine=true;f.windowEvents.online();
+ assert.equal(f.calls.length,before+1,'Recovery does not wait for the old timer');assert.equal(f.refreshDelay(),10000);recovered.resolve(response());await f.flush();assert.equal(f.scheduled().delay,10000);assert.equal(f.timers.size,1);
+});
+
+test('hidden pages cancel scheduled status checks and queued callbacks cannot poll in the background',async()=>{
+ for(const documentHidden of [true,false]){
+  const f=fixture();f.answers.push(response());await f.load();f.schedule();const queued=f.scheduled().fn,before=f.calls.length;
+  if(documentHidden){f.document.hidden=true;f.documentEvents.visibilitychange();}else{f.ids.get('myRadio').hidden=true;f.visibility();}
+  assert.equal(f.timers.size,0);await queued();assert.equal(f.calls.length,before);assert.equal(f.timers.size,0,'A hidden callback cannot reschedule polling');
+  f.answers.push(response());if(documentHidden){f.document.hidden=false;f.documentEvents.visibilitychange();}else{f.ids.get('myRadio').hidden=false;f.visibility();}await f.flush();assert.equal(f.calls.length,before+1);assert.equal(f.scheduled().delay,10000);
+ }
+});
+
+test('offline timer callbacks and manual refreshes do not issue network requests',async()=>{
+ const f=fixture();f.answers.push(response());await f.load();f.schedule();const before=f.calls.length;f.navigator.onLine=false;f.windowEvents.offline();assert.equal(f.scheduled().delay,120000);
+ await f.poll();await f.ids.get('refreshRadios').onclick();assert.equal(f.calls.length,before);assert.equal(f.scheduled().delay,120000);assert.equal(f.timers.size,1);assert.match(f.ids.get('radioConnectStatus').textContent,/No internet/);
 });

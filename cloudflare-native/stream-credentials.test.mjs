@@ -14,8 +14,8 @@ test('shared stream validation rejects private query credentials without disclos
 });
 
 test('owner stream edits cannot save private query credentials by bypassing the signup form',async()=>{
- const f=await operationsFixture();f.owner();
- await assert.rejects(authRoutes(f.request('/api/owner/station',{stream_url:'https://stream.example.com/live?token=do-not-publish',bio:'Updated station'}),f.env,f.now),error=>error.status===400&&!error.message.includes('do-not-publish'));
+ const f=await operationsFixture();f.owner();const revision=(await(await authRoutes(f.request('/api/owner/station'),f.env,f.now)).json()).station.revision;
+ await assert.rejects(authRoutes(f.request('/api/owner/station',{revision,stream_url:'https://stream.example.com/live?token=do-not-publish',bio:'Updated station'}),f.env,f.now),error=>error.status===400&&!error.message.includes('do-not-publish'));
  assert.equal(f.sqlite.prepare('SELECT stream_url FROM stations WHERE code=?').get(f.station).stream_url,'https://example.com/live');
 });
 

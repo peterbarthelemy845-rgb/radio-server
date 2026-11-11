@@ -6,6 +6,7 @@ export function sessionCleanupStatements(env,now){
  return [
   db.prepare('DELETE FROM registration_requests WHERE rowid IN (SELECT rowid FROM registration_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM support_ticket_grants WHERE rowid IN (SELECT rowid FROM support_ticket_grants WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
+  db.prepare('DELETE FROM ad_requests WHERE rowid IN (SELECT rowid FROM ad_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM support_ticket_requests WHERE rowid IN (SELECT rowid FROM support_ticket_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM phone_pair_requests WHERE rowid IN (SELECT rowid FROM phone_pair_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare(`DELETE FROM phone_pair_grant_sources WHERE rowid IN (SELECT s.rowid FROM phone_pair_grant_sources s WHERE s.expires<=?
@@ -34,6 +35,7 @@ export function sessionCleanupStatements(env,now){
    AND NOT EXISTS(SELECT 1 FROM admin_mfa_sessions a WHERE a.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM support_grants g WHERE g.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM support_ticket_grants g WHERE g.session_hash=s.token_hash)
+   AND NOT EXISTS(SELECT 1 FROM ad_requests r WHERE r.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM support_ticket_requests r WHERE r.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM support_status_verifications v WHERE v.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM pair_claims c WHERE c.session_hash=s.token_hash)

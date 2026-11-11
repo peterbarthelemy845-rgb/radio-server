@@ -38,5 +38,5 @@ test('page navigation closes recovery and ignores its stale error',async()=>{
 });
 test('Device Code entry suggests numeric keyboards without rejecting legacy letter codes',()=>{
  const html=readFileSync(new URL('./public/index.html',import.meta.url),'utf8');const fields=[...html.matchAll(/<input\b[^>]*name="device_code"[^>]*>/g)].map(match=>match[0]);assert.equal(fields.length,3);for(const field of fields){assert.match(field,/inputmode="numeric"/);assert.match(field,/autocapitalize="off"/);assert.doesNotMatch(field,/type="number"|pattern=/);}
- assert.match(html,/<button id="openStationCodeRecovery"[^>]*type="button"/);assert.match(html,/station-code-recovery\.js/);
+ assert.match(html,/<button id="openStationCodeRecovery"[^>]*type="button"/);assert.match(readFileSync(new URL('./public/assets/feature-loader.js',import.meta.url),'utf8'),/station-code-recovery\.js/);
 });

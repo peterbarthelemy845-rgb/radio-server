@@ -1,5 +1,5 @@
 'use strict';
-const CACHE='radio-locals-public-v1';
+const CACHE='radio-locals-public-v2';
 // Only this public offline page and its assets are stored. Radio/API/admin data,
 // sign-in forms and private artwork are never added to the service-worker cache.
 const PUBLIC_FILES=['/offline.html','/assets/offline.css','/assets/pwa-offline.js','/assets/radio-app-192.png'];

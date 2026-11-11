@@ -83,8 +83,16 @@ async function ensureOwnerSession(){if(!state?.csrf||!state?.agreement_version||
 async function registrationRequest(data,current=()=>true){const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');if(!current())return '';if(fingerprint!==registrationRequestFingerprint){registrationRequestFingerprint=fingerprint;registrationRequestId=crypto.randomUUID().replaceAll('-','');}return registrationRequestId;}
 function ownerAccessSuccess(result){$('stationSuccessTitle').textContent=result.registration_completed?(result.review_required?'Waiting for review':'Station added'):'Signed in';$('stationSuccessText').textContent=result.registration_completed?'Station code #'+result.station_code+'.':'You can edit your station.';if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='';if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=true;if(!$('stationSuccess').open)$('stationSuccess').showModal();}
 function ownerEditorUnavailable(result,error){ownerAccessSuccess(result);if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Your verification succeeded. Please try opening the editor again.';else message(error.message);if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=false;}
-async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;state.owner_station=result.station.code;page('editor');ownerEditFeedback('');$('ownerName').textContent=result.station.name;const form=$('editForm'),sameStation=form.dataset.stationCode===String(result.station.code),keepDraft=preserveDraft&&sameStation&&!!(form.dataset.dirty||form.elements.artwork.files[0]);if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(result.station.artwork_url);$('ownerStatus').textContent='Station code #'+result.station.code+' · '+result.station.status.replaceAll('_',' ');if(!keepDraft){form.elements.stream_url.value=result.station.stream_url;form.elements.bio.value=result.station.bio;form.elements.artwork.value='';delete form.dataset.dirty;}form.dataset.stationCode=String(result.station.code);return true;}
-$('openLogin').onclick=()=>{page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await loadOwnerSession();if(generation!==sitePageGeneration)return;if(state?.owner_station)await editor(true,generation);else page('login');}catch(e){if(generation===sitePageGeneration)message(e.message);}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
+function applyOwnerStation(station,preserveDraft=false){
+ state.owner_station=station.code;page('editor');const form=$('editForm'),sameStation=form.dataset.stationCode===String(station.code),keepDraft=preserveDraft&&sameStation&&!!(form.dataset.dirty||form.elements.artwork.files[0]),stale=keepDraft&&station.revision&&form.dataset.revision&&station.revision!==form.dataset.revision;
+ ownerEditFeedback(stale?ownerText('owner.conflict','This station changed elsewhere. Your edits are kept. Review the latest saved version before saving again.'):'',false,stale);
+ $('ownerName').textContent=station.name;if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(station.artwork_url);
+ $('ownerStatus').textContent='Station code #'+station.code+' · '+station.status.replaceAll('_',' ')+(station.review_pending?' · '+(station.status==='published'?ownerText('owner.pendingEdit','Changes waiting for review. Your last approved station stays live.'):ownerText('owner.pendingEditPrivate','Changes waiting for review. Your station is not published yet.')):'');
+ if(!keepDraft){form.elements.stream_url.value=station.stream_url;form.elements.bio.value=station.bio;form.elements.artwork.value='';delete form.dataset.dirty;form.dataset.revision=station.revision||'';}
+ form.dataset.stationCode=String(station.code);
+}
+async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;applyOwnerStation(result.station,preserveDraft);return true;}
+$('openLogin').onclick=()=>{page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await window.loadAppFeature?.('owner');if(generation!==sitePageGeneration)return;await loadOwnerSession();if(generation!==sitePageGeneration)return;if(state?.owner_station)await editor(true,generation);else page('login');}catch(e){if(generation===sitePageGeneration)message(e.message);}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
 $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.preventDefault();});
 $('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
 $('registerForm').addEventListener('reset',()=>{registrationRequestFingerprint='';registrationRequestId='';registrationMessage('');});
@@ -103,14 +111,23 @@ $('resend').onclick=async()=>{if(verificationBusy||!verificationId||!$('verifica
 if($('retryOwnerEditor'))$('retryOwnerEditor').onclick=async()=>{const button=$('retryOwnerEditor');if(button.disabled)return;button.disabled=true;try{await editor(true);$('stationSuccess').close();}catch(e){if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Check your connection and try again.';else message(e.message);}finally{button.disabled=false;}};
 function ownerText(key,fallback){const text=window.appI18n?.t(key);return typeof text==='string'&&text!==key?text:fallback;}
 let ownerLogoutBusy=false;
-function ownerEditFeedback(text='',reauth=false){
- const notice=$('ownerEditMessage'),action=$('ownerSignInAgain');if(action)action.hidden=!reauth;
+function ownerEditFeedback(text='',reauth=false,conflict=false){
+ const notice=$('ownerEditMessage'),action=$('ownerSignInAgain'),review=$('ownerReviewLatest');if(action)action.hidden=!reauth;if(review)review.hidden=!conflict;
  if(!notice){if(text)message(text);return;}notice.textContent=text;notice.hidden=!text;if(text)notice.focus();
 }
 if($('ownerSignInAgain'))$('ownerSignInAgain').onclick=()=>{
  const form=$('editForm');if(ownerLogoutBusy||formIsBusy(form)||$('editor').hidden)return;
  const code=String(form.dataset.stationCode||'');page('login');if(/^[0-9]{2,6}$/.test(code))$('loginForm').elements.code.value=code;
  loginMessage(ownerText('owner.signInContinue','Sign in again to keep editing. Your unsaved changes are kept in this tab.'));
+};
+if($('ownerReviewLatest'))$('ownerReviewLatest').onclick=async()=>{
+ const form=$('editForm'),button=$('ownerReviewLatest');if(formIsBusy(form)||ownerLogoutBusy||button.disabled||$('editor').hidden)return;const generation=sitePageGeneration;button.disabled=true;busy(form,true,true);
+ try{
+  const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return;
+  const station=result.station,summary=ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
+  if(await listenerActionDialog(ownerText('owner.reviewLatest','Review latest version'),summary,ownerText('owner.useLatest','Use latest version'),true)&&generation===sitePageGeneration)applyOwnerStation(station,false);
+ }catch(error){if(generation===sitePageGeneration)ownerEditFeedback(error.message,false,true);}
+ finally{button.disabled=false;busy(form,false);}
 };
 function ownerRefreshFeedback(failed,text=''){
  const notice=$('ownerSaveRefreshStatus'),retry=$('ownerSaveRefreshRetry');
@@ -120,6 +137,7 @@ function ownerRefreshFeedback(failed,text=''){
 function ownerChangesSaved(text,refreshFailed=false){
  const saved=text==='Changes saved for safety review.'?ownerText('owner.review',text):text==='Changes saved successfully.'?ownerText('owner.saved',text):text||ownerText('owner.saved','Changes saved successfully.'),feedback=refreshFailed?ownerText('owner.savedRefreshFailed','Your changes were saved. The editor could not refresh. Try Refresh editor.'):'',dialog=$('ownerSaveSuccess');
  if(!dialog||document.hidden||$('editor').hidden||document.querySelector?.('dialog[open]')){message(saved+(feedback?' '+feedback:''));return;}
+ if($('ownerSaveSuccessTitle')){$('ownerSaveSuccessTitle').dataset.i18n=text==='No changes to save.'?'owner.unchanged':'owner.savedTitle';$('ownerSaveSuccessTitle').textContent=text==='No changes to save.'?ownerText('owner.unchanged',text):ownerText('owner.savedTitle','Changes saved');}
  $('ownerSaveSuccessText').textContent=saved+(feedback?' '+feedback:'');message('');dialog.showModal();$('ownerSaveSuccessDone').focus({preventScroll:true});
 }
 if($('ownerSaveSuccessDone'))$('ownerSaveSuccessDone').onclick=()=>$('ownerSaveSuccess').close();
@@ -154,7 +172,7 @@ $('editForm').elements.artwork.onchange=async event=>{ownerCoverGeneration++;cle
 window.addEventListener?.('pagehide',()=>{ownerCoverGeneration++;clearOwnerCoverUrl();});
 $('editForm').onsubmit=async event=>{
  event.preventDefault();const form=event.target;if(formIsBusy(form)||ownerLogoutBusy)return;
- const generation=sitePageGeneration,data={stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
+ const generation=sitePageGeneration,data={revision:form.dataset.revision,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
  try{
   if(artwork&&!await validateOwnerArtwork(artwork,{focus:true}))return;
   if(generation!==sitePageGeneration)return;
@@ -164,7 +182,7 @@ $('editForm').onsubmit=async event=>{
   // failed save or make the owner repeat a committed update.
   try{if(await editor(false,generation)!==false)ownerChangesSaved(result.message);}
   catch{if(generation===sitePageGeneration){ownerRefreshFeedback(true);ownerChangesSaved(result.message,true);}}
- }catch(e){if(generation===sitePageGeneration)ownerEditFeedback(e.status===401?ownerText('owner.signInExpired','Your sign-in expired. Sign in again to save your changes. Your edits are kept in this tab.'):e.message,e.status===401);}
+ }catch(e){if(generation===sitePageGeneration)ownerEditFeedback(e.status===401?ownerText('owner.signInExpired','Your sign-in expired. Sign in again to save your changes. Your edits are kept in this tab.'):e.status===409?ownerText('owner.conflict','This station changed elsewhere. Your edits are kept. Review the latest saved version before saving again.'):e.message,e.status===401,e.status===409);}
  finally{if(retry)retry.disabled=false;busy(form,false);}
 };
 $('logout').onclick=async()=>{
@@ -172,32 +190,82 @@ $('logout').onclick=async()=>{
  const view=sitePageGeneration,current=()=>view===sitePageGeneration;
  try{
   if(form.dataset.dirty||form.elements.artwork.files[0]){if(!await listenerActionDialog(ownerText('owner.discardTitle','Discard unsaved changes?'),ownerText('owner.discardText','Your unsaved station changes will be lost.'),ownerText('owner.discardLogout','Discard and log out'),true)||!current())return;}
-  busy(form,true,true);await api('/api/owner/logout',{});ownerSessionGeneration++;if(state)state.owner_station=null;form.reset();delete form.dataset.dirty;delete form.dataset.stationCode;showOwnerCover('');ownerEditFeedback('');ownerRefreshFeedback(false);if(current())page('login');
+  busy(form,true,true);await api('/api/owner/logout',{});ownerSessionGeneration++;if(state)state.owner_station=null;form.reset();delete form.dataset.dirty;delete form.dataset.stationCode;delete form.dataset.revision;showOwnerCover('');ownerEditFeedback('');ownerRefreshFeedback(false);if(current())page('login');
  }catch(e){if(current())ownerEditFeedback(e.message);}
  finally{ownerLogoutBusy=false;button.disabled=false;busy(form,false);}
 };
 function list(){}
 
 // Refresh the public directory without discarding usable cards during a failed request.
-let stationDirectoryRequest=null,stationDirectoryGeneration=0,stationDirectoryLastAttempt=0,stationDirectoryStarted=false;
+let stationDirectoryRequest=null,stationDirectoryGeneration=0,stationDirectoryLastAttempt=0,stationDirectoryStarted=false,stationDirectoryTimer=null;
+const stationDirectoryMetadata=new Map(),stationDirectoryState={query:'',loadedQuery:'',loading:false,hasMore:false,cursor:null,expanded:false,failed:false};
+function normalizeStationDirectoryQuery(value){return String(value||'').slice(0,96).trim().replace(/^#\s*(?=\d)/,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+function readStationDirectoryState(){return {...stationDirectoryState};}
+function getStationDirectoryStation(code){return stationDirectoryMetadata.get(String(code));}
+function stationDirectoryControls(){
+ const button=$('loadMoreStations');if(!button)return;
+ button.hidden=!stationDirectoryState.hasMore;button.disabled=stationDirectoryState.loading;
+ const key=stationDirectoryState.loading?'directory.loading':'directory.more',fallback=stationDirectoryState.loading?'Loading stations…':'More stations',translated=window.appI18n?.t(key);
+ button.textContent=translated&&translated!==key?translated:fallback;button.setAttribute?.('data-i18n',key);
+}
 function stationDirectoryNotice(text){const host=$('stationDirectoryStatus'),notice=$('stationDirectoryMessage');if(host&&notice){host.hidden=!text;notice.textContent=text;}else if(text)message(text);}
-function refreshStationDirectory(force=false){
- const now=Date.now();
- if(!force&&stationDirectoryRequest)return stationDirectoryRequest.promise;
- if(!force&&stationDirectoryStarted&&now-stationDirectoryLastAttempt<30000)return Promise.resolve(stations);
- const generation=++stationDirectoryGeneration;stationDirectoryStarted=true;stationDirectoryLastAttempt=now;
+function requestStationDirectory(append=false){
+ if(stationDirectoryTimer!==null){clearTimeout(stationDirectoryTimer);stationDirectoryTimer=null;}
+ stationDirectoryRequest?.controller.abort();
+ const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,controller=new AbortController(),previous=stations;
+ stationDirectoryStarted=true;stationDirectoryLastAttempt=Date.now();stationDirectoryState.loading=true;stationDirectoryState.failed=false;stationDirectoryControls();
+ if(append||stationDirectoryState.loadedQuery!==query)list();
  const promise=(async()=>{
-  try{const result=await api('/api/stations',undefined,{cache:'no-store'});if(generation!==stationDirectoryGeneration)return stations;if(!Array.isArray(result.stations))throw new Error('Station list unavailable.');stations=result.stations;list();stationDirectoryNotice('');return stations;}
-  catch(e){if(generation===stationDirectoryGeneration)stationDirectoryNotice(stations.length?'Could not update stations. Showing the last loaded list. Check your connection and try again.':'Stations could not load. Check your connection and try again.');return stations;}
-  finally{if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
+  try{
+   const collected=[],seenCursors=new Set();let cursor=append?stationDirectoryState.cursor:null,hasMore=false;
+   // Sparse searches can scan several bounded server pages without asking the
+   // visitor to repeatedly press More. Never scan an unbounded directory.
+   for(let page=0;page<5;page++){
+    if(cursor)seenCursors.add(cursor);
+    const path='/api/stations?limit=50&q='+encodeURIComponent(query)+(cursor?'&cursor='+encodeURIComponent(cursor):''),result=await api(path,undefined,{cache:'no-store',signal:controller.signal});
+    if(generation!==stationDirectoryGeneration||controller.signal.aborted)return stations;
+    if(!Array.isArray(result.stations)||result.stations.length>50)throw new Error('Station list unavailable.');
+    collected.push(...result.stations);hasMore=result.has_more===true;
+    const next=hasMore?result.next_cursor:null;
+    if(hasMore&&(typeof next!=='string'||!next||next.length>4096||seenCursors.has(next)))throw new Error('Station list unavailable.');
+    cursor=next;if(result.stations.length||!hasMore)break;
+   }
+   const unique=new Map();for(const station of [...(append?previous:[]),...collected]){const code=String(station.listener_code??station.code??'');if(!code)continue;unique.set(code,station);stationDirectoryMetadata.set(code,station);}
+   stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append;
+   stationDirectoryNotice('');return stations;
+  }
+  catch(e){if(generation===stationDirectoryGeneration&&!controller.signal.aborted){stationDirectoryState.failed=true;stationDirectoryNotice(previous.length&&stationDirectoryState.loadedQuery===query?'Could not update stations. Showing the last loaded list. Check your connection and try again.':'Stations could not load. Check your connection and try again.');}return stations;}
+  finally{if(generation===stationDirectoryGeneration){stationDirectoryState.loading=false;stationDirectoryControls();list();}if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
  })();
- stationDirectoryRequest={generation,promise};return promise;
+ stationDirectoryRequest={generation,promise,controller};return promise;
+}
+function refreshStationDirectory(force=false){
+ if(!force&&stationDirectoryRequest)return stationDirectoryRequest.promise;
+ if(!force&&stationDirectoryTimer!==null)return Promise.resolve(stations);
+ if(!force&&stationDirectoryStarted&&(Date.now()-stationDirectoryLastAttempt<30000||stationDirectoryState.expanded||stationDirectoryState.query))return Promise.resolve(stations);
+ return requestStationDirectory();
+}
+function searchStationDirectory(value){
+ const query=normalizeStationDirectoryQuery(value);if(query===stationDirectoryState.query){list();return;}
+ if(stationDirectoryTimer!==null)clearTimeout(stationDirectoryTimer);
+ stationDirectoryGeneration++;stationDirectoryRequest?.controller.abort();stationDirectoryRequest=null;
+ stationDirectoryState.query=query;stationDirectoryState.loading=true;stationDirectoryState.hasMore=false;stationDirectoryState.cursor=null;stationDirectoryState.expanded=false;stationDirectoryState.failed=false;
+ stationDirectoryNotice('');stationDirectoryControls();list();
+ stationDirectoryTimer=setTimeout(()=>{stationDirectoryTimer=null;void requestStationDirectory();},250);
+}
+function loadMoreStationDirectory(){
+ if(stationDirectoryRequest)return stationDirectoryRequest.promise;
+ if(!stationDirectoryState.hasMore||!stationDirectoryState.cursor)return Promise.resolve(stations);
+ return requestStationDirectory(true);
 }
 if($('retryStationDirectory'))$('retryStationDirectory').onclick=()=>refreshStationDirectory(true);
+if($('loadMoreStations'))$('loadMoreStations').onclick=loadMoreStationDirectory;
+window.addEventListener('app-language-changed',stationDirectoryControls);
 window.addEventListener('radio-status-updated',()=>{if($('myRadio')&&!$('myRadio').hidden)void refreshStationDirectory();});
 window.addEventListener('online',()=>{if($('myRadio')&&!$('myRadio').hidden)void refreshStationDirectory(true);});
 
 async function loadSupport(){
+ await window.loadAppFeature?.('support');
  const [remote,guides]=await Promise.allSettled([api('/api/support'),fetch('/assets/help-guides.json').then(r=>{if(!r.ok)throw new Error('Guides unavailable');return r.json();})]);
  const track=$('supportVideos');track.replaceChildren();track.className='support-slider';track.setAttribute('aria-label','How-to videos');
  const originals=guides.status==='fulfilled'&&Array.isArray(guides.value)?guides.value:[];
@@ -210,7 +278,7 @@ async function loadSupport(){
  }
  const videos=remote.status==='fulfilled'&&Array.isArray(remote.value.videos)?remote.value.videos:[];
  for(const video of videos){if(!/^[A-Za-z0-9_-]{11}$/.test(video.video_id||''))continue;const card=document.createElement('article');card.className='support-slide';const heading=document.createElement('h3');heading.textContent=video.title;const frame=document.createElement('iframe');frame.src='https://www.youtube-nocookie.com/embed/'+video.video_id;frame.title=video.title;frame.loading='lazy';frame.referrerPolicy='no-referrer';frame.allow='encrypted-media; picture-in-picture; fullscreen';frame.className='tutorial-video';card.append(heading,frame);if(video.description){const description=document.createElement('p');description.textContent=video.description;card.append(description);}track.append(card);}
- track.hidden=!track.children.length;
+ track.hidden=!track.children.length;window.dispatchEvent(new Event('support-guides-ready'));
 }
 
 async function showLegal(kind){
@@ -227,7 +295,30 @@ $('legalForm').onsubmit=async event=>{
 async function initCommunity(){const path=location.pathname;if(path==='/'&&!location.hash){page('library');}if(['/device','/support'].includes(path)){page('support');await loadSupport();}if(['/terms','/privacy','/copyright','/counter-notice'].includes(path))await showLegal(path.slice(1));}
 let sharedCode,shareRunning=false;
 let adminVerification,adminMfaId;
-async function adminList(){const result=await api('/api/admin/stations');$('adminLogin').hidden=true;$('adminVerify').hidden=true;$('adminStations').hidden=false;$('adminLogout').hidden=false;$('adminStations').replaceChildren();for(const station of result.stations){const card=document.createElement('article');card.style.borderTop='1px solid #bbc';card.style.padding='12px 0';const title=document.createElement('h2');title.textContent=station.name+' · #'+station.code;card.append(title);const details=document.createElement('p');details.textContent=station.status.replaceAll('_',' ')+' · '+station.contact_email;card.append(details);const bio=document.createElement('p');bio.textContent=station.bio;card.append(bio);const stream=document.createElement('p');stream.textContent=station.stream_url;stream.style.overflowWrap='anywhere';card.append(stream);if(station.artwork_key){const image=document.createElement('img');image.src='/api/admin/artwork/'+station.artwork_key;image.alt='Station cover art';image.width=120;image.height=120;image.style.objectFit='contain';card.append(image);}for(const action of ['approve','reject','delete']){if(action==='approve'&&(station.status!=='pending_review'||!station.email_verified_at))continue;const button=document.createElement('button');button.textContent={approve:'Approve',reject:'Suspend',delete:'Delete'}[action];button.style.margin='6px';button.onclick=async()=>{let reason='';if(action==='reject'||action==='delete'){const entered=prompt('Short reason for the owner (no links or private information):','');if(entered===null)return;reason=entered.trim();if(action==='reject'&&!reason){$('adminMessage').textContent='Enter a short reason before suspending a station.';return;}}if(!confirm(button.textContent+' '+station.name+'?'))return;button.disabled=true;try{const changed=await api('/api/admin/station',{code:station.code,revision:station.revision,action,reason});void refreshStationDirectory(true);await adminList();$('adminMessage').textContent=changed.notification_queued?'Station updated. Owner notification queued.':'Station updated.';window.dispatchEvent(new Event('admin-data-changed'));}catch(e){$('adminMessage').textContent=e.message;button.disabled=false;}};card.append(button);}$('adminStations').append(card);}if(!result.stations.length)$('adminStations').textContent='No stations yet.';}
+async function adminList(){
+ const result=await api('/api/admin/stations');$('adminLogin').hidden=true;$('adminVerify').hidden=true;$('adminStations').hidden=false;$('adminLogout').hidden=false;$('adminStations').replaceChildren();
+ for(const station of result.stations){
+  const card=document.createElement('article');card.style.borderTop='1px solid #bbc';card.style.padding='12px 0';const title=document.createElement('h2');title.textContent=station.name+' · #'+station.code;card.append(title);
+  const details=document.createElement('p');details.textContent=station.status.replaceAll('_',' ')+' · '+station.contact_email;card.append(details);
+  function content(value,label){const heading=document.createElement('h3');heading.textContent=label;const bio=document.createElement('p');bio.textContent=value.bio;const stream=document.createElement('p');stream.textContent=value.stream_url;stream.style.overflowWrap='anywhere';card.append(heading,bio,stream);if(value.artwork_key){const image=document.createElement('img');image.src='/api/admin/artwork/'+value.artwork_key;image.alt=label+' cover art';image.width=120;image.height=120;image.style.objectFit='contain';card.append(image);}}
+  content(station,station.status==='published'?'Currently published':'Current station');if(station.pending_edit)content(station.pending_edit,'Proposed changes — awaiting review');
+  for(const action of ['approve','reject_edit','reject','delete']){
+   if(action==='approve'&&(!station.email_verified_at||station.status==='suspended'||(!station.pending_edit&&station.status!=='pending_review')))continue;if(action==='reject_edit'&&!station.pending_edit)continue;
+   const button=document.createElement('button');button.textContent={approve:station.pending_edit?'Approve changes':'Approve',reject_edit:'Reject changes',reject:'Suspend station',delete:'Delete station'}[action];button.style.margin='6px';
+   button.onclick=async()=>{
+    if(button.disabled)return;const view=sitePageGeneration;button.disabled=true;let reason='';
+    try{
+     if(['reject_edit','reject','delete'].includes(action)){const entered=await appPrompt(button.textContent+' '+station.name,'Short reason for the owner (no links or private information):',{required:action!=='delete',maxLength:300,confirmText:button.textContent,danger:action!=='reject_edit'});if(entered===null)return;reason=entered.trim();if(action!=='delete'&&!reason){$('adminMessage').textContent='Enter a short reason for the owner.';return;}}
+     else if(!await appConfirm(button.textContent+' '+station.name,station.pending_edit?'Publish these reviewed changes?':'Publish this reviewed station?',{confirmText:button.textContent}))return;
+     if(view!==sitePageGeneration||$('admin').hidden)return;
+     const changed=await api('/api/admin/station',{code:station.code,revision:station.revision,action,reason});void refreshStationDirectory(true);if(view!==sitePageGeneration||$('admin').hidden)return;await adminList();$('adminMessage').textContent=changed.notification_queued?'Station updated. Owner notification queued.':'Station updated.';window.dispatchEvent(new Event('admin-data-changed'));
+    }catch(e){if(view===sitePageGeneration&&!$('admin').hidden)$('adminMessage').textContent=e.message;}finally{button.disabled=false;}
+   };card.append(button);
+  }
+  $('adminStations').append(card);
+ }
+ if(!result.stations.length)$('adminStations').textContent='No stations yet.';
+}
 $('adminLogin').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{const turnstile_token=await human(form,'admin-login');const result=await api('/api/admin/login',{email:form.elements.email.value,turnstile_token});adminVerification=result.verification_id;$('adminMessage').textContent=result.message;form.hidden=true;$('adminVerify').hidden=false;}catch(e){$('adminMessage').textContent=e.message;}finally{busy(form,false);}};
 $('adminVerify').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{const result=await api('/api/admin/verify',{verification_id:adminVerification,code:form.elements.code.value});adminMfaId=result.mfa_id;form.reset();form.hidden=true;$('adminMfa').hidden=false;$('adminMfa').elements.authenticator_code.focus();$('adminMessage').textContent='Email verified. Enter your authenticator code.';}catch(e){$('adminMessage').textContent=e.message;}finally{busy(form,false);}};
 $('adminMfa').onsubmit=async event=>{event.preventDefault();const form=event.target;busy(form,true);try{await api('/api/admin/mfa',{mfa_id:adminMfaId,authenticator_code:form.elements.authenticator_code.value});$('adminMessage').textContent='';form.reset();form.hidden=true;await adminList();}catch(e){$('adminMessage').textContent=e.message;}finally{busy(form,false);}};
@@ -385,7 +476,7 @@ async function submitSharedStation(form){
 $('shareForm').onsubmit=event=>{event.preventDefault();return submitSharedStation(event.target);};
 async function initializeSite(){
  const initialShared=location.pathname.match(/^\/station\/([0-9]{2,6})$/);
- page(initialShared?'shared':location.pathname==='/wifi-setup'?'wifiSetup':location.hash==='#radio'?'myRadio':['/support','/device'].includes(location.pathname)?'support':location.pathname==='/add-station'||location.hash==='#add-station'?'login':location.pathname==='/admin'?'admin':location.pathname==='/station-edit'?'login':'library');
+ page(initialShared?'shared':location.pathname==='/create-station'?'register':location.pathname==='/wifi-setup'?'wifiSetup':location.hash==='#radio'?'myRadio':['/support','/device'].includes(location.pathname)?'support':location.pathname==='/add-station'||location.hash==='#add-station'?'login':location.pathname==='/admin'?'admin':location.pathname==='/station-edit'?'login':'library');
  if(initialShared){$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';setSharedStatus('');}
   // The public catalogue owns its loading/error state. A slow catalogue must
   // not delay connecting a radio or opening another page's help form.
@@ -396,6 +487,7 @@ async function initializeSite(){
  // Bootstrap requests and the correct loading page are already in progress.
  await siteOrderedScriptsReady;
  try{
+  const route=location.pathname,feature=route==='/admin'?'admin':/^\/advertise\//.test(route)?'advertise':['/add-station','/create-station','/station-edit'].includes(route)||location.hash==='#add-station'?'owner':null;if(feature)await window.loadAppFeature?.(feature);
   const shared=location.pathname.match(/^\/station\/([0-9]{2,6})$/);if(shared)await openShared(shared[1]);
   if(initial[0].status==='fulfilled'){
    if(location.pathname==='/station-edit'&&!state.owner_station)page('login');

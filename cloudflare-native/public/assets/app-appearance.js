@@ -20,3 +20,15 @@ window.addEventListener('resize',measureAppViewport);
 document.addEventListener('focusin',measureAppViewport);
 document.addEventListener('focusout',()=>requestAnimationFrame(measureAppViewport));
 measureAppViewport();
+
+// The same controls stay with the visible card on owner and help screens.
+// Move their existing nodes so language preferences and event handlers remain
+// single-owned, including when a form is busy or has unsaved edits.
+const appDisplayTools=document.querySelector?.('.app-header-tools'),appToolsHome=appDisplayTools?.parentElement;
+function placeAppDisplayTools(){
+ if(!appDisplayTools)return;
+ const panel=['login','register','editor','advertise','adReview','reports','backups','admin','legal'].map(id=>$(id)).find(node=>node&&!node.hidden);
+ const target=panel||appToolsHome;if(appDisplayTools.parentElement!==target){if(panel)target.prepend(appDisplayTools);else target.append(appDisplayTools);}
+ document.body.classList.toggle('app-owner-page',!!panel);
+}
+if(appDisplayTools){new MutationObserver(placeAppDisplayTools).observe(document.querySelector('main'),{subtree:true,attributes:true,attributeFilter:['hidden']});window.addEventListener('radio-locals-ready',placeAppDisplayTools);placeAppDisplayTools();}

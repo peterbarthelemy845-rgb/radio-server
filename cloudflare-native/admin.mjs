@@ -1,6 +1,7 @@
 import {json,session,browserWrite,readJson,limit,human,otp,mac,randomHex,encrypt,decrypt,digest,HttpError} from './security.mjs';
 import {matchTotp} from './totp.mjs';
 import {decisionReason,ownerNotification,commitOwnerNotification} from './notifications.mjs';
+import {stationState,stationStateGuard,publishStationEdit,stationColumns} from './station-edits.mjs';
 async function revision(env,row){return mac(env,'station-review:'+JSON.stringify(row));}
 export async function adminRoutes(request,env,now,deps={human}){
  const path=new URL(request.url).pathname;if(!path.startsWith('/api/admin/'))return null;
@@ -86,14 +87,15 @@ export async function adminRoutes(request,env,now,deps={human}){
  }
  const art=path.match(/^\/api\/admin\/artwork\/([a-f0-9]{64}\.png)$/);
  if(art&&request.method==='GET'){
-  const station=await env.DB.prepare("SELECT 1 FROM stations WHERE artwork_key=? AND status!='deleted'").bind(art[1]).first();
+  const station=await env.DB.prepare("SELECT 1 FROM stations s WHERE s.status!='deleted' AND (s.artwork_key=? OR EXISTS(SELECT 1 FROM station_edits e WHERE e.station_code=s.code AND e.artwork_key=?))").bind(art[1],art[1]).first();
   const object=station&&env.MEDIA?await env.MEDIA.get('sanitized/'+art[1]):null;
   if(!object||object.customMetadata?.sanitizer_version!=='1')throw new HttpError(404,'Artwork not found.');
   return new Response(object.body,{headers:{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}});
  }
  if(path==='/api/admin/stations'&&request.method==='GET'){
-  const rows=await env.DB.prepare("SELECT code,name,bio,stream_url,contact_email,artwork_key,status,email_verified_at,updated_at FROM stations WHERE status!='deleted' ORDER BY code LIMIT 1000").all();
-  return json({stations:await Promise.all(rows.results.map(async row=>({...row,revision:await revision(env,row)})))});
+  const rows=await env.DB.prepare('SELECT '+stationColumns+" FROM stations WHERE status!='deleted' ORDER BY code LIMIT 1000").all();
+  const edits=(await env.DB.prepare('SELECT station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at FROM station_edits').all()).results,byCode=new Map(edits.map(edit=>[edit.station_code,edit]));
+  return json({stations:await Promise.all(rows.results.map(async row=>{const reviewed={...row,pending_edit:byCode.get(row.code)||null};return {...reviewed,revision:await revision(env,reviewed)};}))});
  }
  if(path==='/api/admin/logout'&&request.method==='POST'){
   await env.DB.batch([
@@ -105,21 +107,24 @@ export async function adminRoutes(request,env,now,deps={human}){
  }
  if(path==='/api/admin/station'&&request.method==='POST'){
   await limit(env.DB,'admin-actions',current.token_hash,60,900,now);const body=await readJson(request);
-  if(!['approve','reject','delete'].includes(body.action))throw new HttpError(400,'Choose an action.');
-  const row=await env.DB.prepare('SELECT code,name,bio,stream_url,contact_email,artwork_key,status,email_verified_at,updated_at FROM stations WHERE code=?').bind(Number(body.code)).first();
+  if(!['approve','reject_edit','reject','delete'].includes(body.action))throw new HttpError(400,'Choose an action.');
+  const {station:row,pending}=await stationState(env,Number(body.code));
   if(!row||row.status==='deleted')throw new HttpError(404,'Station not found.');
-  if(body.revision!==await revision(env,row))throw new HttpError(409,'Station changed. Refresh and review it again.');
-  if(body.action==='approve'&&(!row.email_verified_at||row.status!=='pending_review'))throw new HttpError(400,'Only email-verified stations awaiting review can be approved.');
+  const reviewed={...row,pending_edit:pending};if(body.revision!==await revision(env,reviewed))throw new HttpError(409,'Station changed. Refresh and review it again.');
+  if(body.action==='approve'&&(!row.email_verified_at||row.status==='suspended'||(!pending&&row.status!=='pending_review')))throw new HttpError(400,'Only email-verified stations awaiting review can be approved.');
+  if(body.action==='approve'&&pending&&pending.base_updated_at!==row.updated_at)throw new HttpError(409,'Station changed. Refresh and review it again.');
+  if(body.action==='reject_edit'&&!pending)throw new HttpError(400,'There are no proposed changes to reject.');
   const status={approve:'published',reject:'suspended',delete:'deleted'}[body.action];
   const reason=decisionReason(body.reason,body.action==='reject'?'Contact Radio Locals Support to discuss the station details and artwork.':'');
-  if(row.status===status)return json({status:'ok',notification_queued:false});
-  const notice=row.email_verified_at?await ownerNotification(env,{kind:{approve:'station-approved',reject:'station-needs-changes',delete:'station-removed'}[body.action],stationCode:row.code,recipient:row.contact_email,event:await revision(env,row),reason}):null;
+  if(row.status===status&&!pending)return json({status:'ok',notification_queued:false});
+  const notice=row.email_verified_at?await ownerNotification(env,{kind:{approve:'station-approved',reject_edit:'station-edit-rejected',reject:'station-needs-changes',delete:'station-removed'}[body.action],stationCode:row.code,recipient:row.contact_email,event:await revision(env,reviewed),reason}):null;
   // Compare every reviewed field in SQL too: edits arriving after the revision
   // check must not be published without having been reviewed.
-  const changed=await commitOwnerNotification(env,now,env.DB.prepare(`UPDATE stations SET status=?,updated_at=? WHERE code=? AND name=? AND bio=? AND stream_url=? AND contact_email=? AND artwork_key IS ? AND status=? AND email_verified_at IS ? AND updated_at=?`)
-   .bind(status,Math.max(now,row.updated_at+1),row.code,row.name,row.bio,row.stream_url,row.contact_email,row.artwork_key,row.status,row.email_verified_at,row.updated_at),notice,[
+  const guard=stationStateGuard(row,pending),mutation=body.action==='reject_edit'?env.DB.prepare(`UPDATE stations SET updated_at=? WHERE code=? AND ${guard.sql}`).bind(Math.max(now,row.updated_at+1),row.code,...guard.values):body.action==='approve'&&pending?publishStationEdit(env,row,pending,now):env.DB.prepare(`UPDATE stations SET status=?,updated_at=? WHERE code=? AND ${guard.sql}`).bind(status,Math.max(now,row.updated_at+1),row.code,...guard.values);
+  const changed=await commitOwnerNotification(env,now,mutation,notice,[
    {sql:'INSERT INTO admin_audit(id,actor_hash,station_code,action,created_at) SELECT ?,?,?,?,? WHERE OWNER_NOTIFICATION_APPLIED',values:[randomHex(16),current.token_hash,row.code,body.action,now]},
-   {sql:"UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered') AND ?!='published' AND OWNER_NOTIFICATION_APPLIED",values:[row.code,status]}
+   {sql:"UPDATE radio_commands SET state='failed' WHERE station_code=? AND state IN ('pending','delivered') AND ? IN ('suspended','deleted') AND OWNER_NOTIFICATION_APPLIED",values:[row.code,status||row.status]},
+   ...(['approve','reject_edit'].includes(body.action)&&pending?[{sql:'DELETE FROM station_edits WHERE station_code=? AND revision=? AND OWNER_NOTIFICATION_APPLIED',values:[row.code,pending.revision]}]:[])
   ]);
   if(!changed)throw new HttpError(409,'Station changed. Refresh and review it again.');
   return json({status:'ok',notification_queued:Boolean(notice?.queued)});

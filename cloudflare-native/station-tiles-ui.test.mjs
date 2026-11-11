@@ -11,6 +11,13 @@ test('failed station images fall back once without making broken-image retry loo
  image.onerror?.();assert.equal(image.src,'/assets/logo-placeholder.svg');assert.equal(image.onerror,null);image.onerror?.();assert.deepEqual(image.srcWrites,['/artwork/missing.png','/assets/logo-placeholder.svg']);
 });
 
+test('compact tiles request a small thumbnail and fall back to the full logo before the placeholder',()=>{
+ function node(){let src;return {children:[],srcWrites:[],setAttribute(){},removeAttribute(){},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},get src(){return src;},set src(value){src=value;this.srcWrites.push(value);}};}
+ const render=runInNewContext(source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'))+';renderStationSlider;',{document:{createElement:node}}),track=node();
+ render(track,[{name:'Station',listener_code:'13',logo_url:'/artwork/logo.png',logo_thumb_url:'/artwork/logo.png?size=192'}],'No stations');const image=track.children[0].children[0].children[0];
+ assert.equal(image.src,'/artwork/logo.png?size=192');image.onerror();assert.equal(image.src,'/artwork/logo.png');assert.equal(typeof image.onerror,'function');image.onerror();assert.equal(image.onerror,null);assert.deepEqual(image.srcWrites,['/artwork/logo.png?size=192','/artwork/logo.png','/assets/logo-placeholder.svg']);
+});
+
 test('artwork and its visible name form one button and either tap starts one automatic add',()=>{
  const openings=[];
  function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){for(const child of children){child.parent=this;this.children.push(child);}},replaceChildren(){this.children=[];}};}
@@ -40,11 +47,12 @@ test('unlinked station lists omit repeated connection instructions but retain us
  }
 });
 
-function searchFixture({known=true,codes=['13'],stations=[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}]}={}){
+function searchFixture({known=true,codes=['13'],stations=[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],directory=null,metadata=new Map()}={}){
  const nodes=new Map(),openings=[],focusCalls=[];
  function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}
  const $=id=>{if(!nodes.has(id)){const element=node();element.id=id;nodes.set(id,element);}return nodes.get(id);};
  const context={$,document:{createElement:node},stations,readSelectedRadio:()=>known?'radio':'',readRadioInventory:()=>known?{known:true,codes:new Set(codes)}:null,loadRadioInventory(){},openStationPopup:(code,options)=>openings.push({code,options})};
+ if(directory){context.readStationDirectoryState=()=>directory;context.getStationDirectoryStation=code=>metadata.get(code);}
  runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('function renderStationSlider('),source.indexOf('const libraryHelp=')),context);
  return {$,openings,focusCalls,search(query){$('search').value=query;$('search').oninput();},names(id){return $(id).children.filter(item=>item.className==='station-slider-item').map(item=>item.children[0].children[1].textContent);}};
 }
@@ -76,4 +84,23 @@ test('station search accepts pasted # codes and matches accents without changing
 
 test('known-empty saved stations do not consume a section and no-result searches still offer Clear search',()=>{
  const f=searchFixture({codes:[]});f.search('');assert.equal(f.$('savedStationsSection').hidden,true);assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);f.search('no match');assert.equal(f.$('savedStationsSection').hidden,true);assert.equal(f.$('clearStationSearch').hidden,false);f.$('clearStationSearch').onclick();assert.equal(f.$('savedStationsSection').hidden,true);assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);
+});
+
+test('incomplete server searches never claim that no stations match or offer a misleading Clear search',()=>{
+ const directory={query:'rare',loadedQuery:'rare',loading:true,hasMore:true},f=searchFixture({known:false,stations:[],directory});f.search('rare');
+ assert.equal(f.$('clearStationSearch').hidden,true);assert.equal(f.$('stations').children[0].textContent,'Loading stations…');
+ directory.loading=false;f.search('rare');assert.equal(f.$('clearStationSearch').hidden,true);assert.equal(f.$('stations').children[0].textContent,'More stations may match. Load more to continue.');
+ directory.hasMore=false;f.search('rare');assert.equal(f.$('clearStationSearch').hidden,false);assert.equal(f.$('stations').children[0].textContent,'No matching available stations.');
+});
+
+test('saved rows keep cached station names and thumbnails after the available search changes',()=>{
+ const directory={query:'local',loadedQuery:'local',loading:false,hasMore:false},metadata=new Map([['13',{name:'Local Radio',listener_code:'13',logo_url:'/artwork/local.png',logo_thumb_url:'/artwork/local.png?size=192'}]]),f=searchFixture({stations:[{name:'Morning News',listener_code:'14'}],directory,metadata});f.search('local');
+ assert.deepEqual(f.names('savedStations'),['Local Radio']);const image=f.$('savedStations').children[0].children[0].children[0];assert.equal(image.src,'/artwork/local.png?size=192');assert.equal(f.$('savedStationsSection').hidden,false);
+});
+
+test('a saved station outside the current search retains its popup Share action from cached metadata',async()=>{
+ const ids=new Map(),shares=[],opened=[],popup={children:[],open:false,append(node){this.children.push(node);},querySelector(){return null;},showModal(){this.open=true;}};
+ const $=id=>{if(!ids.has(id))ids.set(id,{dataset:{},hidden:false,textContent:''});return ids.get(id);};
+ const open=runInNewContext(source.slice(source.indexOf('async function openStationPopup('))+';openStationPopup;',{shareRunning:false,stationPopup:popup,$,stations:[{listener_code:'14',name:'Other station'}],getStationDirectoryStation:code=>code==='13'?{listener_code:'13',name:'Saved Local Radio'}:null,location:{origin:'https://radiolocals.com'},shareButton:(...args)=>{shares.push(args);return {};},setSharedStatus(){},openShared:async(...args)=>opened.push(args)});
+ await open('13');assert.equal(popup.open,true);assert.equal(shares.length,1);assert.equal(shares[0][1],'Saved Local Radio');assert.equal(shares[0][2],'https://radiolocals.com/station/13');assert.deepEqual(opened,[['13',true,false]]);
 });

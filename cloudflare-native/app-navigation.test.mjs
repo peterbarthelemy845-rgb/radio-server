@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
-function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLifecycle=false}={}){
+function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLifecycle=false,reducedMotion=false,i18n=null}={}){
  const events=new Map(),frames=[],mediaEvents={},nodes=new Map(),stationOpenings=[];let loads=0,supportLoads=0,sharedGeneration=0;
  function node(id='',tag='DIV'){
-  const listeners={};const n={id,tagName:tag,hidden:false,dataset:{},children:[],scrollLeft:0,isConnected:true,textContent:'',attrs:{},classList:{values:new Set(),toggle(name,on){if(on)this.values.add(name);else this.values.delete(name);}},setAttribute(key,value){this.attrs[key]=value;},addEventListener(key,fn){(listeners[key]??=[]).push(fn);},append(...items){this.children.push(...items);},before(){},focus(){document.activeElement=this;},querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;queueMicrotask(()=>{for(const fn of listeners.close||[])fn({});});},dispatch(name,event={}){for(const fn of listeners[name]||[])fn(event);}};if(id)nodes.set(id,n);return n;
+  const listeners={};const n={id,tagName:tag,hidden:false,dataset:{},children:[],scrollLeft:0,isConnected:true,textContent:'',attrs:{},classList:{values:new Set(),toggle(name,on){if(on)this.values.add(name);else this.values.delete(name);}},setAttribute(key,value){this.attrs[key]=value;},addEventListener(key,fn){(listeners[key]??=[]).push(fn);},append(...items){this.children.push(...items);},before(...items){(this.beforeNodes??=[]).push(...items);},scrollTo(options){this.lastScroll=options;this.scrollLeft=options.left;this.dispatch('scroll');},focus(){document.activeElement=this;},querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;queueMicrotask(()=>{for(const fn of listeners.close||[])fn({});});},dispatch(name,event={}){for(const fn of listeners[name]||[])fn(event);}};if(id)nodes.set(id,n);return n;
  }
  const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','shareWifiHelp','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;
  for(const id of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(id).hidden=id!==initial;
@@ -17,8 +17,8 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  const entries=[{url:location.href,state:null}];let index=0;
  const history={scrollRestoration:'auto',get state(){return entries[index].state;},replaceState(state,unused,url){entries[index]={state,url:new URL(url,location.href).href};update(entries[index].url);},pushState(state,unused,url){entries.splice(index+1);entries.push({state,url:new URL(url,location.href).href});index++;update(entries[index].url);},back(){this.go(-1);},forward(){this.go(1);},go(amount){const next=index+amount;if(next<0||next>=entries.length)return;index=next;update(entries[index].url);for(const fn of events.get('popstate')||[])fn({state:entries[index].state});}};
  const stationPopup=node('stationAddPopup','DIALOG'),stationPopupClose=node('stationPopupClose','BUTTON');
- const window={scrollX:0,scrollY:0,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
- const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:()=>({matches:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,
+ const window={scrollX:0,scrollY:0,appI18n:i18n,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
+ const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:query=>({matches:query==='(prefers-reduced-motion: reduce)'?reducedMotion:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,
   page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0,stopWaitingForSharedStation(){context.shareRunning=false;context.sharedOpenGeneration++;},invalidateSharedView(){context.shareRunning=false;context.sharedOpenGeneration++;}});
  if(ownerLifecycle){
   const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
@@ -30,8 +30,52 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  function flush(){while(frames.length)frames.shift()();}
  async function settle(){await Promise.resolve();await Promise.resolve();flush();}
  function click(target){const event={target:{closest:()=>target},button:0,preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};for(const fn of events.get('click')||[])fn(event);flush();return event;}
- return {context,nodes,document,window,history,entries,supportLink,wifiLink,stationPopup,stationPopupClose,stationOpenings,click,flush,settle,loads:()=>loads,supportLoads:()=>supportLoads};
+ return {context,nodes,document,window,history,entries,supportLink,wifiLink,stationPopup,stationPopupClose,stationOpenings,click,flush,settle,dispatchWindow(name,event={}){for(const fn of events.get(name)||[])fn(event);},loads:()=>loads,supportLoads:()=>supportLoads};
 }
+
+function guideControls(f,offsets=[24,324,624]){
+ const track=f.nodes.get('supportVideos');track.children=offsets.map(offsetLeft=>({offsetLeft}));f.dispatchWindow('support-guides-ready');
+ const navigation=track.beforeNodes.at(-1),[previous,position,next]=navigation.children;return {track,navigation,previous,position,next};
+}
+
+test('guide buttons track the closest visible tutorial, announce its position and disable at either end',()=>{
+ const f=fixture({path:'/support',initial:'support'}),g=guideControls(f);
+ assert.equal(g.navigation.hidden,false);assert.equal(g.previous.disabled,true);assert.equal(g.next.disabled,false);assert.equal(g.position.textContent,'1 of 3');assert.equal(g.position.attrs['aria-live'],'polite');assert.equal(g.position.attrs['aria-atomic'],'true');
+ assert.equal(g.previous.attrs['aria-label'],'Previous guide');assert.equal(g.next.attrs['aria-label'],'Next guide');
+ g.next.onclick();assert.equal(g.track.lastScroll.left,300);assert.equal(g.track.lastScroll.behavior,'smooth');assert.equal(g.position.textContent,'2 of 3');assert.equal(g.previous.disabled,false);assert.equal(g.next.disabled,false);
+ g.next.onclick();assert.equal(g.track.lastScroll.left,600);assert.equal(g.position.textContent,'3 of 3');assert.equal(g.next.disabled,true);
+ g.previous.onclick();assert.equal(g.track.scrollLeft,300);assert.equal(g.position.textContent,'2 of 3');
+ g.track.scrollLeft=510;g.track.dispatch('scroll');assert.equal(g.position.textContent,'3 of 3');assert.equal(g.next.disabled,true);
+ f.dispatchWindow('resize');assert.equal(g.position.textContent,'3 of 3');f.dispatchWindow('support-guides-ready');assert.equal(g.track.beforeNodes.length,1);
+});
+
+test('single or empty guide collections hide navigation and still have safe end states',()=>{
+ for(const offsets of [[],[40]]){const f=fixture(),g=guideControls(f,offsets);assert.equal(g.navigation.hidden,true);assert.equal(g.previous.disabled,true);assert.equal(g.next.disabled,true);assert.equal(g.position.textContent,offsets.length?'1 of 1':'0 of 0');if(!offsets.length){g.next.onclick();assert.equal(g.track.lastScroll,undefined);}}
+});
+
+test('changing guides honors reduced motion and stops existing players without autoplaying their replacements',()=>{
+ for(const reducedMotion of [false,true]){
+  const f=fixture({reducedMotion,path:'/support',initial:'support'}),g=guideControls(f);let pauses=0;const pauseCalls=[];
+  const video={pause(){pauses++;pauseCalls.push(true);}},source='https://www.youtube-nocookie.com/embed/abC1234DEfg',frame={_src:source,get src(){return this._src;},set src(value){pauseCalls.push(value);this._src=value;}},unrelated={src:'https://other.example/embed/example'};
+  g.track.querySelectorAll=tag=>tag==='video'?[video]:tag==='iframe'?[frame,unrelated]:[];
+  g.next.onclick();assert.equal(g.track.lastScroll.behavior,reducedMotion?'auto':'smooth');assert.equal(pauses,1);assert.deepEqual(pauseCalls,[true,'about:blank',source]);assert.equal(frame.src,source);assert.doesNotMatch(frame.src,/autoplay/);assert.equal(unrelated.src,'https://other.example/embed/example');
+ }
+});
+
+test('document titles describe the visible listener and owner page and update with the selected language',()=>{
+ let translated=false;const messages={'title.myRadio':'Radyo','title.support':'Sipò','title.wifiSetup':'Konfigirasyon Wi-Fi','title.login':'Konekte','title.register':'Kreye estasyon','title.editor':'Modifye estasyon'};
+ const i18n={t(key){return translated?messages[key]||key:key;}},f=fixture({i18n});assert.equal(f.document.title,'Radio — Radio Locals');
+ for(const [id,label] of [['support','Support'],['wifiSetup','Wi-Fi setup'],['login','Sign in'],['register','Create station'],['editor','Station editor']]){vm.runInContext(`page('${id}')`,f.context);assert.equal(f.document.title,label+' — Radio Locals');}
+ translated=true;f.dispatchWindow('app-language-changed');assert.equal(f.document.title,'Modifye estasyon — Radio Locals');
+ for(const id of ['myRadio','support','wifiSetup','login','register']){vm.runInContext(`page('${id}')`,f.context);assert.equal(f.document.title,messages['title.'+id]+' — Radio Locals');}
+ vm.runInContext("page('reports')",f.context);assert.equal(f.document.title,'Reports — Radio Locals');
+});
+
+test('guide controls and their live position change language without losing the current tutorial',()=>{
+ let translated=false;const i18n={t(key,values){if(!translated)return key.startsWith('title.')?key:({ 'guide.previous':'Previous guide','guide.next':'Next guide','guide.previousShort':'Previous','guide.nextShort':'Next'}[key]||(key==='guide.position'?`${values.current} of ${values.total}`:key));return {'guide.previous':'Gid anvan','guide.next':'Pwochen gid','guide.previousShort':'Anvan','guide.nextShort':'Apre'}[key]||(key==='guide.position'?`${values.current} sou ${values.total}`:key);}};
+ const f=fixture({i18n}),g=guideControls(f);g.next.onclick();translated=true;f.dispatchWindow('app-language-changed');
+ assert.equal(g.position.textContent,'2 sou 3');assert.equal(g.previous.attrs['aria-label'],'Gid anvan');assert.equal(g.next.attrs['aria-label'],'Pwochen gid');assert.equal(g.previous.textContent,'Anvan');assert.equal(g.next.textContent,'Apre');assert.equal(g.track.scrollLeft,300);assert.equal(g.previous.disabled,false);assert.equal(g.next.disabled,false);
+});
 
 test('leaving Support stops local and approved embedded tutorials, and Back restores a paused player',async()=>{
  const f=fixture({path:'/support',initial:'support'}),track=f.nodes.get('supportVideos'),source='https://www.youtube-nocookie.com/embed/abC1234DEfg';let pauses=0;

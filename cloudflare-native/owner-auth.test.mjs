@@ -7,7 +7,7 @@ import {decrypt,human,encrypt} from './security.mjs';
 const now=1800000000,host='https://radio-locals-native.example';
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64'));
 async function fixture(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql','0021_station_edits.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
   let batchLock=Promise.resolve(),imageReads=0;
   const DB={sqlite,failBatchAfter:null,prepare(sql){let args=[];const statement=sqlite.prepare(sql);const q={bind(...values){args=values;return q;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){return statement.run(...args);},async execute(){return statement.columns().length?{results:statement.all(...args)}:statement.run(...args);}};return q;},
     async batch(queries){const task=async()=>{sqlite.exec('BEGIN');try{const results=[];let completed=0;for(const q of queries){results.push(await q.execute());if(++completed===DB.failBatchAfter)throw new Error('Simulated database write failure');}sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}};const result=batchLock.then(task);batchLock=result.catch(()=>{});return result;}};
@@ -20,7 +20,8 @@ async function fixture(){
   const state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
   async function post(path,body,changes={},time=now,deps={human:async()=>{}}){return authRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf,...changes},body:JSON.stringify(body)}),env,time,deps);}
   const registration={request_id:'1'.repeat(32),name:'Test station',email:'owner@example.com',stream_url:'https://example.com/live',bio:'Test bio',rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
-  return {env,sqlite,state,cookie,post,registration,mail,objects,imageReads:()=>imageReads};
+  async function owner(){return (await(await authRoutes(new Request(host+'/api/owner/station',{headers:{Cookie:cookie}}),env,now)).json()).station;}
+  return {env,sqlite,state,cookie,post,owner,registration,mail,objects,imageReads:()=>imageReads};
 }
 async function registered(){const f=await fixture();const response=await f.post('/api/owner/register',f.registration);f.result=await response.json();
   const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get();f.code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];return f;}
@@ -224,9 +225,9 @@ test('expired codes and another browser session cannot claim ownership',async()=
 test('owner cannot edit by supplying another station code and logout removes editing grant',async()=>{
   const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
   f.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('Other','https://example.net/live','other@example.com','published',now,now);
-  await f.post('/api/owner/station',{code:11,stream_url:'https://example.org/updated',bio:'Changed'});
+  await f.post('/api/owner/station',{revision:(await f.owner()).revision,code:11,stream_url:'https://example.org/updated',bio:'Changed'});
   assert.equal(f.sqlite.prepare('SELECT bio FROM stations WHERE code=11').get().bio,'');
-  assert.equal(f.sqlite.prepare('SELECT bio FROM stations WHERE code=10').get().bio,'Changed');
+  assert.equal(f.sqlite.prepare('SELECT bio FROM station_edits WHERE station_code=10').get().bio,'Changed');
   await f.post('/api/owner/logout',{});
   await assert.rejects(f.post('/api/owner/station',{stream_url:'https://example.com/live'}),e=>e.status===401);
 });
@@ -338,7 +339,7 @@ test('an artwork edit cannot undo a station suspension or removal while image pr
   const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
   const station=f.sqlite.prepare('SELECT code,bio,stream_url,artwork_key FROM stations').get();
   f.env.IMAGES.info=async()=>{f.sqlite.prepare('UPDATE stations SET status=?,updated_at=? WHERE code=?').run(status,now+1,station.code);return {width:1,height:1};};
-  await assert.rejects(f.post('/api/owner/station',{stream_url:'https://example.com/changed',bio:'A racing edit',artwork:f.registration.artwork}),e=>e.status===409);
+  await assert.rejects(f.post('/api/owner/station',{revision:(await f.owner()).revision,stream_url:'https://example.com/changed',bio:'A racing edit',artwork:f.registration.artwork}),e=>e.status===409);
   const saved=f.sqlite.prepare('SELECT status,bio,stream_url,artwork_key FROM stations').get();
   assert.equal(saved.status,status);assert.equal(saved.bio,station.bio);assert.equal(saved.stream_url,station.stream_url);assert.equal(saved.artwork_key,station.artwork_key);
  }
@@ -348,8 +349,29 @@ test('concurrent owner edits do not overwrite a newer saved revision within the 
  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
  let release,started;const waiting=new Promise(resolve=>{release=resolve;}),processing=new Promise(resolve=>{started=resolve;});
  f.env.IMAGES.info=async()=>{started();await waiting;return {width:1,height:1};};
- const first=f.post('/api/owner/station',{stream_url:'https://example.com/older',bio:'Older artwork request',artwork:f.registration.artwork});await processing;
- const newer=await f.post('/api/owner/station',{stream_url:'https://example.com/newer',bio:'Newest request'});assert.equal(newer.status,200);
+ const revision=(await f.owner()).revision,first=f.post('/api/owner/station',{revision,stream_url:'https://example.com/older',bio:'Older artwork request',artwork:f.registration.artwork});await processing;
+ const newer=await f.post('/api/owner/station',{revision,stream_url:'https://example.com/newer',bio:'Newest request'});assert.equal(newer.status,200);
  release();await assert.rejects(first,e=>e.status===409);
- const saved=f.sqlite.prepare('SELECT stream_url,bio FROM stations').get();assert.equal(saved.stream_url,'https://example.com/newer');assert.equal(saved.bio,'Newest request');
+ const saved=f.sqlite.prepare('SELECT stream_url,bio FROM station_edits').get();assert.equal(saved.stream_url,'https://example.com/newer');assert.equal(saved.bio,'Newest request');
+});
+
+test('a loaded editor revision is required and an unchanged save cannot rescan or change public state',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});f.sqlite.exec("UPDATE stations SET status='published'");const station=await f.owner(),before=f.sqlite.prepare('SELECT * FROM stations').get();
+ await assert.rejects(f.post('/api/owner/station',{stream_url:station.stream_url,bio:station.bio}),e=>e.status===409);
+ f.env.OPENAI_API_KEY='must-not-scan';const oldFetch=globalThis.fetch;let scans=0;globalThis.fetch=async()=>{scans++;throw Error('No-op must not scan');};
+ try{const response=await(await f.post('/api/owner/station',{revision:station.revision,stream_url:station.stream_url,bio:station.bio})).json();assert.equal(response.unchanged,true);assert.equal(response.message,'No changes to save.');assert.equal(scans,0);}finally{globalThis.fetch=oldFetch;}
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM stations').get(),before);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM station_edits').get().n,0);assert.equal((await f.owner()).revision,station.revision);
+});
+
+test('pending changes keep the approved station live and stale editor forms cannot replace the proposal',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});f.sqlite.exec("UPDATE stations SET status='published'");const first=await f.owner(),approved=f.sqlite.prepare('SELECT * FROM stations').get();
+ const result=await(await f.post('/api/owner/station',{revision:first.revision,stream_url:'https://changed.example.com/live',bio:'Proposed bio'})).json();assert.equal(result.review_required,true);assert.deepEqual(f.sqlite.prepare('SELECT * FROM stations').get(),approved);
+ const draft=await f.owner();assert.equal(draft.review_pending,true);assert.equal(draft.stream_url,'https://changed.example.com/live');assert.equal(draft.approved.stream_url,approved.stream_url);assert.notEqual(draft.revision,first.revision);
+ await assert.rejects(f.post('/api/owner/station',{revision:first.revision,stream_url:'https://stale.example.com/live',bio:'Lost update'}),e=>e.status===409);assert.equal(f.sqlite.prepare('SELECT bio FROM station_edits').get().bio,'Proposed bio');
+ const pending=f.sqlite.prepare('SELECT * FROM station_edits').get(),noop=await(await f.post('/api/owner/station',{revision:draft.revision,stream_url:draft.stream_url,bio:draft.bio})).json();assert.equal(noop.unchanged,true);assert.deepEqual(f.sqlite.prepare('SELECT * FROM station_edits').get(),pending);
+});
+
+test('two authenticated owner sessions cannot save over each other from the same loaded revision',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});f.sqlite.exec("UPDATE stations SET status='published'");const first=await f.owner(),response=await authRoutes(new Request(host+'/api/session'),f.env,now),otherState=await response.json(),headers={Cookie:response.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':otherState.csrf},challenge=await ownerLoginChallenge(f,headers);await f.post('/api/owner/verify',{verification_id:challenge.verification_id,code:challenge.code},headers);const other=(await(await authRoutes(new Request(host+'/api/owner/station',{headers}),f.env,now)).json()).station;assert.equal(first.revision,other.revision);
+ await f.post('/api/owner/station',{revision:first.revision,stream_url:'https://example.com/first',bio:'First session edit'});await assert.rejects(f.post('/api/owner/station',{revision:other.revision,stream_url:'https://example.com/second',bio:'Stale second session'},headers),e=>e.status===409);assert.equal(f.sqlite.prepare('SELECT bio FROM station_edits').get().bio,'First session edit');assert.equal(f.sqlite.prepare('SELECT status FROM stations').get().status,'published');
 });

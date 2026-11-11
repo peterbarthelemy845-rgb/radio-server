@@ -1,5 +1,5 @@
 'use strict';
-const APP_RELEASE='2026.11.09.8';
+const APP_RELEASE='2026.11.10.1';
 let appAvailableRelease='',appDismissedRelease='',appReleaseChecking=false,appUpdateConfirming=false;
 const appUpdateBanner=document.createElement('aside');appUpdateBanner.id='appUpdateBanner';appUpdateBanner.className='app-update-banner';appUpdateBanner.hidden=true;appUpdateBanner.setAttribute('aria-label','Website update');
 const appUpdateTitle=document.createElement('strong'),appUpdateNote=document.createElement('p'),appUpdateActions=document.createElement('div'),appUpdateRefresh=document.createElement('button'),appUpdateLater=document.createElement('button');
@@ -52,5 +52,5 @@ new MutationObserver(renderAppUpdate).observe(document.body,{subtree:true,attrib
 window.addEventListener('radio-controls-opened',renderAppUpdate);window.addEventListener('radio-controls-closed',renderAppUpdate);window.addEventListener('station-delivery-changed',renderAppUpdate);window.addEventListener('pairing-cleanup-changed',renderAppUpdate);window.addEventListener('app-language-changed',renderAppUpdate);window.addEventListener('focus',checkAppRelease);window.addEventListener('online',checkAppRelease);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkAppRelease();});window.addEventListener('load',checkAppRelease);
 setInterval(()=>{if(appAvailableRelease)renderAppUpdate();checkAppRelease();},300000);
 window.addEventListener('radio-locals-ready',()=>{
- try{const raw=sessionStorage.getItem('radioLocalsUpdateView');sessionStorage.removeItem('radioLocalsUpdateView');if(!raw)return;const data=JSON.parse(raw);if(data.expires<Date.now()||typeof data.query!=='string')return;if($('search')){$('search').value=data.query.slice(0,250);list();}requestAnimationFrame(()=>window.scrollTo(Number(data.x)||0,Number(data.y)||0));}catch{}
+ try{const raw=sessionStorage.getItem('radioLocalsUpdateView');sessionStorage.removeItem('radioLocalsUpdateView');if(!raw)return;const data=JSON.parse(raw);if(data.expires<Date.now()||typeof data.query!=='string')return;if($('search')){$('search').value=data.query.slice(0,96);if($('search').oninput)$('search').oninput();else list();}requestAnimationFrame(()=>window.scrollTo(Number(data.x)||0,Number(data.y)||0));}catch{}
 });

@@ -28,6 +28,12 @@ function appApplyMode(){
  const supportLink=document.querySelector('nav a[href^="/support"]');
  if(supportLink)supportLink.setAttribute('aria-current',appCurrentPage==='support'?'page':'false');
  $('navRadio').setAttribute('aria-current',['myRadio','wifiSetup'].includes(appCurrentPage)?'page':'false');
+ appUpdatePageTitle();
+}
+function appUpdatePageTitle(){
+ const names={myRadio:'Radio',support:'Support',wifiSetup:'Wi-Fi setup',login:'Sign in',register:'Create station',editor:'Station editor',shared:'Add station to radio',admin:'Administrator',legal:'Legal and contact',advertise:'Advertise',adReview:'Review ads',reports:'Reports',backups:'Backups'};
+ const name=window.appI18n?.t('title.'+appCurrentPage),fallback=names[appCurrentPage]||'Radio';
+ document.title=(name&&name!=='title.'+appCurrentPage?name:fallback)+' — Radio Locals';
 }
 const appSupportPausedFrames=new WeakMap();
 function appPauseSupportMedia(){
@@ -46,6 +52,35 @@ function appRestoreSupportMedia(){
   appSupportPausedFrames.delete(frame);frame.src=source;
  }
 }
+let appGuideNavigation,appGuidePrevious,appGuideNext,appGuidePosition;
+function appGuideIndex(){
+ const track=$('supportVideos'),cards=[...track.children];if(!cards.length)return 0;
+ const left=track.scrollLeft||0,first=cards[0].offsetLeft||0;
+ return cards.reduce((best,card,index)=>Math.abs((card.offsetLeft||0)-first-left)<Math.abs((cards[best].offsetLeft||0)-first-left)?index:best,0);
+}
+function appUpdateGuideNavigation(){
+ if(!appGuideNavigation)return;const total=$('supportVideos').children.length,index=appGuideIndex();
+ appGuideNavigation.hidden=total<=1;appGuidePrevious.disabled=index<=0;appGuideNext.disabled=index>=total-1;
+ appGuidePrevious.textContent=window.appI18n?.t('guide.previousShort')||'Previous';appGuideNext.textContent=window.appI18n?.t('guide.nextShort')||'Next';
+ appGuidePrevious.setAttribute('aria-label',window.appI18n?.t('guide.previous')||'Previous guide');appGuideNext.setAttribute('aria-label',window.appI18n?.t('guide.next')||'Next guide');
+ appGuidePosition.textContent=window.appI18n?.t('guide.position',{current:total?index+1:0,total})||((total?index+1:0)+' of '+total);
+}
+function appMoveGuide(direction){
+ const track=$('supportVideos'),cards=[...track.children],index=Math.max(0,Math.min(cards.length-1,appGuideIndex()+direction));if(!cards[index])return;
+ appPauseSupportMedia();appRestoreSupportMedia();
+ track.scrollTo({left:(cards[index].offsetLeft||0)-(cards[0].offsetLeft||0),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+}
+function appInstallGuideNavigation(){
+ const track=$('supportVideos');if(!appGuideNavigation){
+  appGuideNavigation=document.createElement('div');appGuideNavigation.className='support-guide-navigation';
+  appGuidePrevious=document.createElement('button');appGuidePrevious.type='button';appGuidePrevious.className='secondary';appGuidePrevious.onclick=()=>appMoveGuide(-1);
+  appGuideNext=document.createElement('button');appGuideNext.type='button';appGuideNext.className='secondary';appGuideNext.onclick=()=>appMoveGuide(1);
+  appGuidePosition=document.createElement('span');appGuidePosition.setAttribute('aria-live','polite');appGuidePosition.setAttribute('aria-atomic','true');
+  appGuideNavigation.append(appGuidePrevious,appGuidePosition,appGuideNext);track.before(appGuideNavigation);track.addEventListener('scroll',appUpdateGuideNavigation,{passive:true});
+ }appUpdateGuideNavigation();
+}
+window.addEventListener('support-guides-ready',appInstallGuideNavigation);window.addEventListener('resize',appUpdateGuideNavigation);
+window.addEventListener('app-language-changed',()=>{appUpdatePageTitle();appUpdateGuideNavigation();});
 const appOriginalPage=page;
 page=function(id){
  const next=id==='library'?'myRadio':id;
@@ -162,4 +197,4 @@ appHelp.onclick=()=>{const expanded=!appHelp.dataset.expanded;if(expanded)appHel
 if('scrollRestoration' in history)history.scrollRestoration='manual';
 if(appIsListenerPage(appCurrentPage))appReplaceHistory(appHistoryValue());
 appApplyMode();appDisplayMode.addEventListener?.('change',appApplyMode);
-window.addEventListener('radio-locals-ready',()=>{appCurrentPage=appVisiblePage();appApplyMode();if(appIsListenerPage(appCurrentPage))appReplaceHistory(appHistoryValue());});
+window.addEventListener('radio-locals-ready',()=>{appCurrentPage=appVisiblePage();appApplyMode();appInstallGuideNavigation();if(appIsListenerPage(appCurrentPage))appReplaceHistory(appHistoryValue());});

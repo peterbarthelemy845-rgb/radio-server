@@ -19,13 +19,14 @@ import {authenticate,deviceRoutes} from './devices.mjs';
 import {adsRoutes} from './local-ads.mjs';
 import {inventoryStatements} from './saved-inventory.mjs';
 import {sessionCleanupStatements} from './session-maintenance.mjs';
-async function publicStation(db,code) {
-  return db.prepare(`SELECT CAST(code AS TEXT) AS listener_code,CAST(updated_at AS TEXT) AS revision,name,stream_url AS url,bio,
-    'Internet Radio' AS subtitle, CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
-    FROM stations WHERE code=? AND status='published'`).bind(Number(code)).first();
-}
+import {publicStation,directoryResponse} from './public-directory.mjs';
+import {publicStaticPath,publicHeadPath,rewritePublicHtml} from './public-pages.mjs';
+import {publicArtworkResponse} from './public-artwork.mjs';
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
+  if(request.method==='HEAD'&&publicHeadPath(path)){
+    const response=await handle(new Request(request,{method:'GET'}),env,now);void response.body?.cancel().catch(()=>{});return new Response(null,response);
+  }
   if(path==='/api/stream-status'&&request.method==='GET'){
     const rows=await env.DB.prepare("SELECT DISTINCT station_code FROM listening_sessions WHERE qualified=1 AND last_seen>? LIMIT 1000").bind(now-90).all();return json({recently_played:rows.results.map(r=>String(r.station_code)),note:'Recent radio reports only. No report does not mean the stream is unavailable.'});
   }
@@ -58,22 +59,10 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   }
   const artwork=path.match(/^\/artwork\/([a-f0-9]{64}\.png)$/);
   if(artwork && request.method==='GET') {
-    // A bucket object is never public merely because its name is known. Only
-    // sanitized artwork attached to a currently published station may be served.
-    const approved=await env.DB.prepare("SELECT 1 FROM stations WHERE artwork_key=? AND status='published' LIMIT 1")
-      .bind(artwork[1]).first();
-    if(!approved || !env.MEDIA)return json({message:'Artwork not found.'},404);
-    const object=await env.MEDIA.get('sanitized/'+artwork[1]);
-    if(!object || object.customMetadata?.sanitizer_version!=='1' || object.size>3*1024*1024)
-      return json({message:'Artwork not found.'},404);
-    return new Response(object.body,{headers:{'Content-Type':'image/png','X-Content-Type-Options':'nosniff',
-      'Content-Security-Policy':"default-src 'none'; sandbox",'Cache-Control':'no-store'}});
+    return publicArtworkResponse(request,env,artwork[1]);
   }
   if(request.method==='GET' && path==='/api/stations') {
-    const rows=await env.DB.prepare(`SELECT CAST(code AS TEXT) AS listener_code,name,stream_url AS url,bio,
-      'Internet Radio' AS subtitle,CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url
-      FROM stations WHERE status='published' ORDER BY code LIMIT 1000`).all();
-    return json({stations:rows.results});
+    return directoryResponse(request,env);
   }
   if(request.method==='GET'&&path==='/api/device/default-station')return json({name:'La Voix Divine',url:'https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live',listener_code:'',logo_url:'/assets/radiolavoixdivine.png'});
   if(request.method==='GET'&&path==='/api/device/station-revisions'){
@@ -149,11 +138,16 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
     ]);
     return json({status:'ok'});
   }
-  if(env.ASSETS && request.method==='GET' && (['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/station-edit','/admin','/device','/support','/wifi-setup','/terms','/privacy','/copyright','/counter-notice','/manifest.webmanifest','/sw.js','/offline.html'].includes(path)||/^\/(?:station|advertise)\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path))){
+  if(env.ASSETS && request.method==='GET' && publicStaticPath(path)){
     const target=new URL(request.url);if(!path.startsWith('/assets/')&&!['/manifest.webmanifest','/sw.js','/offline.html'].includes(path))target.pathname=/^\/radiolavoixdivine\/?$/.test(path)?'/station-player.html':'/index.html';
-    const asset=await env.ASSETS.fetch(new Request(target,request));
+    const assetRequest=new Request(target,request);
+    // The app shell is rewritten per route, so its upstream file ETag cannot
+    // validate a station's metadata or bypass a fresh publication check.
+    if(!path.startsWith('/assets/')&&!['/manifest.webmanifest','/sw.js'].includes(path)){assetRequest.headers.delete('If-None-Match');assetRequest.headers.delete('If-Modified-Since');}
+    const asset=await env.ASSETS.fetch(assetRequest);
     const html=asset.headers.get('Content-Type')?.includes('text/html');
-    const response=env.MIGRATION_PREVIEW==='false'&&html&&asset.status===200?new Response((await asset.text()).replace('<aside class="preview">Test website — your current radio website has not switched yet.</aside>',''),asset):new Response(asset.body,asset);
+    let response=new Response(asset.body,asset);
+    if(html&&asset.status===200){let text=await response.text();if(env.MIGRATION_PREVIEW==='false')text=text.replace('<aside class="preview">Test website — your current radio website has not switched yet.</aside>','');const rewritten=await rewritePublicHtml(text,request,env);response=new Response(rewritten.html,{status:rewritten.status,headers:asset.headers});response.headers.delete('Content-Length');response.headers.delete('ETag');}
     // Stable public asset URLs may be stored, but must revalidate on every use.
     // HTML, service-worker entrypoints and private/API responses stay no-store.
     const publicAsset=path.startsWith('/assets/')&&!html&&[200,304].includes(response.status)&&!response.headers.has('Set-Cookie');
@@ -166,6 +160,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   return json({message:'Page or feature not found.'},404);
 }
 function transportSecurity(request,response){
+  if(request.method==='HEAD'&&response.body){void response.body.cancel().catch(()=>{});response=new Response(null,response);}
   if(new URL(request.url).protocol!=='https:')return response;
   // Redirect and asset responses may have immutable headers. Preserve their
   // status, cookies and body while applying this host's HTTPS policy.

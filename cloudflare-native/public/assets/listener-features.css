@@ -38,3 +38,16 @@ body.app-listener-page #listenerTextSize::after{content:'Aa';font-size:1.125rem;
 #library.radio-library .station-slider-controls button{width:44px;min-height:44px;padding:0;background:#edf3fc;color:#225da5;font-size:26px;line-height:1}
 #library.radio-library .station-slider-item .station-share-feedback{max-width:96px;overflow-wrap:anywhere;font-size:12px;color:#1d4f80}
 #library.radio-library .station-slider-item .station-share-feedback input{min-width:0;font-size:12px;padding:6px;min-height:44px}
+
+/* Shared reading controls and stable compact tile rows. */
+body.app-owner-page .card>.app-header-tools{justify-content:flex-end;margin:0 0 10px;gap:6px}
+body.app-owner-page #listenerTextSize{min-height:44px;max-width:120px;font-size:13px}
+body.app-owner-page #appLanguage{min-height:44px}
+body.app-large-text.app-owner-page :is(#login,#register,#editor,#advertise,#adReview,#reports,#backups,#admin,#legal) :is(label,input,select,textarea,button,p,summary){font-size:18px!important;line-height:1.5}
+body.app-large-text.app-owner-page .check{font-size:16px!important}
+body.app-large-text.app-owner-page .check input{min-height:20px}
+#library.radio-library .station-tile-name{height:4.05em;min-height:4.05em;-webkit-line-clamp:3}
+#library.radio-library .station-slider-item{display:flex;flex-direction:column;align-self:stretch}
+#library.radio-library .station-tile-share{margin-top:0}
+#loadMoreStations{width:auto;min-height:44px;margin:12px 0 0}
+.support-guide-navigation{display:flex;align-items:center;gap:8px;justify-content:space-between;margin:8px 0 12px}.support-guide-navigation button{width:44px;min-width:44px;min-height:44px;margin:0;padding:4px;background:#edf3fc;color:#225da5}.support-guide-navigation span{font-size:14px;color:#526782}

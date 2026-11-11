@@ -12,7 +12,7 @@ page=function(id){
 function currentReportRequest(generation,view){return generation===reportRequestGeneration&&view===operationsViewGeneration&&!$('reports').hidden;}
 function currentBackupRequest(generation,view){return generation===backupRequestGeneration&&view===operationsViewGeneration&&!$('backups').hidden;}
 const ownerReportButton=document.createElement('button');ownerReportButton.className='secondary';ownerReportButton.textContent='Listening & sharing reports';ownerReportButton.onclick=()=>showReports(false);$('editor').append(ownerReportButton);
-for(const [label,action] of [['Station reports',()=>showReports(true)],['Backup & recovery',showBackups]]){const button=document.createElement('button');button.className='secondary';button.textContent=label;button.onclick=action;adminTools.prepend(button);}
+for(const [label,action] of [['Station reports',()=>showReports(true)],['Backup & recovery',showBackups]]){const button=document.createElement('button');button.className='secondary';button.textContent=label;button.onclick=action;$('admin').append(button);}
 $('reportsBack').onclick=()=>page(adminReport?'admin':'editor');$('backupsBack').onclick=()=>page('admin');$('reportMonth').value=new Date().toISOString().slice(0,7);$('reportMonth').onchange=()=>showReports(adminReport);
 function reportCell(tag,text){const cell=document.createElement(tag);cell.textContent=text;return cell;}
 async function showReports(administrator){
@@ -33,9 +33,10 @@ async function showBackups(){
    if(backup.state==='ready'){
     const restore=document.createElement('button');restore.className='secondary';restore.textContent='Restore saved records';restore.disabled=backupActionPending;
     restore.onclick=async()=>{
-     if(backupActionPending||!currentBackupRequest(generation,view))return;const confirmation=prompt('Restore this snapshot? Matching record IDs will be replaced; newer records are kept. Owners and phones will be signed out. Type RESTORE to confirm.','');if(confirmation!=='RESTORE')return;
-     backupActionPending=true;$('createBackup').disabled=true;for(const button of $('backupRecords').querySelectorAll('button'))button.disabled=true;
-     try{const response=await api('/api/admin/backups',{action:'restore',id:backup.id,confirm:confirmation});if(currentBackupRequest(generation,view))$('backupMessage').textContent=response.message;}
+     if(backupActionPending||!currentBackupRequest(generation,view))return;backupActionPending=true;restore.disabled=true;
+     try{const confirmation=await appPrompt('Restore backup','Restore this snapshot? Matching record IDs will be replaced; newer records are kept. Owners and phones will be signed out. Type RESTORE to confirm.',{required:true,maxLength:7,match:'RESTORE',label:'Type RESTORE',confirmText:'Restore',danger:true});if(confirmation!=='RESTORE'||!currentBackupRequest(generation,view))return;
+      $('createBackup').disabled=true;for(const button of $('backupRecords').querySelectorAll('button'))button.disabled=true;
+      const response=await api('/api/admin/backups',{action:'restore',id:backup.id,confirm:confirmation});if(currentBackupRequest(generation,view))$('backupMessage').textContent=response.message;}
      catch(e){if(currentBackupRequest(generation,view))$('backupMessage').textContent=e.message;}
      finally{backupActionPending=false;$('createBackup').disabled=false;for(const button of $('backupRecords').querySelectorAll('button'))button.disabled=false;}
     };row.append(restore);

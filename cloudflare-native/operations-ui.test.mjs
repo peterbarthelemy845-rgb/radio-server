@@ -11,7 +11,7 @@ function fixture(){
   Object.defineProperty(value,'id',{get:()=>identifier,set:id=>{identifier=id;nodes.set(id,value);}});return value;
  }
  const $=id=>{if(!nodes.has(id)){const item=node();item.id=id;}return nodes.get(id);};$('advertiseForm').elements.artwork=node('input');const main=node('main');
- const ctx={$ ,document:{createElement:node,querySelector:()=>main},adminTools:node(),page(id){pages.push(id);for(const name of ['reports','backups','admin','editor','login','myRadio'])$(name).hidden=name!==id;},api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('Missing test answer');const answer=answers.shift();if(answer instanceof Error)throw answer;return await answer;},Date,URL,URLSearchParams,location:{pathname:'/',search:''},window:{addEventListener(){}},MutationObserver:class{observe(){}},showAds(){},prompt(text){prompts.push(text);return 'RESTORE';},state:{}};
+ const ctx={$ ,document:{createElement:node,querySelector:()=>main},adminTools:node(),page(id){pages.push(id);for(const name of ['reports','backups','admin','editor','login','myRadio'])$(name).hidden=name!==id;},api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('Missing test answer');const answer=answers.shift();if(answer instanceof Error)throw answer;return await answer;},Date,URL,URLSearchParams,location:{pathname:'/',search:''},window:{addEventListener(){}},MutationObserver:class{observe(){}},showAds(){},appPrompt:async(title,text)=>{prompts.push(text);return 'RESTORE';},state:{}};
  runInNewContext(source,ctx);
  return {ctx,nodes,calls,answers,pages,prompts,$,get:expression=>runInNewContext(expression,ctx),reports:runInNewContext('showReports',ctx),backups:runInNewContext('showBackups',ctx),page:runInNewContext('page',ctx)};
 }
@@ -45,6 +45,10 @@ test('restore is single-flight and stale completion does not write after navigat
 });
 test('restore failure restores visible controls and allows a deliberate retry',async()=>{
  const f=fixture();f.answers.push({backups:[snapshot('first'),snapshot('second')],note:'Ready'});await f.backups();const buttons=f.$('backupRecords').querySelectorAll('button');f.answers.push(Error('Restore unavailable'));await buttons[0].onclick();assert.match(f.$('backupMessage').textContent,/Restore unavailable/);assert.equal(f.$('createBackup').disabled,false);assert.equal(buttons.every(button=>!button.disabled),true);f.answers.push({message:'Restored.'});await buttons[0].onclick();assert.equal(f.calls.filter(call=>call.body?.action==='restore').length,2);assert.equal(f.$('backupMessage').textContent,'Restored.');
+});
+
+test('abandoning an async RESTORE sheet cannot start a backup mutation on another page',async()=>{
+ const f=fixture(),decision=deferred();f.answers.push({backups:[snapshot('first')],note:'Ready'});await f.backups();f.ctx.appPrompt=async()=>decision.promise;const pending=f.$('backupRecords').querySelectorAll('button')[0].onclick();assert.equal(f.get('backupActionPending'),true);f.page('myRadio');decision.resolve('RESTORE');await pending;assert.equal(f.calls.length,1);assert.equal(f.get('backupActionPending'),false);assert.equal(f.$('backupMessage').textContent,'');
 });
 test('a newer backup view stays locked during an existing creation and is not overwritten afterward',async()=>{
  const f=fixture();f.answers.push({backups:[],note:'Ready'});await f.backups();const pending=deferred();f.answers.push(pending.promise);const creating=f.$('createBackup').onclick();f.answers.push({backups:[snapshot('latest')],note:'Latest list'});await f.backups();const restore=f.$('backupRecords').querySelectorAll('button')[0];assert.equal(restore.disabled,true);await restore.onclick();assert.equal(f.calls.length,3);pending.resolve({status:'ok'});await creating;assert.equal(f.calls.length,3);assert.equal(f.$('backupMessage').textContent,'Latest list');assert.equal(restore.disabled,false);

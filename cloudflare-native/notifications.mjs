@@ -5,6 +5,7 @@ import {digest,encrypt,randomHex,HttpError} from './security.mjs';
 const messages={
  'station-approved':['Your Radio Locals station is approved','Your station is approved and published on Radio Locals.'],
  'station-needs-changes':['Your Radio Locals station needs changes','Your station needs changes and is currently suspended from Radio Locals. Station editing is unavailable while it is suspended.'],
+ 'station-edit-rejected':['Your proposed Radio Locals changes need revision','Your proposed station changes were not approved. Your previously approved station details, if any, are unchanged. Sign in to review and revise your changes.'],
  'station-removed':['Your Radio Locals station was removed','Your station has been removed from Radio Locals.'],
  'ad-cleared':['Your Radio Locals advertisement passed review','An advertisement for your station passed administrator safety review. Sign in to review and approve it before it can appear on radios.'],
  'ad-approved':['Your Radio Locals advertisement is approved','An advertisement for your station was approved by the station owner. It can appear on compatible radios during its scheduled dates.'],

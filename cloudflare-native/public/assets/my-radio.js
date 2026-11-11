@@ -1,5 +1,5 @@
 'use strict';
-let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0,radioPairingBusy=false,radioPairingGeneration=0,radioSessionExpired=false;
+let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0,radioPairingBusy=false,radioPairingGeneration=0,radioSessionExpired=false,radioRefreshFailures=0;
 let radioPairingAttempt=null;
 let radioPairingCancellation=Promise.resolve();
 const radioUnlinkPending=new Set();
@@ -64,6 +64,8 @@ function showRadioReconnect(){
 }
 async function loadMyRadios(silent=false){
  if(silent&&$('connectRadioForm').querySelector('button').disabled)return;
+ if(!navigator.onLine){if(!$('myRadio').hidden&&!document.hidden)markRadioStatusUnavailable('No internet. Check your connection and tap Try again.');return;}
+ if(!silent)radioRefreshFailures=0;
  if(radioLastChecked&&(!silent||Date.now()-radioLastChecked>30000)&&!$('myRadio').hidden&&!document.hidden&&navigator.onLine)markRadioStatusUpdating();
  if(radioLoading){if(!silent)radioReloadRequested=true;return;}radioLoading=true;
  if(!silent&&$('myRadio').hidden)page('myRadio');
@@ -74,7 +76,7 @@ async function loadMyRadios(silent=false){
   const result=await api('/api/phone/radios');
   if($('myRadio').hidden||document.hidden||generation!==radioViewGeneration)return;
   if(!navigator.onLine)throw Error('No internet.');
-  radioSessionExpired=false;
+  radioSessionExpired=false;radioRefreshFailures=0;
   const selected=reconcileSelectedRadio(result.radios);
   if(selected)loadRadioInventory(selected,true);
   const selectionHint=result.radios.length>1&&!selected?'Choose a Device code for station additions.':'';
@@ -94,10 +96,10 @@ async function loadMyRadios(silent=false){
    card.append(status,station,choose,unlink,report);$('linkedRadios').append(card);
   }
   updateRadioCardStatus(true);publishRadioStatus(result.radios);
- }catch(e){if(!$('myRadio').hidden&&!document.hidden&&generation===radioViewGeneration){if(e.status===401)showRadioReconnect();else markRadioStatusUnavailable(navigator.onLine?e.message+' Tap Try again.':'No internet. Check your connection and tap Try again.');}}
+ }catch(e){if(!$('myRadio').hidden&&!document.hidden&&generation===radioViewGeneration){radioRefreshFailures=Math.min(4,radioRefreshFailures+1);if(e.status===401)showRadioReconnect();else markRadioStatusUnavailable(navigator.onLine?e.message+' Tap Try again.':'No internet. Check your connection and tap Try again.');}}
  finally{$('linkedRadios').setAttribute('aria-busy','false');radioLoading=false;if(radioReloadRequested||generation!==radioViewGeneration){radioReloadRequested=false;if(!$('myRadio').hidden&&!document.hidden)loadMyRadios(true);}}
 }
-$('navRadio').onclick=()=>{history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();};$('refreshRadios').onclick=()=>loadMyRadios();
+$('navRadio').onclick=()=>{history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();};$('refreshRadios').onclick=()=>loadMyRadios().finally(scheduleRadioRefresh);
 $('connectRadio').onclick=()=>{$('connectRadioForm').hidden=false;$('radioConnectStatus').textContent='Use the current Device Code. If it was reset, the old code will not work. Approve the request on your radio.';$('connectRadioForm').elements.device_code.focus();};
 $('cancelRadioConnection').onclick=()=>cancelRadioPairing(true);
 $('connectRadioForm').onsubmit=async event=>{
@@ -117,11 +119,12 @@ $('connectRadioForm').onsubmit=async event=>{
 };
 window.addEventListener('radio-locals-ready',()=>{if(!$('myRadio').hidden){if(location.hash==='#library')history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();scheduleRadioRefresh();}});
 
-let radioRefreshTimer;function scheduleRadioRefresh(){clearTimeout(radioRefreshTimer);if(document.hidden||$('myRadio').hidden)return;radioRefreshTimer=setTimeout(async()=>{if(!document.hidden&&!$('myRadio').hidden&&!$('connectRadioForm').querySelector('button').disabled)await loadMyRadios(true);scheduleRadioRefresh();},10000);}
+function radioRefreshDelay(){return !navigator.onLine?120000:Math.min(120000,10000*2**radioRefreshFailures);}
+let radioRefreshTimer;function scheduleRadioRefresh(){clearTimeout(radioRefreshTimer);if(document.hidden||$('myRadio').hidden)return;radioRefreshTimer=setTimeout(async()=>{if(!document.hidden&&!$('myRadio').hidden&&!$('connectRadioForm').querySelector('button').disabled)await loadMyRadios(true);scheduleRadioRefresh();},radioRefreshDelay());}
 function radioVisibilityChanged(){
  if($('myRadio').hidden)cancelRadioPairing();
  if(document.hidden||$('myRadio').hidden)radioViewGeneration++;
  else loadMyRadios(true);
  scheduleRadioRefresh();
 }
-new MutationObserver(radioVisibilityChanged).observe($('myRadio'),{attributes:true,attributeFilter:['hidden']});document.addEventListener('visibilitychange',radioVisibilityChanged);window.addEventListener('online',()=>{if(!$('myRadio').hidden)loadMyRadios(true);});window.addEventListener('offline',()=>{radioViewGeneration++;markRadioStatusUnavailable('No internet. Check your connection and tap Try again.');});
+new MutationObserver(radioVisibilityChanged).observe($('myRadio'),{attributes:true,attributeFilter:['hidden']});document.addEventListener('visibilitychange',radioVisibilityChanged);window.addEventListener('online',()=>{radioRefreshFailures=0;if(!$('myRadio').hidden&&!document.hidden)void loadMyRadios(true).finally(scheduleRadioRefresh);});window.addEventListener('offline',()=>{radioViewGeneration++;markRadioStatusUnavailable('No internet. Check your connection and tap Try again.');scheduleRadioRefresh();});

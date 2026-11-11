@@ -121,6 +121,20 @@ Object.assign(appCreole,{
  'supportStatus.copyReference':'Kopye referans','supportStatus.referenceCopied':'Referans lan kopye','supportStatus.copyReferenceHelp':'Chwazi epi kopye referans demann ou an.','supportStatus.hidePrivate':'Kache demann nan',
  'error.reference':'Referans','station.chooseBelow':'Chwazi yon estasyon anba a','station.previous':'Estasyon anvan yo','station.next':'Estasyon apre yo','sharing.short':'Pataje','sharing.share':'Pataje'
 });
+Object.assign(appEnglish,{
+ 'action.cancel':'Cancel','action.confirm':'Confirm','action.required':'Enter a value.','action.tooLong':'Shorten this text.','action.notes':'Notes','action.restore':'Restore','action.match':'Type {value} to confirm.',
+ 'owner.pendingEditPrivate':'Changes waiting for review. Your station is not published yet.','owner.conflict':'This station changed elsewhere. Your edits are kept. Review the latest saved version before saving again.','owner.pendingEdit':'Changes waiting for review. Your last approved station stays live.','owner.reviewLatest':'Review latest version','owner.latestStream':'Latest stream URL:','owner.latestBio':'Latest bio:','owner.replaceDraft':'Using this version replaces your unsaved edits and selected cover art.','owner.useLatest':'Use latest version','owner.unchanged':'No changes to save.',
+ 'directory.loading':'Loading stations…','directory.more':'More stations','directory.moreMatches':'More stations may match. Load more to continue.',
+ 'guide.previousShort':'Previous','guide.nextShort':'Next','guide.previous':'Previous guide','guide.next':'Next guide','guide.position':'{current} of {total}',
+ 'title.myRadio':'Radio','title.support':'Support','title.wifiSetup':'Wi-Fi setup','title.login':'Sign in','title.register':'Create station','title.editor':'Station editor','title.shared':'Add station to radio','title.admin':'Administrator','title.legal':'Legal and contact','title.advertise':'Advertise','title.adReview':'Review ads','title.reports':'Reports','title.backups':'Backups'
+});
+Object.assign(appCreole,{
+ 'action.cancel':'Anile','action.confirm':'Konfime','action.required':'Antre yon valè.','action.tooLong':'Rakousi tèks sa a.','action.notes':'Nòt','action.restore':'Retabli','action.match':'Tape {value} pou konfime.',
+ 'owner.pendingEditPrivate':'Chanjman yo ap tann revizyon. Estasyon ou poko pibliye.','owner.conflict':'Yo modifye estasyon sa a yon lòt kote. Chanjman ou yo rete. Revize dènye vèsyon ki anrejistre a anvan ou anrejistre ankò.','owner.pendingEdit':'Chanjman yo ap tann revizyon. Dènye estasyon ou ki te apwouve a toujou disponib.','owner.reviewLatest':'Revize dènye vèsyon an','owner.latestStream':'Dènye URL difizyon an:','owner.latestBio':'Dènye biyo a:','owner.replaceDraft':'Lè ou sèvi ak vèsyon sa a, li ranplase chanjman ou poko anrejistre yo ak imaj ou chwazi a.','owner.useLatest':'Sèvi ak dènye vèsyon an','owner.unchanged':'Pa gen chanjman pou anrejistre.',
+ 'directory.loading':'Estasyon yo ap chaje…','directory.more':'Plis estasyon','directory.moreMatches':'Ka gen lòt estasyon ki koresponn. Chaje plis pou kontinye.',
+ 'guide.previousShort':'Anvan','guide.nextShort':'Apre','guide.previous':'Gid anvan an','guide.next':'Gid apre a','guide.position':'{current} sou {total}',
+ 'title.myRadio':'Radyo','title.support':'Sipò','title.wifiSetup':'Konfigirasyon Wi-Fi','title.login':'Konekte','title.register':'Kreye estasyon','title.editor':'Modifye estasyon','title.shared':'Ajoute estasyon sou radyo','title.admin':'Administratè','title.legal':'Enfòmasyon legal ak kontak','title.advertise':'Fè piblisite','title.adReview':'Revize piblisite','title.reports':'Rapò','title.backups':'Kopi sekou'
+});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';
