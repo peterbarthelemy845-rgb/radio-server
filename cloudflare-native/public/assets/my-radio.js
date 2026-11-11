@@ -68,9 +68,10 @@ function updateRadioCardStatus(available){
   const {status,station,radio,report,choose,code}=view,selected=String(readSelectedRadio())===String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),inventory=typeof readRadioInventory==='function'?readRadioInventory(radio.id):null;
   status.textContent=available?(radio.online?'Online':'Radio offline. Check power and Wi-Fi.'):'Status unavailable';status.className=available?(radio.online?'radio-online':'radio-offline'):'radio-unknown';
   station.textContent=available&&radio.online&&!radio.current_station&&inventory?.known&&!inventory.stale&&inventory.codes.size===0?'Choose a station below':'Current station: '+(available?(radio.online?(radio.current_station||'Not reported yet'):'Unavailable while offline'):'Unavailable until status is checked');
+  station.hidden=!available||!radio.online;
   if(code)code.textContent=deviceLabel;
   if(choose){choose.setAttribute('aria-pressed',String(selected));choose.setAttribute('aria-label',deviceLabel+(selected?', selected':', select radio'));choose.title=selected?'Selected radio':'Select this radio';}
-  if(report)report.hidden=!available||!radio.current_station||!(/^[1-9][0-9]{1,5}$/).test(String(radio.current_station_code||''));
+  if(report)report.hidden=!available||!radio.online||!radio.current_station||!(/^[1-9][0-9]{1,5}$/).test(String(radio.current_station_code||''));
  }
  const selected=radioCardViews.get(String(readSelectedRadio()))?.radio;
  $('openWifiSetup').hidden=radioCardViews.size===0||(available&&selected?.online!==false);

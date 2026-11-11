@@ -81,6 +81,21 @@ test('another offline radio cannot show Wi-Fi help for the selected online radio
  const f=fixture();f.answers.push({radios:[radio,{...radio,id:'two',online:false}]});await f.load();assert.equal(f.ids.get('openWifiSetup').hidden,true);
 });
 
+test('an offline linked radio shows Wi-Fi help without stale station actions and returns online automatically',async()=>{
+ const f=fixture();f.answers.push(response({online:false,current_station_code:'10'}));await f.load();
+ const card=f.views()[0],[row,station,unlink,report]=card.children,[code,status]=row.children,replacements=f.ids.get('linkedRadios').replacements;
+ assert.equal(status.textContent,'Radio offline. Check power and Wi-Fi.');assert.equal(status.className,'radio-offline');
+ assert.equal(station.hidden,true);assert.equal(report.hidden,true);report.onclick();assert.equal(f.reports.length,0);
+ assert.equal(code.textContent,'Device code 3961');assert.equal(unlink.hidden,false);assert.equal(f.ids.get('openWifiSetup').hidden,false);
+ for(const id of ['connectRadio','radioConnectionChoices','connectRadioForm','radioCodeBack'])assert.equal(f.ids.get(id).hidden,true);
+ f.schedule();f.answers.push(response({current_station:'Fresh station',current_station_code:'11'}));await f.poll();
+ assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,replacements);assert.equal(status.textContent,'Online');assert.equal(status.className,'radio-online');
+ assert.equal(station.hidden,false);assert.equal(station.textContent,'Current station: Fresh station');assert.equal(report.hidden,false);report.onclick();assert.equal(f.reports.at(-1).code,'11');
+ assert.equal(f.ids.get('openWifiSetup').hidden,true);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
+ for(const id of ['connectRadio','radioConnectionChoices','connectRadioForm','radioCodeBack'])assert.equal(f.ids.get(id).hidden,true);
+ assert.deepEqual(f.calls,['/api/phone/radios','/api/phone/radios']);assert.equal(f.dialogs.length,0);
+});
+
 test('the current station report action stays in place and uses the latest station',async()=>{
  const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const first=f.views()[0].children[3];assert.equal(first.hidden,false);first.onclick();assert.equal(f.reports[0].code,'10');assert.equal(f.reports[0].name,'Community Radio');
  f.answers.push(response({current_station:'Next station',current_station_code:'11'}));await f.load(true);const next=f.views()[0].children[3];assert.equal(next,first);next.onclick();assert.equal(f.reports.length,2);assert.equal(f.reports[1].code,'11');
