@@ -52,8 +52,8 @@ nav[aria-label="Main navigation"]>:focus-visible{outline:2px solid #73d7ff;outli
 #myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline){grid-column:1/-1;font-size:14px;line-height:1.4;margin:3px 0}
 #myRadio .linked-radio-card>button{grid-column:1/-1;min-height:44px;margin:0;padding:10px;font-size:14px}
 #myRadio .linked-radio-card>.radio-unlink{position:absolute;top:6px;right:8px;width:auto;min-height:40px;padding:8px 10px;background:transparent;color:#9b2634;font-size:12px;border:1px solid #e4c9ce;border-radius:9px;margin:0}
-#myRadio .linked-radio-card>.device-code-select{font-size:16px;letter-spacing:.3px;min-height:44px}
-#myRadio .linked-radio-card>.device-code-select[aria-pressed=true]{background:#e0edff;color:#164ca0}
+#myRadio .linked-radio-card .device-code-select{font-size:16px;letter-spacing:.3px;min-height:44px}
+#myRadio .linked-radio-card .device-code-select[aria-pressed=true]{background:#e0edff;color:#164ca0}
 #myRadio .linked-radio-card>.radio-station-report{background:transparent;color:#1d59a0;text-decoration:underline;text-align:left;font-size:13px;padding:5px 0;min-height:44px}
 #myRadio .linked-radio-card>.radio-station-report[hidden]{display:none}
 #myRadio .radio-empty{padding:0;text-align:left}

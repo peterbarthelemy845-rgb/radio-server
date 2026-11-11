@@ -28,7 +28,7 @@ function shareButton(label,name,url,{standalone=false}={}){
 let stationListSnapshot='';
 function renderStationSlider(track,found,emptyText,saved=false){
  const active=document.activeElement,focusedItem=track.contains?.(active)?active.closest?.('.station-slider-item'):null;
- const focusedCode=focusedItem?.getAttribute?.('data-station-code'),focusedShare=active?.classList?.contains('station-tile-share'),focusedIndex=focusedItem?[...track.children].indexOf(focusedItem):-1;
+ const focusedCode=focusedItem?.getAttribute?.('data-station-code'),focusedIndex=focusedItem?[...track.children].indexOf(focusedItem):-1;
  track.replaceChildren();
  for(const station of found){
   const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — on your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
@@ -45,12 +45,11 @@ function renderStationSlider(track,found,emptyText,saved=false){
    else{feedback.removeAttribute('data-i18n');feedback.textContent='';}
   };
   tile.append(image,name,feedback);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.setAttribute('data-station-code',String(station.listener_code));item.append(tile);
-  if(typeof shareButton==='function'){const share=shareButton('Share '+station.name,station.name,location.origin+'/station/'+station.listener_code,{standalone:true});share.className='station-tile-share';share.textContent='Share';share.setAttribute('data-i18n','sharing.share');item.append(share);}
   track.append(item);tile.updateDeliveryStatus();
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=emptyText;track.append(empty);}
  if(typeof updateStationSliderControls==='function')updateStationSliderControls(track);
- if(focusedIndex>=0&&!document.hidden&&(typeof $!=='function'||!$('myRadio')?.hidden)&&!document.querySelector?.('dialog[open]')){const items=[...track.children].filter(item=>item.className==='station-slider-item'),item=items.find(item=>item.getAttribute?.('data-station-code')===focusedCode)||items[Math.min(focusedIndex,items.length-1)],target=item?.children[focusedShare?1:0]||item?.children[0]||(typeof $==='function'?$('search'):null);target?.focus?.({preventScroll:true});}
+ if(focusedIndex>=0&&!document.hidden&&(typeof $!=='function'||!$('myRadio')?.hidden)&&!document.querySelector?.('dialog[open]')){const items=[...track.children].filter(item=>item.className==='station-slider-item'),item=items.find(item=>item.getAttribute?.('data-station-code')===focusedCode)||items[Math.min(focusedIndex,items.length-1)],target=item?.children[0]||(typeof $==='function'?$('search'):null);target?.focus?.({preventScroll:true});}
 }
 list=function(){
  const fold=value=>String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),query=fold($('search').value.slice(0,96).trim().replace(/^#\s*(?=\d)/,'')),radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',inventory=typeof readRadioInventory==='function'?readRadioInventory(radioId):null,known=!!inventory?.known;
@@ -184,5 +183,17 @@ for(const tab of document.querySelectorAll('nav[aria-label="Main navigation"] > 
 
 const stationPopup=document.createElement('dialog');stationPopup.id='stationAddPopup';stationPopup.setAttribute('aria-label','Add station to your radio');
 const stationPopupClose=document.createElement('button');stationPopupClose.className='station-popup-close';stationPopupClose.textContent='Close';stationPopupClose.onclick=()=>stationPopup.close();stationPopup.append(stationPopupClose);document.body.append(stationPopup);
-stationPopup.addEventListener('close',()=>{$('shared').hidden=true;});
-async function openStationPopup(code,{autoAdd=false}={}){if(shareRunning)return;stationPopup.append($('shared'));$('shared').dataset.quickAdd='1';$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';$('shareStationBio').hidden=true;setSharedStatus('');stationPopup.querySelector('.station-popup-share')?.remove();stationPopup.querySelector('.station-share-feedback')?.remove();const selected=stations.find(s=>String(s.listener_code)===String(code))||(typeof getStationDirectoryStation==='function'?getStationDirectoryStation(code):null);if(selected){const share=shareButton('Share station',selected.name,location.origin+'/station/'+code);share.className='station-popup-share secondary';share.textContent='Share station';stationPopup.append(share);}stationPopup.showModal();try{await openShared(code,true,autoAdd);}catch(e){if(stationPopup.open)setSharedStatus(e.message,'error');}}
+let stationPopupGeneration=0;
+stationPopup.addEventListener('close',()=>{stationPopupGeneration++;$('shared').hidden=true;});
+async function openStationPopup(code,{autoAdd=false}={}){
+ if(shareRunning)return;const generation=++stationPopupGeneration,current=()=>generation===stationPopupGeneration&&stationPopup.open&&!$('shared').hidden;
+ stationPopup.append($('shared'));$('shared').dataset.quickAdd='1';$('shared').hidden=false;$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';$('shareStationBio').hidden=true;setSharedStatus('');stationPopup.querySelector('.station-popup-share')?.remove();stationPopup.querySelector('.station-share-feedback')?.remove();stationPopup.showModal();
+ try{
+  await openShared(code,true,autoAdd,station=>{
+   if(!current()||stationPopup.querySelector('.station-popup-share'))return;
+   // Public sharing is ready after station metadata, independently of private
+   // radio status, inventory checks or any ongoing station addition.
+   const share=shareButton('Share '+station.name,station.name,location.origin+'/station/'+station.listener_code);share.className='station-popup-share secondary';share.textContent='Share station';stationPopup.append(share);
+  });
+ }catch(e){if(current())setSharedStatus(e.message,'error');}
+}

@@ -35,8 +35,8 @@ test('native sharing succeeds without adding fallback controls or invoking the c
  assert.equal(f.nativeCalls.length,1);assert.equal(f.nativeCalls[0].url,'https://radiolocals.com/station/13');assert.equal(f.copies.length,0);assert.equal(f.feedback(),null);assert.equal(f.button.disabled,false);assert.equal(f.events[0].body.station_code,'13');
 });
 
-test('the separate tile Share action shares without opening an add flow, checking a radio or claiming a phone',async()=>{
- const f=fixture({standalone:true,native:async()=>{}});await f.click();assert.equal(f.nativeCalls.length,1);assert.equal(f.nativeCalls[0].url,'https://radiolocals.com/station/13');assert.equal(f.events.length,1);assert.equal(f.events[0].path,'/api/events');assert.equal(f.events.some(event=>event.path.startsWith('/api/phone/')),false);
+test('sharing a public station link never opens an add flow, checks a radio or claims a phone',async()=>{
+ const f=fixture({native:async()=>{}});await f.click();assert.equal(f.nativeCalls.length,1);assert.equal(f.nativeCalls[0].url,'https://radiolocals.com/station/13');assert.equal(f.events.length,1);assert.equal(f.events[0].path,'/api/events');assert.equal(f.events.some(event=>event.path.startsWith('/api/phone/')),false);
 });
 
 test('standalone sharing retains its copy fallback and ignores a late response after leaving Radio',async()=>{
@@ -44,11 +44,10 @@ test('standalone sharing retains its copy fallback and ignores a late response a
  const native=deferred(),late=fixture({standalone:true,native:()=>native.promise});const sharing=late.click();late.page.hidden=true;native.reject(Error('Not supported'));await sharing;assert.equal(late.feedback(),null);assert.equal(late.copies.length,0);
 });
 
-test('a rendered station places Share beside the tile rather than inside its add button',async()=>{
+test('a rendered station has one logo/name action and no persistent Share button or sharing side effects',async()=>{
  const f=fixture({standalone:true,native:async()=>{}}),opens=[];f.ctx.openStationPopup=(...args)=>opens.push(args);
  const render=runInNewContext(directory.slice(directory.indexOf('function renderStationSlider('),directory.indexOf('list=function()'))+';renderStationSlider;',f.ctx),track=f.ctx.document.createElement('div');f.page.append(track);render(track,[{name:'Community Radio',listener_code:'13'}],'No stations');
- const item=track.children[0],[tile,share]=item.children;assert.equal(item.children.length,2);assert.equal(tile.children[0].tag,'img');assert.equal(share.className,'station-tile-share');assert.equal(share.textContent,'Share');assert.equal(share.parentElement,item);
- await share.onclick();assert.equal(opens.length,0);assert.equal(f.events.length,1);assert.equal(f.events[0].path,'/api/events');assert.equal(f.nativeCalls.length,1);tile.onclick();assert.equal(opens.length,1);assert.equal(opens[0][1].autoAdd,true);
+ const item=track.children[0],[tile]=item.children;assert.equal(item.children.length,1);assert.equal(tile.children[0].tag,'img');assert.equal(tile.children[1].textContent,'Community Radio');assert.equal(f.events.length,0);assert.equal(f.nativeCalls.length,0);tile.onclick();assert.equal(opens.length,1);assert.equal(opens[0][1].autoAdd,true);
 });
 
 test('cancelling the native share sheet stays quiet and does not copy without permission',async()=>{

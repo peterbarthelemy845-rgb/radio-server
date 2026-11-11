@@ -32,6 +32,15 @@ test('a direct shared-link response cannot reopen Shared after the user selects 
 test('an abandoned shared-link error is ignored instead of reaching another page',async()=>{
  for(const stage of ['station','radios']){const f=fixture(),pending=deferred();if(stage==='radios')f.answers.push({name:'First station',listener_code:'10'});f.answers.push(pending.promise);const opening=f.open('10');await until(()=>f.calls.length===(stage==='station'?1:2));f.page('myRadio');pending.reject(Error('Old shared-link error'));await opening;assert.equal(f.id('myRadio').hidden,false);assert.equal(f.id('message').textContent,'');}
 });
+
+test('public station metadata becomes available once before a private radio status failure without adding extra requests',async()=>{
+ const f=fixture(),loaded=[];f.answers.push({name:'Public station',listener_code:'10'},Error('Radio status unavailable'));await assert.rejects(f.open('10',true,false,station=>loaded.push(station)),/Radio status unavailable/);assert.equal(loaded.length,1);assert.equal(loaded[0].name,'Public station');assert.deepEqual(f.calls.map(call=>call.path),['/api/stations/10','/api/phone/radios']);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);
+});
+
+test('failed or abandoned public metadata never invokes a popup metadata callback',async()=>{
+ const failed=fixture(),callbacks=[];failed.answers.push(Error('Station not found'));await assert.rejects(failed.open('10',true,false,station=>callbacks.push(station)),/Station not found/);assert.equal(callbacks.length,0);
+ const f=fixture(),pending=deferred();f.answers.push(pending.promise);const opening=f.open('10',true,false,station=>callbacks.push(station));f.page('myRadio');pending.resolve({name:'Old public station',listener_code:'10'});await opening;assert.equal(callbacks.length,0);assert.equal(f.calls.length,1);
+});
 test('cancelling while a shared-link bot check runs prevents a new pairing request',async()=>{
  const bot=deferred(),f=fixture({human:()=>bot.promise,useDeviceCode:true});const adding=f.submit();f.cancel();bot.resolve('checked');await adding;assert.equal(f.calls.length,0);assert.equal(f.get('shareRunning'),false);assert.equal(f.form.button.disabled,false);assert.equal(f.dialogs.length,0);
 });

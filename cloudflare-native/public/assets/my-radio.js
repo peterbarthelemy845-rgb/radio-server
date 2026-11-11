@@ -38,10 +38,11 @@ function showRadioFreshness(available){radioFreshness.hidden=available;radioFres
 function updateRadioCardStatus(available){
  radioStatusAvailable=available;
  for(const view of radioCardViews.values()){
-  const {status,station,radio,report,choose}=view,selected=String(readSelectedRadio())===String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),inventory=typeof readRadioInventory==='function'?readRadioInventory(radio.id):null;
+  const {status,station,radio,report,choose,code}=view,selected=String(readSelectedRadio())===String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),inventory=typeof readRadioInventory==='function'?readRadioInventory(radio.id):null;
   status.textContent=available?(radio.online?'Online':'Radio offline. Check power and Wi-Fi.'):'Status unavailable';status.className=available?(radio.online?'radio-online':'radio-offline'):'radio-unknown';
   station.textContent=available&&radio.online&&!radio.current_station&&inventory?.known&&!inventory.stale&&inventory.codes.size===0?'Choose a station below':'Current station: '+(available?(radio.online?(radio.current_station||'Not reported yet'):'Unavailable while offline'):'Unavailable until status is checked');
-  if(choose){choose.textContent=deviceLabel;choose.setAttribute('aria-pressed',String(selected));choose.setAttribute('aria-label',deviceLabel+(selected?', selected':', select radio'));choose.title=selected?'Selected radio':'Select this radio';}
+  if(code)code.textContent=deviceLabel;
+  if(choose){choose.setAttribute('aria-pressed',String(selected));choose.setAttribute('aria-label',deviceLabel+(selected?', selected':', select radio'));choose.title=selected?'Selected radio':'Select this radio';}
   if(report)report.hidden=!available||!radio.current_station||!(/^[1-9][0-9]{1,5}$/).test(String(radio.current_station_code||''));
  }
  const selected=radioCardViews.get(String(readSelectedRadio()))?.radio;$('openWifiSetup').hidden=available&&radioCardViews.size>0&&selected?.online!==false;
@@ -86,14 +87,16 @@ async function loadMyRadios(silent=false){
   radioViewSnapshot=snapshot;$('linkedRadios').replaceChildren();radioCardViews.clear();$('connectRadio').hidden=true;$('connectRadioForm').hidden=result.radios.length>0;
   if(!result.radios.length){const empty=document.createElement('div');empty.className='radio-empty';empty.innerHTML='<p>Enter your Device Code, then approve on the radio.</p>';$('linkedRadios').append(empty);}
   for(const radio of result.radios){
-   const radioId=String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),card=document.createElement('article'),status=document.createElement('p'),station=document.createElement('p');
+   const radioId=String(radio.id),deviceLabel='Device code '+(radio.device_code||'—'),card=document.createElement('article'),row=document.createElement('div'),status=document.createElement('p'),station=document.createElement('p');
    card.className='linked-radio-card';radioCardViews.set(radioId,{status,station,radio});
+   row.className='radio-device-row';station.className='radio-current-station';
    const unlink=document.createElement('button');unlink.type='button';unlink.className='secondary radio-unlink';unlink.textContent='Unlink radio';unlink.disabled=radioUnlinkPending.has(radioId);radioCardViews.get(radioId).unlink=unlink;
    unlink.onclick=()=>unlinkMyRadio(radioId,'Device code '+(radioCardViews.get(radioId)?.radio.device_code||'—'),unlink);
-   const choose=document.createElement('button');choose.type='button';choose.className='secondary device-code-select';choose.textContent=deviceLabel;radioCardViews.get(radioId).choose=choose;choose.onclick=()=>{rememberSelectedRadio(radioId);loadMyRadios();};
+   const code=document.createElement(result.radios.length>1?'button':'p');code.className=result.radios.length>1?'secondary device-code-select':'device-code-label';code.textContent=deviceLabel;radioCardViews.get(radioId).code=code;
+   if(result.radios.length>1){const choose=code;choose.type='button';radioCardViews.get(radioId).choose=choose;choose.onclick=()=>{if(radioCardViews.get(radioId)?.choose!==choose||$('myRadio').hidden||document.hidden)return;rememberSelectedRadio(radioId);return loadMyRadios();};}
    const report=document.createElement('button');report.type='button';report.className='radio-station-report';report.textContent='Report a station problem';report.hidden=true;radioCardViews.get(radioId).report=report;
    report.onclick=()=>{const view=radioCardViews.get(radioId);if(view?.report!==report||report.hidden||$('myRadio').hidden||document.hidden)return;window.openStationProblemReport?.({code:view.radio.current_station_code,name:view.radio.current_station});};
-   card.append(status,station,choose,unlink,report);$('linkedRadios').append(card);
+   row.append(code,status);card.append(row,station,unlink,report);$('linkedRadios').append(card);
   }
   updateRadioCardStatus(true);publishRadioStatus(result.radios);
  }catch(e){if(!$('myRadio').hidden&&!document.hidden&&generation===radioViewGeneration){radioRefreshFailures=Math.min(4,radioRefreshFailures+1);if(e.status===401)showRadioReconnect();else markRadioStatusUnavailable(navigator.onLine?e.message+' Tap Try again.':'No internet. Check your connection and tap Try again.');}}

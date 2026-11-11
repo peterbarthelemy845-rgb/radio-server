@@ -10,19 +10,19 @@ function fixture(){const ids=new Map(),focuses=[];let document;
  const $=id=>{if(!ids.has(id)){const item=node(id==='search'?'input':id==='loadMoreStations'?'button':'div');item.id=id;document.body.append(item);}return ids.get(id);};for(const id of ['myRadio','library','search','loadMoreStations','savedStations','stations'])$(id);
  const ctx={document,$,location:{origin:'https://radiolocals.com'},window:{},openStationPopup(){},shareButton(){const item=node('button');return item;}};runInNewContext(renderSource+'\n'+completionSource,ctx);
  const render=runInNewContext('renderStationSlider',ctx),complete=ctx.window.onStationDirectoryComplete;
- function find(code,track='stations',share=false){const item=$(track).children.find(item=>item.getAttribute('data-station-code')===String(code));return item?.children[share?1:0];}
+ function find(code,track='stations'){const item=$(track).children.find(item=>item.getAttribute('data-station-code')===String(code));return item?.children[0];}
  function paint(codes,track='stations'){render($(track),codes.map(station),'No stations',track==='savedStations');}
- function focusCode(code,track='stations',share=false){find(code,track,share).focus({preventScroll:true});focuses.length=0;}
+ function focusCode(code,track='stations'){find(code,track).focus({preventScroll:true});focuses.length=0;}
  return {ctx,document,$,paint,find,focusCode,focuses,complete,announcement:()=>$('stationResultAnnouncement')};
 }
-test('station and share focus follow station identity when results reorder',()=>{
- for(const share of [false,true]){const f=fixture();f.paint([10,11,12]);f.focusCode(11,'stations',share);f.paint([12,10,11]);assert.equal(f.document.activeElement,f.find(11,'stations',share));assert.equal(f.focuses.length,1);assert.equal(f.focuses[0].options.preventScroll,true);}
+test('station focus follows station identity when results reorder',()=>{
+ const f=fixture();f.paint([10,11,12]);f.focusCode(11);f.paint([12,10,11]);assert.equal(f.document.activeElement,f.find(11));assert.equal(f.focuses.length,1);assert.equal(f.focuses[0].options.preventScroll,true);
 });
 test('removing a focused station keeps its former position where possible, then falls back to search',()=>{
  const f=fixture();f.paint([10,11,12]);f.focusCode(11);f.paint([10,12]);assert.equal(f.document.activeElement,f.find(12));f.focusCode(12);f.paint([10]);assert.equal(f.document.activeElement,f.find(10));f.focusCode(10);f.paint([]);assert.equal(f.document.activeElement,f.$('search'));
 });
-test('saved station share focus survives its own refresh and never moves during another track refresh',()=>{
- const f=fixture();f.paint([13,14],'savedStations');f.paint([10,11]);f.focusCode(13,'savedStations',true);f.paint([14,13],'savedStations');assert.equal(f.document.activeElement,f.find(13,'savedStations',true));f.focuses.length=0;f.paint([11,10]);assert.equal(f.document.activeElement,f.find(13,'savedStations',true));assert.equal(f.focuses.length,0);
+test('saved station focus survives its own refresh and never moves during another track refresh',()=>{
+ const f=fixture();f.paint([13,14],'savedStations');f.paint([10,11]);f.focusCode(13,'savedStations');f.paint([14,13],'savedStations');assert.equal(f.document.activeElement,f.find(13,'savedStations'));f.focuses.length=0;f.paint([11,10]);assert.equal(f.document.activeElement,f.find(13,'savedStations'));assert.equal(f.focuses.length,0);
 });
 test('ordinary station refreshes never steal focus from another control',()=>{
  const f=fixture();f.paint([10,11]);f.$('search').focus();f.focuses.length=0;f.paint([11,10]);assert.equal(f.document.activeElement,f.$('search'));assert.equal(f.focuses.length,0);

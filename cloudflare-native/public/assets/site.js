@@ -435,13 +435,14 @@ function renderSharedRadioDestination(){
 }
 function invalidateSharedView(){sharedOpenGeneration++;abandonSharedPairing(sharedOpenGeneration);delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');}
 function stopWaitingForSharedStation(){invalidateSharedView();renderStationDeliveryStatus();}
-async function openShared(code,inPopup=false,autoAdd=false){
+async function openShared(code,inPopup=false,autoAdd=false,onStationLoaded){
  const generation=++sharedOpenGeneration;
  abandonSharedPairing(generation);
  try{
  const station=await api('/api/stations/'+code);if(generation!==sharedOpenGeneration)return;sharedCode=code;
  if(!inPopup)page('shared');$('shared').hidden=false;$('shareForm').hidden=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
  if(station.logo_url){$('shareArt').src=station.logo_url;$('shareArt').hidden=false;}
+ if(typeof onStationLoaded==='function')onStationLoaded(station);
  const result=await api('/api/phone/radios');if(generation!==sharedOpenGeneration)return;
  const select=$('shareForm').elements.radio_id,selected=reconcileSelectedRadio(result.radios);sharedLinkedRadios=result.radios;sharedOfflineRadios=new Set(result.radios.filter(r=>r.online===false).map(r=>String(r.id)));select.replaceChildren();
  if(result.radios.length>1){const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a radio';placeholder.disabled=true;select.append(placeholder);}

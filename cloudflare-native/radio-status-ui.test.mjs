@@ -27,28 +27,28 @@ const radio={id:'one',device_code:'3961',online:true,current_station:'Community 
 const response=(overrides={})=>({radios:[{...radio,...overrides}]});
 
 test('healthy radio checks hide timestamps and unchanged polls preserve card nodes without flashing',async()=>{
- const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],status=card.children[0],station=card.children[1],count=f.ids.get('linkedRadios').replacements;
+ const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],status=card.children[0].children[1],station=card.children[1],count=f.ids.get('linkedRadios').replacements;
  assert.equal(status.textContent,'Online');assert.equal(status.className,'radio-online');assert.equal(station.textContent,'Current station: Community Radio');assert.equal(f.freshness.textContent,'');assert.equal(f.freshness.hidden,true);assert.equal(f.ids.get('linkedRadios').attributes['aria-busy'],'false');
  f.advance(60000);f.answers.push(response());await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,count);assert.equal(f.freshness.textContent,'');assert.equal(f.freshness.hidden,true);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
 });
 
 test('returning to stale radio data shows a neutral update until the fresh response arrives',async()=>{
- const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const card=f.views()[0],status=card.children[0],station=card.children[1],report=card.children[4],events=f.statusEvents.length;
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const card=f.views()[0],status=card.children[0].children[1],station=card.children[1],report=card.children[3],events=f.statusEvents.length;
  f.ids.get('myRadio').hidden=true;f.visibility();f.advance(60000);const check=deferred();f.answers.push(check.promise);f.ids.get('myRadio').hidden=false;f.visibility();
  assert.equal(f.views()[0],card);assert.equal(status.textContent,'Updating status…');assert.equal(status.className,'radio-unknown');assert.equal(station.textContent,'Current station: Community Radio');assert.equal(report.hidden,true);assert.match(f.freshness.textContent,/^Last checked /);assert.equal(f.ids.get('radioConnectStatus').textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('linkedRadios').attributes['aria-busy'],'true');assert.equal(f.statusEvents.length,events);
- check.resolve(response({online:false}));await f.flush();assert.equal(f.views()[0].children[0].textContent,'Radio offline. Check power and Wi-Fi.');assert.equal(f.freshness.textContent,'');assert.equal(f.freshness.hidden,true);assert.equal(f.ids.get('refreshRadios').hidden,true);
+ check.resolve(response({online:false}));await f.flush();assert.equal(f.views()[0].children[0].children[1].textContent,'Radio offline. Check power and Wi-Fi.');assert.equal(f.freshness.textContent,'');assert.equal(f.freshness.hidden,true);assert.equal(f.ids.get('refreshRadios').hidden,true);
 });
 
 test('a regular silent poll keeps healthy cards and hidden timestamps steady while in flight',async()=>{
- const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],status=card.children[0],check=deferred(),replacements=f.ids.get('linkedRadios').replacements;f.advance(10000);f.answers.push(check.promise);const pending=f.load(true);
+ const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],status=card.children[0].children[1],check=deferred(),replacements=f.ids.get('linkedRadios').replacements;f.advance(10000);f.answers.push(check.promise);const pending=f.load(true);
  assert.equal(status.textContent,'Online');assert.equal(status.className,'radio-online');assert.equal(f.freshness.hidden,true);assert.equal(f.freshness.textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);check.resolve(response());await pending;assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,replacements);assert.equal(f.freshness.hidden,true);
 });
 
 test('a refresh only reveals retry after failure and explicit retry clears old error feedback',async()=>{
  const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],check=deferred();f.advance(60000);f.answers.push(check.promise);const request=f.load(true);
- assert.equal(card.children[0].textContent,'Updating status…');assert.equal(f.ids.get('refreshRadios').hidden,true);check.reject(Error('Service unavailable'));await request;
- assert.equal(card.children[0].textContent,'Status unavailable');assert.match(f.ids.get('radioConnectStatus').textContent,/Service unavailable.*Try again/);assert.equal(f.ids.get('refreshRadios').hidden,false);
- const retry=deferred();f.answers.push(retry.promise);const retrying=f.load();assert.equal(card.children[0].textContent,'Updating status…');assert.equal(f.ids.get('radioConnectStatus').textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);retry.resolve(response());await retrying;assert.equal(card.children[0].textContent,'Online');
+ assert.equal(card.children[0].children[1].textContent,'Updating status…');assert.equal(f.ids.get('refreshRadios').hidden,true);check.reject(Error('Service unavailable'));await request;
+ assert.equal(card.children[0].children[1].textContent,'Status unavailable');assert.match(f.ids.get('radioConnectStatus').textContent,/Service unavailable.*Try again/);assert.equal(f.ids.get('refreshRadios').hidden,false);
+ const retry=deferred();f.answers.push(retry.promise);const retrying=f.load();assert.equal(card.children[0].children[1].textContent,'Updating status…');assert.equal(f.ids.get('radioConnectStatus').textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);retry.resolve(response());await retrying;assert.equal(card.children[0].children[1].textContent,'Online');
 });
 
 test('an unlinked radio page does not claim a device status was checked',async()=>{
@@ -65,7 +65,7 @@ test('Wi-Fi help is available before linking and for the selected offline radio'
 });
 
 test('an expired phone session removes stale radio actions and opens reconnect without a reload',async()=>{
- const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const old=f.views()[0],unlink=old.children[3],report=old.children[4];f.inventories.set('one',{known:true,codes:new Set(['10'])});
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const old=f.views()[0],unlink=old.children[2],report=old.children[3];f.inventories.set('one',{known:true,codes:new Set(['10'])});
  f.answers.push(Object.assign(Error('Please reload this page.'),{status:401}));await f.load(true);
  assert.equal(f.views().length,0);assert.equal(f.ids.get('connectRadioForm').hidden,false);assert.equal(f.ids.get('connectRadio').hidden,true);assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('openWifiSetup').hidden,false);assert.equal(f.freshness.hidden,true);assert.match(f.ids.get('radioConnectStatus').textContent,/Enter the Device Code to reconnect/);assert.equal(f.selections.at(-1),'');assert.equal(f.inventories.size,0);assert.equal(f.statusEvents.at(-1).detail.radios.length,0);
  await unlink.onclick();report.onclick();assert.equal(f.dialogs.length,0);assert.equal(f.reports.length,0);assert.equal(f.calls.includes('/api/phone/unlink'),false);
@@ -82,28 +82,28 @@ test('another offline radio cannot show Wi-Fi help for the selected online radio
 });
 
 test('the current station report action stays in place and uses the latest station',async()=>{
- const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const first=f.views()[0].children[4];assert.equal(first.hidden,false);first.onclick();assert.equal(f.reports[0].code,'10');assert.equal(f.reports[0].name,'Community Radio');
- f.answers.push(response({current_station:'Next station',current_station_code:'11'}));await f.load(true);const next=f.views()[0].children[4];assert.equal(next,first);next.onclick();assert.equal(f.reports.length,2);assert.equal(f.reports[1].code,'11');
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const first=f.views()[0].children[3];assert.equal(first.hidden,false);first.onclick();assert.equal(f.reports[0].code,'10');assert.equal(f.reports[0].name,'Community Radio');
+ f.answers.push(response({current_station:'Next station',current_station_code:'11'}));await f.load(true);const next=f.views()[0].children[3];assert.equal(next,first);next.onclick();assert.equal(f.reports.length,2);assert.equal(f.reports[1].code,'11');
  f.answers.push(Error('Status unavailable'));await f.load(true);assert.equal(next.hidden,true);next.onclick();assert.equal(f.reports.length,2);
 });
 
 test('failed silent checks replace green Online and successful unchanged data restores it in place',async()=>{
  const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],count=f.ids.get('linkedRadios').replacements;
- f.answers.push(Error('Service temporarily unavailable.'));await f.load(true);assert.equal(card.children[0].textContent,'Status unavailable');assert.equal(card.children[0].className,'radio-unknown');assert.match(card.children[1].textContent,/Unavailable until status is checked/);assert.match(f.freshness.textContent,/^Last checked /);assert.equal(f.ids.get('refreshRadios').hidden,false);
- f.advance(60000);f.answers.push(response());await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,count);assert.equal(card.children[0].className,'radio-online');assert.equal(card.children[0].textContent,'Online');assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
+ f.answers.push(Error('Service temporarily unavailable.'));await f.load(true);assert.equal(card.children[0].children[1].textContent,'Status unavailable');assert.equal(card.children[0].children[1].className,'radio-unknown');assert.match(card.children[1].textContent,/Unavailable until status is checked/);assert.match(f.freshness.textContent,/^Last checked /);assert.equal(f.ids.get('refreshRadios').hidden,false);
+ f.advance(60000);f.answers.push(response());await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,count);assert.equal(card.children[0].children[1].className,'radio-online');assert.equal(card.children[0].children[1].textContent,'Online');assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
 });
 
 test('browser offline event immediately removes online status and labels stale station data unavailable',async()=>{
- const f=fixture();f.answers.push(response());await f.load();const status=f.views()[0].children[0],before=f.calls.length;f.navigator.onLine=false;f.windowEvents.offline();assert.equal(status.className,'radio-unknown');assert.equal(status.textContent,'Status unavailable');assert.match(f.ids.get('radioConnectStatus').textContent,/No internet/);assert.equal(f.calls.length,before);
+ const f=fixture();f.answers.push(response());await f.load();const status=f.views()[0].children[0].children[1],before=f.calls.length;f.navigator.onLine=false;f.windowEvents.offline();assert.equal(status.className,'radio-unknown');assert.equal(status.textContent,'Status unavailable');assert.match(f.ids.get('radioConnectStatus').textContent,/No internet/);assert.equal(f.calls.length,before);
 });
 
 test('a check that completes after leaving Radio cannot change messages on another page',async()=>{
  const f=fixture();f.answers.push(response());await f.load();let reject;f.answers.push(()=>new Promise((resolve,rejected)=>{reject=rejected;}));const pending=f.load(true);f.ids.get('myRadio').hidden=true;f.visibility();const before=f.ids.get('radioConnectStatus').textContent;reject(Error('Old failure'));await pending;assert.equal(f.ids.get('radioConnectStatus').textContent,before);assert.equal(f.ids.get('refreshRadios').hidden,true);
- f.advance(60000);f.answers.push(response({online:false}));f.ids.get('myRadio').hidden=false;f.visibility();await f.flush();assert.equal(f.views()[0].children[0].className,'radio-offline');assert.match(f.views()[0].children[0].textContent,/Check power and Wi-Fi/);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
+ f.advance(60000);f.answers.push(response({online:false}));f.ids.get('myRadio').hidden=false;f.visibility();await f.flush();assert.equal(f.views()[0].children[0].children[1].className,'radio-offline');assert.match(f.views()[0].children[0].children[1].textContent,/Check power and Wi-Fi/);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
 });
 
 test('stale in-flight response after leaving and returning is discarded in favor of a fresh check',async()=>{
- const f=fixture();f.answers.push(response());await f.load();let resolve;f.answers.push(()=>new Promise(done=>{resolve=done;}));const pending=f.load(true);f.ids.get('myRadio').hidden=true;f.visibility();f.ids.get('myRadio').hidden=false;f.answers.push(response({online:false}));f.visibility();resolve(response());await pending;await f.flush();assert.equal(f.views()[0].children[0].className,'radio-offline');
+ const f=fixture();f.answers.push(response());await f.load();let resolve;f.answers.push(()=>new Promise(done=>{resolve=done;}));const pending=f.load(true);f.ids.get('myRadio').hidden=true;f.visibility();f.ids.get('myRadio').hidden=false;f.answers.push(response({online:false}));f.visibility();resolve(response());await pending;await f.flush();assert.equal(f.views()[0].children[0].children[1].className,'radio-offline');
 });
 
 test('silent status polling pauses while physical pairing is in progress',async()=>{
@@ -117,21 +117,21 @@ test('stale radio refresh does not replace an active physical pairing prompt',as
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 async function until(check){for(let i=0;i<30&&!check();i++)await new Promise(setImmediate);assert.ok(check(),'Async checkpoint was not reached');}
 test('unlink completion cannot reopen Radio or show a dialog after navigating away',async()=>{
- const f=fixture();f.answers.push(response());await f.load();const unlink=f.views()[0].children[3],pending=deferred();f.answers.push(pending.promise);const action=unlink.onclick();await until(()=>f.calls.includes('/api/phone/unlink'));
+ const f=fixture();f.answers.push(response());await f.load();const unlink=f.views()[0].children[2],pending=deferred();f.answers.push(pending.promise);const action=unlink.onclick();await until(()=>f.calls.includes('/api/phone/unlink'));
  f.ids.get('myRadio').hidden=true;f.visibility();pending.resolve({ok:true});await action;
  assert.equal(f.ids.get('myRadio').hidden,true);assert.deepEqual(f.dialogs,['Unlink radio?']);assert.equal(f.calls.filter(path=>path==='/api/phone/radios').length,1);
 });
 test('leaving an unlink confirmation cancels its request even if an old prompt resolves later',async()=>{
- const f=fixture();f.answers.push(response());await f.load();const confirmation=deferred();f.dialogAnswers.push(confirmation.promise);const action=f.views()[0].children[3].onclick();
+ const f=fixture();f.answers.push(response());await f.load();const confirmation=deferred();f.dialogAnswers.push(confirmation.promise);const action=f.views()[0].children[2].onclick();
  f.ids.get('myRadio').hidden=true;f.visibility();confirmation.resolve(true);await action;assert.equal(f.calls.includes('/api/phone/unlink'),false);
 });
 test('an in-flight unlink stays locked when polling replaces the radio card',async()=>{
- const f=fixture();f.answers.push(response());await f.load();const pending=deferred();f.answers.push(pending.promise);const first=f.views()[0].children[3].onclick();await until(()=>f.calls.includes('/api/phone/unlink'));
- f.answers.push(response({current_station:'Another station'}));await f.load(true);const replacement=f.views()[0].children[3];await replacement.onclick();assert.equal(f.calls.filter(path=>path==='/api/phone/unlink').length,1);assert.deepEqual(f.dialogs,['Unlink radio?']);assert.equal(replacement.disabled,true);
+ const f=fixture();f.answers.push(response());await f.load();const pending=deferred();f.answers.push(pending.promise);const first=f.views()[0].children[2].onclick();await until(()=>f.calls.includes('/api/phone/unlink'));
+ f.answers.push(response({current_station:'Another station'}));await f.load(true);const replacement=f.views()[0].children[2];await replacement.onclick();assert.equal(f.calls.filter(path=>path==='/api/phone/unlink').length,1);assert.deepEqual(f.dialogs,['Unlink radio?']);assert.equal(replacement.disabled,true);
  f.answers.push({radios:[]});pending.resolve({ok:true});await first;assert.equal(f.views().length,1);assert.deepEqual(f.dialogs,['Unlink radio?','Radio unlinked']);
 });
 test('detached radio card handlers cannot unlink a radio removed by a newer status check',async()=>{
- const f=fixture();f.answers.push(response());await f.load();const unlink=f.views()[0].children[3];f.answers.push({radios:[]});await f.load(true);await unlink.onclick();assert.equal(f.calls.includes('/api/phone/unlink'),false);assert.equal(f.dialogs.length,0);
+ const f=fixture();f.answers.push(response());await f.load();const unlink=f.views()[0].children[2];f.answers.push({radios:[]});await f.load(true);await unlink.onclick();assert.equal(f.calls.includes('/api/phone/unlink'),false);assert.equal(f.dialogs.length,0);
 });
 
 
@@ -141,10 +141,24 @@ test('initial status failures keep Wi-Fi help reachable without falsely reportin
  f.answers.push(response());await f.load();assert.equal(f.ids.get('openWifiSetup').hidden,true);
 });
 
-test('station, online and Device Code changes update existing card buttons without losing focus',async()=>{
- const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const card=f.views()[0],choose=card.children[2],unlink=card.children[3],report=card.children[4],replacements=f.ids.get('linkedRadios').replacements;choose.focus();f.ids.get('linkedRadios').scrollTop=63;
- f.answers.push(response({device_code:'7777',current_station:'Next station',current_station_code:'11'}));await f.load(true);assert.equal(f.views()[0],card);assert.equal(card.children[2],choose);assert.equal(card.children[3],unlink);assert.equal(card.children[4],report);assert.equal(f.document.activeElement,choose);assert.equal(f.ids.get('linkedRadios').scrollTop,63);assert.equal(choose.textContent,'Device code 7777');assert.equal(choose.attributes['aria-pressed'],'true');assert.match(card.children[1].textContent,/Next station/);report.onclick();assert.equal(f.reports.at(-1).code,'11');
- f.answers.push(response({device_code:'7777',online:false}));await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.document.activeElement,choose);assert.equal(f.ids.get('linkedRadios').replacements,replacements);assert.equal(card.children[0].className,'radio-offline');
+test('station, online and Device Code changes update compact details without losing action focus',async()=>{
+ const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const card=f.views()[0],code=card.children[0].children[0],unlink=card.children[2],report=card.children[3],replacements=f.ids.get('linkedRadios').replacements;unlink.focus();f.ids.get('linkedRadios').scrollTop=63;
+ f.answers.push(response({device_code:'7777',current_station:'Next station',current_station_code:'11'}));await f.load(true);assert.equal(f.views()[0],card);assert.equal(card.children[0].children[0],code);assert.equal(card.children[2],unlink);assert.equal(card.children[3],report);assert.equal(f.document.activeElement,unlink);assert.equal(f.ids.get('linkedRadios').scrollTop,63);assert.equal(code.textContent,'Device code 7777');assert.equal(code.attributes['aria-pressed'],undefined);assert.match(card.children[1].textContent,/Next station/);report.onclick();assert.equal(f.reports.at(-1).code,'11');
+ f.answers.push(response({device_code:'7777',online:false}));await f.load(true);assert.equal(f.views()[0],card);assert.equal(f.document.activeElement,unlink);assert.equal(f.ids.get('linkedRadios').replacements,replacements);assert.equal(card.children[0].children[1].className,'radio-offline');
+});
+
+test('a single linked radio groups plain Device Code and status with the current station underneath',async()=>{
+ const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],[row,current,unlink,report]=card.children,[code,status]=row.children;
+ assert.equal(card.className,'linked-radio-card');assert.equal(row.className,'radio-device-row');assert.equal(code.tag,'p');assert.equal(code.className,'device-code-label');assert.equal(code.textContent,'Device code 3961');assert.equal(code.onclick,undefined);assert.equal(code.attributes.role,undefined);assert.equal(code.attributes.tabindex,undefined);assert.equal(code.attributes['aria-pressed'],undefined);assert.equal(status.textContent,'Online');assert.equal(current.className,'radio-current-station');assert.equal(current.textContent,'Current station: Community Radio');assert.match(unlink.className,/radio-unlink/);assert.equal(report.className,'radio-station-report');assert.equal(f.selections.length,0);
+});
+
+test('multiple linked radios retain real accessible selection buttons and compact status rows',async()=>{
+ const f=fixture(),second={...radio,id:'two',device_code:'7777',online:false};f.answers.push({radios:[radio,second]});await f.load();const [one,two]=f.views(),choose=two.children[0].children[0];assert.equal(one.children[0].className,'radio-device-row');assert.equal(choose.tag,'button');assert.equal(choose.type,'button');assert.match(choose.className,/device-code-select/);assert.equal(choose.attributes['aria-pressed'],'false');assert.match(choose.attributes['aria-label'],/Device code 7777, select radio/);assert.equal(two.children[0].children[1].className,'radio-offline');
+ f.answers.push({radios:[radio,second]});await choose.onclick();assert.equal(f.selections.at(-1),'two');assert.equal(choose.attributes['aria-pressed'],'true');assert.equal(one.children[0].children[0].attributes['aria-pressed'],'false');assert.equal(f.ids.get('openWifiSetup').hidden,false);
+});
+
+test('radio-count transitions rebuild the appropriate code control and retire detached selection actions',async()=>{
+ const f=fixture(),second={...radio,id:'two',device_code:'7777'};f.answers.push(response());await f.load();assert.equal(f.views()[0].children[0].children[0].tag,'p');f.answers.push({radios:[radio,second]});await f.load(true);const oldOne=f.views()[0].children[0].children[0],oldTwo=f.views()[1].children[0].children[0];assert.equal(oldOne.tag,'button');f.answers.push(response());await f.load(true);assert.equal(f.views().length,1);assert.equal(f.views()[0].children[0].children[0].tag,'p');const before=f.calls.length,selections=f.selections.length;await oldOne.onclick();await oldTwo.onclick();assert.equal(f.calls.length,before);assert.equal(f.selections.length,selections);
 });
 
 test('a confirmed empty online radio gets a useful next step while unknown, offline or stale data does not',async()=>{
@@ -156,15 +170,15 @@ test('a confirmed empty online radio gets a useful next step while unknown, offl
 });
 
 test('changing the selected radio and response order updates selection without rebuilding either card',async()=>{
- const f=fixture(),second={...radio,id:'two',device_code:'7777'};f.answers.push({radios:[radio,second]});await f.load();const [one,two]=f.views(),chooseTwo=two.children[2],replacements=f.ids.get('linkedRadios').replacements;chooseTwo.focus();f.answers.push({radios:[second,radio]});chooseTwo.onclick();await f.flush();
- assert.equal(f.views()[0],one);assert.equal(f.views()[1],two);assert.equal(one.children[2].attributes['aria-pressed'],'false');assert.equal(chooseTwo.attributes['aria-pressed'],'true');assert.equal(f.document.activeElement,chooseTwo);assert.equal(f.ids.get('linkedRadios').replacements,replacements);
+ const f=fixture(),second={...radio,id:'two',device_code:'7777'};f.answers.push({radios:[radio,second]});await f.load();const [one,two]=f.views(),chooseTwo=two.children[0].children[0],replacements=f.ids.get('linkedRadios').replacements;chooseTwo.focus();f.answers.push({radios:[second,radio]});chooseTwo.onclick();await f.flush();
+ assert.equal(f.views()[0],one);assert.equal(f.views()[1],two);assert.equal(one.children[0].children[0].attributes['aria-pressed'],'false');assert.equal(chooseTwo.attributes['aria-pressed'],'true');assert.equal(f.document.activeElement,chooseTwo);assert.equal(f.ids.get('linkedRadios').replacements,replacements);
 });
 
 test('failed automatic status checks back off to 20, 40, 80 and at most 120 seconds',async()=>{
  const f=fixture();f.answers.push(response());await f.load();f.schedule();assert.equal(f.scheduled().delay,10000);
  for(const delay of [20000,40000,80000,120000,120000]){f.answers.push(Error('Temporary status failure'));await f.poll();assert.equal(f.scheduled().delay,delay);assert.equal(f.timers.size,1,'Only one next poll may remain scheduled');}
  assert.equal(f.calls.filter(path=>path==='/api/phone/radios').length,6);
- f.answers.push(response());await f.poll();assert.equal(f.scheduled().delay,10000,'A successful response restores the regular interval');assert.equal(f.views()[0].children[0].textContent,'Online');
+ f.answers.push(response());await f.poll();assert.equal(f.scheduled().delay,10000,'A successful response restores the regular interval');assert.equal(f.views()[0].children[0].children[1].textContent,'Online');
 });
 
 test('an explicit status retry resets the accumulated automatic backoff',async()=>{

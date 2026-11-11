@@ -104,9 +104,28 @@ test('saved rows keep cached station names and thumbnails after the available se
  assert.deepEqual(f.names('savedStations'),['Local Radio']);const image=f.$('savedStations').children[0].children[0].children[0];assert.equal(image.src,'/artwork/local.png?size=192');assert.equal(f.$('savedStationsSection').hidden,false);
 });
 
-test('a saved station outside the current search retains its popup Share action from cached metadata',async()=>{
- const ids=new Map(),shares=[],opened=[],popup={children:[],open:false,append(node){this.children.push(node);},querySelector(){return null;},showModal(){this.open=true;}};
+function popupShareFixture({load=async()=>{},afterMetadata=async()=>{}}={}){
+ const ids=new Map(),shares=[],opened=[],statuses=[],popup={children:[],open:false,append(node){this.children.push(node);},querySelector(selector){return this.children.find(node=>selector==='.station-popup-share'&&node.className?.includes('station-popup-share'))||null;},showModal(){this.open=true;}};
  const $=id=>{if(!ids.has(id))ids.set(id,{dataset:{},hidden:false,textContent:''});return ids.get(id);};
- const open=runInNewContext(source.slice(source.indexOf('async function openStationPopup('))+';openStationPopup;',{shareRunning:false,stationPopup:popup,$,stations:[{listener_code:'14',name:'Other station'}],getStationDirectoryStation:code=>code==='13'?{listener_code:'13',name:'Saved Local Radio'}:null,location:{origin:'https://radiolocals.com'},shareButton:(...args)=>{shares.push(args);return {};},setSharedStatus(){},openShared:async(...args)=>opened.push(args)});
- await open('13');assert.equal(popup.open,true);assert.equal(shares.length,1);assert.equal(shares[0][1],'Saved Local Radio');assert.equal(shares[0][2],'https://radiolocals.com/station/13');assert.deepEqual(opened,[['13',true,false]]);
+ const context={shareRunning:false,stationPopup:popup,$,stations:[],location:{origin:'https://radiolocals.com'},shareButton:(...args)=>{shares.push(args);const button={remove(){popup.children.splice(popup.children.indexOf(button),1);}};return button;},setSharedStatus:(...args)=>statuses.push(args),openShared:async(...args)=>{opened.push(args.slice(0,3));await load(...args);const station={name:'Saved Local Radio '+args[0],listener_code:args[0]};$('shareName').textContent=station.name;args[3]?.(station);await afterMetadata(...args);}};
+ const open=runInNewContext('let stationPopupGeneration=0;'+source.slice(source.indexOf('async function openStationPopup('))+';openStationPopup;',context);
+ return {open,$,popup,shares,opened,statuses,shareButtons:()=>popup.children.filter(node=>node.className?.includes('station-popup-share'))};
+}
+
+test('a valid station receives one popup Share action even without any loaded catalog or saved metadata',async()=>{
+ const f=popupShareFixture();await f.open('13');assert.equal(f.popup.open,true);assert.equal(f.shares.length,1);assert.equal(f.shares[0][1],'Saved Local Radio 13');assert.equal(f.shares[0][2],'https://radiolocals.com/station/13');assert.deepEqual(f.opened,[['13',true,false]]);assert.equal(f.shareButtons().length,1);assert.equal(f.shareButtons()[0].textContent,'Share station');
+ await f.open('14');assert.equal(f.shareButtons().length,1,'Opening another station replaces the previous popup Share');assert.equal(f.shares[1][2],'https://radiolocals.com/station/14');
+});
+
+test('late station loads cannot append Share to a closed popup or replace a newer station action',async()=>{
+ let resolve;const pending=new Promise(done=>{resolve=done;}),closed=popupShareFixture({load:()=>pending});const opening=closed.open('13');closed.popup.open=false;closed.$('shared').hidden=true;resolve();await opening;assert.equal(closed.shareButtons().length,0);
+ let oldResolve;const old=new Promise(done=>{oldResolve=done;}),current=popupShareFixture({load:code=>code==='13'?old:Promise.resolve()});const first=current.open('13');await current.open('14');oldResolve();await first;assert.equal(current.shareButtons().length,1);assert.equal(current.shares.length,1);assert.equal(current.shares[0][2],'https://radiolocals.com/station/14');
+});
+
+test('a station that fails validation never receives a popup Share action',async()=>{
+ const f=popupShareFixture({load:async()=>{throw Error('Station not found.');}});await f.open('13');assert.equal(f.shareButtons().length,0);assert.equal(f.shares.length,0);assert.deepEqual(f.statuses.at(-1),['Station not found.','error']);
+});
+
+test('public popup sharing remains available when private radio status fails after metadata loaded',async()=>{
+ const f=popupShareFixture({afterMetadata:async()=>{throw Error('Radio status could not load.');}});await f.open('13');assert.equal(f.shareButtons().length,1);assert.equal(f.shares[0][2],'https://radiolocals.com/station/13');assert.deepEqual(f.statuses.at(-1),['Radio status could not load.','error']);
 });

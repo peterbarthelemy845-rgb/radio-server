@@ -3,8 +3,8 @@
 body.app-listener-page{color:#172b4d;background:radial-gradient(ellipse at top,#203b9a,#060c25 75%);min-height:100dvh;padding:calc(24px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(100px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));font-size:1rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 body.app-listener-page input,body.app-listener-page select,body.app-listener-page textarea,body.app-listener-page button{font-family:inherit}
 body.app-listener-page main{max-width:460px}
-body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px 12px;padding:14px 16px 12px;background:#fff;border:1px solid #d9e4f5;border-bottom:0;border-radius:15px 15px 0 0;margin:8px 0 0}
-#listenerAppHeader>img{display:block;grid-column:1/-1;justify-self:center;width:88px;height:88px;max-width:100%;object-fit:contain;margin:0 auto 4px;padding:10px;border:5px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 8px 18px #1675e72b}
+body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:8px 16px;background:#fff;border:1px solid #d9e4f5;border-bottom:0;border-radius:15px 15px 0 0;margin:8px 0 0}
+#listenerAppHeader>img{display:block;grid-column:1/-1;justify-self:center;width:64px;height:64px;max-width:100%;object-fit:contain;margin:0 auto;padding:6px;border:3px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 5px 12px #1675e72b}
 #listenerAppHeader>div{min-width:0}
 #listenerAppHeader p{display:none}
 #listenerAppHeader h1{font-size:23px;line-height:1.2;margin:0;color:#152b50}
@@ -13,12 +13,14 @@ body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:min
 body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{width:100%;max-width:none;padding:16px;background:#fff;border:1px solid #d9e4f5;border-radius:15px;box-shadow:0 14px 36px #0002;margin:0}
 body.app-listener-page #myRadio.card,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{border-top:0;border-radius:0 0 15px 15px;padding-top:0}
 body.app-listener-page #myRadio>.radio-page-logo,body.app-listener-page #support>.radio-page-logo,body.app-listener-page #support>h1{display:none}
-body.app-listener-page #myRadio .linked-radio-card{background:transparent;border:0;box-shadow:none;border-radius:0;padding:0;margin:0 0 8px;gap:8px 12px}
-body.app-listener-page #myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline):not(.radio-unknown){font-size:1rem;line-height:1.5;margin:0}
-body.app-listener-page #myRadio .radio-online,body.app-listener-page #myRadio .radio-offline,body.app-listener-page #myRadio .radio-unknown{font-size:.875rem;line-height:1.35;max-width:calc(100% - 124px);justify-self:start;margin:0;border-radius:20px;padding:8px 9px;min-height:48px;font-weight:700}
+body.app-listener-page #myRadio .linked-radio-card{grid-template-columns:minmax(0,1fr) auto;background:transparent;border:0;box-shadow:none;border-radius:0;padding:0;margin:0 0 8px;gap:8px 12px}
+body.app-listener-page #myRadio .radio-device-row{display:flex;grid-column:1/-1;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0}
+body.app-listener-page #myRadio .device-code-label{font-size:1rem;font-weight:650;line-height:1.4;margin:0;overflow-wrap:anywhere}
+body.app-listener-page #myRadio .linked-radio-card>.radio-current-station{grid-column:1;grid-row:2;align-self:center;font-size:1rem;line-height:1.5;margin:0;min-width:0;overflow-wrap:anywhere}
+body.app-listener-page #myRadio .radio-online,body.app-listener-page #myRadio .radio-offline,body.app-listener-page #myRadio .radio-unknown{grid-column:auto;display:inline-block;font-size:.875rem;line-height:1.35;max-width:100%;align-self:center;justify-self:start;margin:0;border-radius:20px;padding:4px 8px;min-height:0;font-weight:700}
 body.app-listener-page #myRadio .radio-unknown{color:#79500c;background:#fff2d8}
-body.app-listener-page #myRadio .linked-radio-card>.radio-unlink{min-height:48px;max-width:116px;font-size:.8125rem;padding:8px;top:0;right:0}
-body.app-listener-page #myRadio .linked-radio-card>.device-code-select{font-size:1rem;min-height:48px}
+body.app-listener-page #myRadio .linked-radio-card>.radio-unlink{position:static;grid-column:2;grid-row:2;align-self:center;min-height:48px;max-width:116px;font-size:.8125rem;padding:8px}
+body.app-listener-page #myRadio .radio-device-row>.device-code-select{width:auto;max-width:100%;font-size:1rem;line-height:1.4;min-height:48px;margin:0;padding:10px}
 body.app-listener-page #myRadio .radio-empty p{font-size:1rem;line-height:1.5;margin:0 0 12px;color:#536782}
 body.app-listener-page #myRadio #connectRadioForm{padding:0;background:transparent;border:0;border-radius:0}
 body.app-listener-page #myRadio #connectRadioForm label{font-size:.9375rem}
@@ -72,7 +74,7 @@ nav[aria-label="Main navigation"]>button,nav[aria-label="Main navigation"]>a{fon
 @keyframes station-panel-enter{from{transform:translateY(18px);opacity:.5}to{transform:translateY(0);opacity:1}}
 /* Larger text is optional and never reduces tap targets or browser zoom. */
 body.app-large-text.app-listener-page{font-size:1.125rem}
-body.app-large-text.app-listener-page #myRadio .linked-radio-card>p:not(.radio-online):not(.radio-offline):not(.radio-unknown),body.app-large-text.app-listener-page #myRadio .device-code-select,body.app-large-text.app-listener-page #myRadio .radio-empty p,body.app-large-text.app-listener-page #myRadio #radioConnectStatus,body.app-large-text.app-listener-page #support>p,body.app-large-text.app-listener-page #support .support-slide h3,body.app-large-text.app-listener-page #support .support-slide details,body.app-large-text.app-listener-page #ticketForm label{font-size:1.125rem}
+body.app-large-text.app-listener-page #myRadio .radio-current-station,body.app-large-text.app-listener-page #myRadio .device-code-label,body.app-large-text.app-listener-page #myRadio .device-code-select,body.app-large-text.app-listener-page #myRadio .radio-empty p,body.app-large-text.app-listener-page #myRadio #radioConnectStatus,body.app-large-text.app-listener-page #support>p,body.app-large-text.app-listener-page #support .support-slide h3,body.app-large-text.app-listener-page #support .support-slide details,body.app-large-text.app-listener-page #ticketForm label{font-size:1.125rem}
 body.app-large-text.app-listener-page #library.radio-library .station-tile-name{font-size:1rem}
 body.app-large-text.app-listener-page #ticketForm input,body.app-large-text.app-listener-page #ticketForm select,body.app-large-text.app-listener-page #ticketForm textarea,body.app-large-text.app-listener-page #myRadio #connectRadioForm input,body.app-large-text.app-listener-page #library.radio-library #search{font-size:1.125rem}
 body.app-large-text #stationAddPopup #shared h1{font-size:1.75rem}
