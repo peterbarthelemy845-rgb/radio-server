@@ -1,5 +1,5 @@
 /* Shared public popups. The standalone player's Bio keeps its own theme. */
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification){
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification){
  position:fixed;inset:0 0 var(--app-visible-bottom,0px);box-sizing:border-box;
  width:min(440px,calc(100% - 24px));max-width:440px;
  max-height:calc(var(--app-visible-height,100dvh) - 24px - env(safe-area-inset-top));
@@ -7,16 +7,16 @@ dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDi
  background:#fff;color:#172b4d;box-shadow:0 24px 80px #020a2560;
  overflow:auto;overscroll-behavior:contain;scroll-padding:16px;
 }
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)[open]{animation:public-popup-enter .2s ease-out both}
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::backdrop{background:#061126a6;animation:public-popup-backdrop .2s ease-out both;backdrop-filter:none}
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::before{display:none}
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) h2{font-size:24px;line-height:1.25;margin:0 0 12px;overflow-wrap:anywhere}
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) p{font-size:16px;line-height:1.5;overflow-wrap:anywhere}
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) :is(input,select){font-size:16px;letter-spacing:normal;min-height:48px;border-radius:10px}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)[open]{animation:public-popup-enter .2s ease-out both}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::backdrop{background:#061126a6;animation:public-popup-backdrop .2s ease-out both;backdrop-filter:none}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::before{display:none}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) h2{font-size:24px;line-height:1.25;margin:0 0 12px;overflow-wrap:anywhere}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) p{font-size:16px;line-height:1.5;overflow-wrap:anywhere}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) :is(input,select){font-size:16px;letter-spacing:normal;min-height:48px;border-radius:10px}
 dialog:is(#verification,#deleteVerification,.support-ticket-verification) input[autocomplete="one-time-code"]{font-size:24px;letter-spacing:5px}
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) button{min-height:48px;font-size:16px;line-height:1.35;border-radius:10px;padding:12px 16px;letter-spacing:normal;text-transform:none}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) button{min-height:48px;font-size:16px;line-height:1.35;border-radius:10px;padding:12px 16px;letter-spacing:normal;text-transform:none}
 dialog:is(#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)>button{width:100%}
-dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) :is(button,input,select):focus-visible{outline:3px solid #2279ed;outline-offset:3px}
+dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification) :is(button,input,select):focus-visible{outline:3px solid #2279ed;outline-offset:3px}
 #listenerActionDialog .listener-dialog-actions{gap:10px}
 #listenerActionDialog .listener-dialog-actions button{margin:0}
 #listenerActionDialog p{margin-bottom:20px}
@@ -25,17 +25,17 @@ dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDi
 @keyframes public-popup-enter{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
 @keyframes public-popup-backdrop{from{opacity:0}to{opacity:1}}
 @media(max-width:600px){
- dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification){
+ dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification){
   inset:auto 0 var(--app-visible-bottom,0px);width:100%;max-width:100%;margin:0;
   padding:18px 20px calc(20px + env(safe-area-inset-bottom));border-bottom:0;border-radius:24px 24px 0 0;
  }
- dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::before{content:"";display:block;width:36px;height:4px;margin:0 auto 18px;border-radius:4px;background:#d4deeb}
+ dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::before{content:"";display:block;width:36px;height:4px;margin:0 auto 18px;border-radius:4px;background:#d4deeb}
 }
 @media(prefers-reduced-motion:reduce){
- dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)[open],
- dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::backdrop{animation:none}
+ dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)[open],
+ dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification)::backdrop{animation:none}
 }
-@media(forced-colors:active){dialog:is(#streamSetupDialog,#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification){border:1px solid CanvasText}}
+@media(forced-colors:active){dialog:is(#appActionPrompt,#stationAddPopup,#listenerActionDialog,#stationCodeRecovery,#verification,#deleteVerification,#ticketSuccess,#stationSuccess,#ownerSaveSuccess,#policyPreview,.support-ticket-verification){border:1px solid CanvasText}}
 
 #policyPreview[open]{display:flex;flex-direction:column}
 #policyPreview .policy-preview-header{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-shrink:0}

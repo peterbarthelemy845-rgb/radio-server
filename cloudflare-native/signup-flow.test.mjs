@@ -42,6 +42,10 @@ test('busy cycles restore earlier disabled states and optionally freeze fields w
  const f=fixture(),form=f.registration;form.elements.email.disabled=true;f.busy(form,true,true);assert.equal(form.dataset.busy,'1');assert.equal(form.submit.disabled,true);assert.equal(form.elements.name.disabled,true);f.busy(form,false);assert.equal(form.copy.disabled,true);assert.equal(form.submit.disabled,false);assert.equal(form.elements.name.disabled,false);assert.equal(form.elements.email.disabled,true);assert.equal(form.dataset.busy,undefined);
 });
 
+test('busy state changes notify stream tools after controls are frozen and restored',()=>{
+ const f=fixture(),form=f.registration,seen=[];form.addEventListener('form-busy-changed',()=>seen.push({busy:form.dataset.busy==='1',disabled:form.submit.disabled}));f.busy(form,true,true);f.busy(form,true,true);f.busy(form,false);assert.deepEqual(seen,[{busy:true,disabled:true},{busy:false,disabled:false}]);
+});
+
 test('signup snapshots before disabling fields, validates the captured logo, and suppresses duplicate submits',async()=>{
  const f=fixture(),pending=deferred(),original=f.registration.elements.artwork.files[0];f.logo(pending.promise);const first=f.submit(f.registration);await until(()=>f.logoFiles.length===1);assert.equal(f.registration.elements.name.disabled,true);await f.submit(f.registration);assert.equal(f.logoFiles.length,1);pending.resolve(true);await first;assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.name,'Sample Radio');assert.equal(f.calls[0].body.email,'owner@example.com');assert.equal(Object.hasOwn(f.calls[0].body,'bio'),false);assert.equal(f.calls[0].body.rights_confirmed,true);assert.equal(f.logoFiles[0],original);assert.equal(f.files[0],original);assert.match(f.calls[0].body.request_id,/^[a-f0-9]{32}$/);assert.equal(f.registration.elements.name.disabled,false);assert.equal(f.nodes.get('verification').open,true);
 });

@@ -53,7 +53,7 @@ function busy(form,on,freezeFields=false,label){
   const controls=[...form.querySelectorAll(freezeFields?'button,input,select,textarea':'button')],submit=controls.find(control=>control.tagName==='BUTTON'&&(control.type==='submit'||control.getAttribute?.('type')===null));
   const labels={registerForm:'saving',editForm:'saving',loginForm:'sending',verification:'checking',verifyForm:'checking',deleteVerifyForm:'deleting',ticketForm:'sending',advertiseForm:'sending',legalForm:'sending',stationCodeRecoveryForm:'sending',supportStatusLookup:'sending',adminLogin:'sending',adminVerify:'checking',adminMfa:'checking',connectRadioForm:'connecting',shareForm:'adding'};
   const snapshot={controls:controls.map(control=>[control,control.disabled]),restoreLabel:submit?setBusyButtonLabel(submit,label||labels[form.id]||'checking'):null};
-  formBusyStates.set(form,snapshot);form.dataset.busy='1';form.setAttribute('aria-busy','true');for(const control of controls)control.disabled=true;
+  formBusyStates.set(form,snapshot);form.dataset.busy='1';form.setAttribute('aria-busy','true');for(const control of controls)control.disabled=true;form.dispatchEvent(new Event('form-busy-changed',{bubbles:true}));
  }else{
   const previous=formBusyStates.get(form);if(!previous)return;formBusyStates.delete(form);delete form.dataset.busy;form.removeAttribute('aria-busy');for(const [control,disabled] of previous.controls)control.disabled=disabled;previous.restoreLabel?.();form.dispatchEvent(new Event('form-busy-changed',{bubbles:true}));
  }
