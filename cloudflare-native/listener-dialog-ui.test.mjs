@@ -34,7 +34,7 @@ const draftSource=source.slice(source.indexOf('const draftForms='));
 function draftFixture(){
  const forms=new Map(),events=new Map();let confirms=0;
  for(const id of ['registerForm','editForm','ticketForm','advertiseForm']){
-  const handlers=new Map(),form={dataset:{},visible:false,value:'Private unsaved text',addEventListener(type,fn){handlers.set(type,fn);},getClientRects(){return this.visible?[{}]:[];},dispatch(type){handlers.get(type)?.();}};forms.set(id,form);
+  const handlers=new Map(),form={dataset:{},visible:false,value:'Private unsaved text',addEventListener(type,fn){handlers.set(type,fn);},getClientRects(){return this.visible?[{}]:[];},dispatch(type,event){handlers.get(type)?.(event);}};forms.set(id,form);
  }
  const context={$:id=>forms.get(id),window:{addEventListener(type,fn){events.set(type,fn);}},document:{addEventListener(type,fn){events.set(type,fn);}},confirm(){confirms++;return false;}};runInNewContext(draftSource,context);
  function event(){return {preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};}
@@ -47,6 +47,15 @@ test('real reload or departure protects hidden drafts on every editable page unt
   const departure=f.unload();assert.equal(departure.prevented,true,id);assert.equal(departure.returnValue,'');assert.equal(form.value,'Private unsaved text');assert.equal(form.dataset.dirty,'1');
   form.dispatch('reset');assert.equal(f.unload().prevented,undefined,id);
  }
+});
+
+test('provider guidance alone creates no draft warning and never clears real station edits',()=>{
+ const f=draftFixture(),form=f.forms.get('registerForm');
+ for(const value of ['icecast','shoutcast','other'])form.dispatch('input',{target:{name:'stream_provider',value}});
+ assert.equal(form.dataset.dirty,undefined);assert.equal(f.unload().prevented,undefined);
+ form.dispatch('input',{target:{name:'stream_url',value:'http://stream.example.com:8000/live?sid=1'}});
+ form.dispatch('input',{target:{name:'stream_provider',value:'icecast'}});
+ assert.equal(form.dataset.dirty,'1');assert.equal(f.unload().prevented,true);
 });
 
 test('visible and hidden drafts survive internal tabs without misleading discard prompts',()=>{
