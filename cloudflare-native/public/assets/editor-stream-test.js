@@ -22,7 +22,6 @@
   const raw=field.value;let target;
   try{if(typeof window.parsePublicStreamUrl!=='function')throw new Error(text('registration.notConfirmed','Stream could not be confirmed. You can still save it.'));target=window.parsePublicStreamUrl(raw);}
   catch(error){status(error.key||'',String(error.message||'Check the stream address and try again.').slice(0,400),'invalid');field.focus();controls();return;}
-  if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){result('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save privately and request review.','unconfirmed');return;}
   if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){result('registration.playlistTestUnavailable','This playlist link cannot be checked automatically. You can still save privately and request review.','unconfirmed');return;}
   const attempt={raw,value:target.href,generation,controller:new AbortController(),restoreLabel:setBusyButtonLabel(button,'checking')};active=attempt;controls();status('registration.checking','Checking the stream. No audio will play.','checking');
   const current=()=>active===attempt&&generation===attempt.generation&&field.value===attempt.raw&&!editor.hidden&&!saving()&&!attempt.controller.signal.aborted;

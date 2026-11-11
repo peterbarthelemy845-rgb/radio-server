@@ -12,11 +12,12 @@
  let registrationManualUrl='',registrationManualSource='ip',registrationManualEdited=false,registrationDirectDraft=registrationUrl.value,registrationDirectEdited=Boolean(registrationUrl.value);
  let registrationExpanded=!registrationPanel||registrationProviderFields.some(field=>field.checked);
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
- function registrationManualMode(){return registrationHasProviders&&registrationProvider!=='other';}
+ const registrationIsManual=value=>['icecast','shoutcast'].includes(value);
+ function registrationManualMode(){return registrationHasProviders&&registrationIsManual(registrationProvider);}
  function registrationBusy(){return ['1','true'].includes(registrationForm.dataset.busy)||registrationForm.querySelector('button[type="submit"]')?.disabled===true;}
  function registrationProviderHelp(){
   if(!registrationProviderHelpNode)return;
-  const [key,fallback]=registrationProvider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:registrationProvider==='other'?['registration.providerOther','Paste your complete public listening URL.']:['registration.providerIcecast','Enter your public server, port and mount point.'];
+  const [key,fallback]=registrationProvider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:registrationProvider==='radiomast'?['registration.providerRadioMast','Paste the public listening URL from Radio Mast, not the encoder server.']:registrationProvider==='other'?['registration.providerOther','Paste your complete public listening URL.']:['registration.providerIcecast','Enter your public server, port and mount point. Choose HTTPS for SSL.'];
   registrationProviderHelpNode.setAttribute('data-i18n',key);registrationProviderHelpNode.textContent=registrationText(key,fallback);
  }
  function registrationRenderMode(){
@@ -33,7 +34,7 @@
  // Each entry mode keeps its draft. Only a newly edited, valid direct URL
  // replaces the server details; switching providers never guesses a mount.
  function registrationSelectProvider(value){
-  const wasManual=registrationManualMode(),nextManual=value!=='other';
+  const wasManual=registrationManualMode(),nextManual=registrationIsManual(value);
   if(wasManual&&!nextManual){registrationManualUrl=registrationUrl.value;registrationManualSource=registrationSource;if(registrationValid&&registrationManualEdited)registrationDirectDraft=registrationUrl.value;registrationDirectEdited=false;registrationManualEdited=false;registrationUrl.value=registrationDirectDraft;registrationSource='url';}
   else if(!wasManual&&nextManual){registrationDirectDraft=registrationUrl.value;if(registrationDirectEdited){try{registrationSyncBuilder(registrationParse(registrationDirectDraft));registrationManualUrl=registrationDirectDraft;registrationManualSource='url';}catch{}}registrationUrl.value=registrationManualUrl;registrationSource=registrationManualSource;registrationDirectEdited=false;registrationManualEdited=false;}
   registrationProvider=value;registrationExpanded=true;registrationInvalidate();registrationRenderMode();registrationValidate();
@@ -145,7 +146,6 @@
  registrationNodes.testStream.onclick=async()=>{
   if(registrationBusy()||!registrationExpanded||registrationActiveTest||!registrationValidate(true,true))return;
   const target=new URL(registrationUrl.value);
-  if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){registrationTerminal('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save privately and request review.','unconfirmed');return;}
   if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationTerminal('registration.playlistTestUnavailable','This playlist link cannot be checked automatically. You can still save privately and request review.','unconfirmed');return;}
   const version=registrationVersion,value=registrationUrl.value,attempt={};registrationActiveTest=attempt;registrationControls();
   registrationStatus('registration.checking','Checking the stream. No audio will play.','checking');

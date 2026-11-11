@@ -56,16 +56,18 @@ const appCreole={
 Object.assign(appEnglish,{
  'registration.setupUnavailable':'Stream address validation is unavailable. Refresh and try again.',
  'registration.server':'Stream setup','registration.chooseOne':'Choose one','registration.serverPort':'Server + port','registration.pasteLink':'Paste a listening link','registration.otherProvider':'Stream URL','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Your stream URL appears here',
- 'registration.providerIcecast':'Enter your public server, port and mount point.',
+ 'registration.providerIcecast':'Enter your public server, port and mount point. Choose HTTPS for SSL.',
  'registration.providerShoutcast':'Enter your public server, port and listening path.',
- 'registration.providerOther':'Paste your complete public listening URL.'
+ 'registration.providerOther':'Paste your complete public listening URL.',
+ 'registration.icecastTypes':'HTTP / HTTPS (SSL)','registration.shoutcastTypes':'Legacy / v1 / v2','registration.publicLink':'Public listening URL','registration.providerRadioMast':'Paste the public listening URL from Radio Mast, not the encoder server.'
 });
 Object.assign(appCreole,{
  'registration.setupUnavailable':'Nou pa ka valide adrès difizyon an. Rafrechi paj la epi eseye ankò.',
  'registration.server':'Konfigirasyon difizyon','registration.chooseOne':'Chwazi youn','registration.serverPort':'Sèvè + pò','registration.pasteLink':'Kole yon lyen pou koute','registration.otherProvider':'Adrès difizyon','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Adrès difizyon ou ap parèt la',
- 'registration.providerIcecast':'Antre sèvè piblik ou, pò a ak chemen difizyon an.',
+ 'registration.providerIcecast':'Antre sèvè piblik ou, pò a ak chemen difizyon an. Chwazi HTTPS pou SSL.',
  'registration.providerShoutcast':'Antre sèvè piblik ou, pò a ak chemen pou koute a.',
- 'registration.providerOther':'Kole tout adrès piblik pou koute difizyon ou a.'
+ 'registration.providerOther':'Kole tout adrès piblik pou koute difizyon ou a.',
+ 'registration.icecastTypes':'HTTP / HTTPS (SSL)','registration.shoutcastTypes':'Ansyen / v1 / v2','registration.publicLink':'Lyen piblik pou koute','registration.providerRadioMast':'Kole lyen piblik pou koute a ki soti nan Radio Mast, pa sèvè pou emèt la.'
 });
 Object.assign(appEnglish,{'navAdd':'Add Station','verifyTitle':'Verify it’s you','verifyCode':'6-digit email code','verifySubmit':'Verify code','resend':'Resend email','closeNow':'Close for now','ownerExample':'Example: Test Radio','bioPlaceholder':'Tell listeners about your station','stationSuccess':'Station added successfully!','ticketSuccess':'Ticket submitted successfully!','rights':'I represent this station, have streaming/artwork rights, and agree to the station terms and privacy notice.','supportCodeError':'Incorrect or expired support code.','supportVerifyNeeded':'Verify your email to open this support ticket.','expiredPhone':'Your phone connection expired. Refresh this page, then choose Connect my radio.'});
 Object.assign(appCreole,{'navAdd':'Ajoute estasyon','verifyTitle':'Verifye se ou menm','verifyCode':'Kòd 6 chif nan imèl la','verifySubmit':'Verifye kòd','resend':'Voye imèl la ankò','closeNow':'Fèmen pou kounye a','ownerExample':'Egzanp: Radyo Tès','bioPlaceholder':'Pale sou estasyon ou pou moun k ap koute yo','stationSuccess':'Estasyon an ajoute avèk siksè!','ticketSuccess':'Demann èd la voye avèk siksè!','rights':'Mwen reprezante estasyon sa a, mwen gen dwa pou difizyon ak imaj yo, epi mwen dakò ak kondisyon pou estasyon yo ak avi sou vi prive a.','supportCodeError':'Kòd sipò a pa kòrèk oswa li ekspire.','supportVerifyNeeded':'Verifye imèl ou pou louvri demann èd sa a.','expiredPhone':'Koneksyon telefòn ou ekspire. Rafrechi paj la, epi chwazi Konekte radyo mwen.'});

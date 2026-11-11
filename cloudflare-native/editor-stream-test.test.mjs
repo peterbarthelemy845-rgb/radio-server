@@ -45,9 +45,15 @@ test('unsafe and malformed addresses are rejected locally without a security che
   const f=fixture(value);await f.start();assert.equal(f.humanCalls.length,0,value);assert.equal(f.apiCalls.length,0,value);assert.equal(f.nodes.get('ownerStreamTestStatus').dataset.state,'invalid');assert.doesNotMatch(f.nodes.get('ownerStreamTestStatus').textContent,/supersecret123/);assert.equal(f.focused(),f.field);assert.equal(f.save.disabled,false);
  }
 });
-test('numeric public IPs and playlist links remain unconfirmed without fetching or preventing Save',async()=>{
- for(const value of ['http://8.8.8.8:8000/live','https://stream.example.com/listen.pls','https://stream.example.com/live.m3u8?sid=1']){
+test('playlist links remain unconfirmed without fetching or preventing Save',async()=>{
+ for(const value of ['https://stream.example.com/listen.pls','https://stream.example.com/live.m3u8?sid=1']){
   const f=fixture(value);await f.start();assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);assert.equal(f.nodes.get('ownerStreamTestStatus').dataset.state,'unconfirmed');assert.match(f.nodes.get('ownerStreamTestStatus').textContent,/still save/);assert.equal(f.save.disabled,false);
+ }
+});
+
+test('numeric public IP checks use the authenticated endpoint and retain normal success feedback',async()=>{
+ for(const value of ['http://162.244.81.219:8020/live','http://8.8.8.8:8000/;?sid=1']){
+  const f=fixture(value),shown=[];f.window.showStreamTestResult=result=>{shown.push(result);return true;};f.result({result:'audio_response',audio_response:true});await f.start();assert.equal(f.humanCalls.length,1);assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,value);assert.equal(f.apiCalls[0].body.turnstile_token,'checked-token');assert.equal(shown.length,1);assert.equal(shown[0].key,'registration.audioResponse');assert.equal(f.save.disabled,false);assert.equal(f.media(),0);
  }
 });
 test('editing the address aborts its security check and a late token cannot send the old URL',async()=>{
@@ -84,8 +90,8 @@ test('a current terminal owner result opens one result popup while checking and 
  f.input('https://');await f.start();assert.equal(shown.length,1);assert.equal(notice.dataset.state,'invalid');assert.equal(notice.hidden,false);
 });
 
-test('immediate numeric IP and playlist results use the owner popup without a network request',async()=>{
- for(const [url,key] of [['http://8.8.8.8:8000/live','registration.ipTestUnavailable'],['https://stream.example.com/live.m3u8','registration.playlistTestUnavailable']]){
+test('immediate playlist results use the owner popup without a network request',async()=>{
+ for(const [url,key] of [['https://stream.example.com/live.m3u8','registration.playlistTestUnavailable']]){
   const f=fixture(url),shown=[];f.window.showStreamTestResult=value=>{shown.push(value);return true;};await f.start();assert.equal(shown.length,1);assert.equal(shown[0].source,'owner');assert.equal(shown[0].key,key);assert.equal(shown[0].state,'unconfirmed');assert.equal(f.nodes.get('ownerStreamTestStatus').hidden,true);assert.equal(f.apiCalls.length,0);assert.equal(f.humanCalls.length,0);assert.equal(f.save.disabled,false);
  }
 });

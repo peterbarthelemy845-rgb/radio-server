@@ -51,7 +51,7 @@ test('real reload or departure protects hidden drafts on every editable page unt
 
 test('provider guidance alone creates no draft warning and never clears real station edits',()=>{
  const f=draftFixture(),form=f.forms.get('registerForm');
- for(const value of ['icecast','shoutcast','other'])form.dispatch('input',{target:{name:'stream_provider',value}});
+ for(const value of ['icecast','shoutcast','radiomast','other'])form.dispatch('input',{target:{name:'stream_provider',value}});
  assert.equal(form.dataset.dirty,undefined);assert.equal(f.unload().prevented,undefined);
  form.dispatch('input',{target:{name:'stream_url',value:'http://stream.example.com:8000/live?sid=1'}});
  form.dispatch('input',{target:{name:'stream_provider',value:'icecast'}});
@@ -60,7 +60,7 @@ test('provider guidance alone creates no draft warning and never clears real sta
 
 test('owner provider choices are guidance while partial server edits remain protected drafts',()=>{
  const f=draftFixture(),form=f.forms.get('editForm');
- for(const value of ['icecast','shoutcast','other'])form.dispatch('input',{target:{name:'owner_stream_provider',value}});
+ for(const value of ['icecast','shoutcast','radiomast','other'])form.dispatch('input',{target:{name:'owner_stream_provider',value}});
  assert.equal(form.dataset.dirty,undefined);assert.equal(f.unload().prevented,undefined);
  form.dispatch('input',{target:{id:'ownerStreamPort',name:'',value:'99999'}});
  form.dispatch('input',{target:{name:'owner_stream_provider',value:'other'}});

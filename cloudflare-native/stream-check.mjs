@@ -1,6 +1,7 @@
 import {browserWrite,human,HttpError,json,limit,readJson} from './security.mjs';
 import {publicStreamUrl,isIPv4} from './public-stream-url.mjs';
 import {beginStreamCheck,completeStreamCheck} from './stream-verification.mjs';
+import {ipv4StreamResponse} from './ipv4-stream-socket.mjs';
 
 // Deployment requirement, not replaceable by a DNS preflight lookup:
 // https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public
@@ -69,14 +70,11 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
  const checkId=await beginStreamCheck(env,current.token_hash,validated,now);
  const finish=async passed=>{const stored=await completeStreamCheck(env,current.token_hash,validated,checkId,passed,now);return passed&&stored?positive():negative();};
  let url;try{url=target(validated,request,env);}catch{return finish(false);}
- // Cloudflare documents fetch-to-IP as unsupported. Public IPv4 is valid for
- // saved radio configuration, but this optional check makes no network attempt.
- if(isIPv4(url.hostname))return finish(false);
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
  let reader;
  try{
   for(let hop=0;hop<=MAX_REDIRECTS;hop++){
-   const response=await abortable((deps.fetch||fetch)(url.href,{
+   const response=await abortable(isIPv4(url.hostname)?ipv4StreamResponse(url,{connect:deps.connect,signal:controller.signal}):(deps.fetch||fetch)(url.href,{
     method:'GET',redirect:'manual',cache:'no-store',signal:controller.signal,
     headers:{Accept:'audio/*, application/ogg;q=0.9, application/octet-stream;q=0.5','Range':'bytes=0-8191','Icy-MetaData':'0'}
    }),controller.signal);
@@ -84,7 +82,7 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
    if([301,302,303,307,308].includes(response.status)){
     cancel(response.body);const location=response.headers.get('Location');if(!location||hop===MAX_REDIRECTS)return await finish(false);
     const next=target(new URL(location,url).href,request,env);
-    if(isIPv4(next.hostname)||(url.protocol==='https:'&&next.protocol!=='https:'))return await finish(false);
+    if(url.protocol==='https:'&&next.protocol!=='https:')return await finish(false);
     url=next;continue;
    }
    if(!response.ok||!response.body){cancel(response.body);return await finish(false);}

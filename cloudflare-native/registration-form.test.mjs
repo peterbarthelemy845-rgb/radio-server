@@ -10,7 +10,7 @@ function registrationFixture({url='',secure=true,clipboard=true,providerControls
  const ids=['register','registerForm','stationName','streamManualSetup','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman','saveRegistration'];
  function element(id){const listeners={};const node={id,value:'',hidden:false,open:false,disabled:false,readOnly:false,required:false,dataset:{},attrs:{},validity:{badInput:false},validationMessage:'',textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},querySelector(){return id==='registerForm'?nodes.get('saveRegistration'):null;},setCustomValidity(value){this.validationMessage=value;},reportValidity(){this.reported=true;return !this.validationMessage;},focus(){document.activeElement=this;},select(){this.selected=true;},addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatchEvent(event){for(const fn of listeners[event.type]||[])fn(event);if(event.bubbles&&id!=='registerForm')nodes.get('registerForm').dispatchEvent(event);return true;}};nodes.set(id,node);return node;}
  ids.forEach(element);const document={activeElement:null,getElementById:id=>nodes.get(id)};nodes.get('registerForm').elements={name:nodes.get('stationName')};nodes.get('stationName').value='Test station';nodes.get('streamProtocol').value='https';nodes.get('streamUrlInput').value=url;nodes.get('registerForm').addEventListener('input',()=>{dirty++;});
- const providers=providerControls?['icecast','shoutcast','other'].map(value=>{const field=element('provider-'+value);field.name='stream_provider';field.type='radio';field.value=value;field.checked=value===provider;return field;}):[];if(providerControls){element('streamProviderHelp');element('streamUrlLabel');}nodes.get('registerForm').querySelectorAll=selector=>selector==='input[name="stream_provider"]'?providers:[];
+ const providers=providerControls?['icecast','shoutcast','radiomast','other'].map(value=>{const field=element('provider-'+value);field.name='stream_provider';field.type='radio';field.value=value;field.checked=value===provider;return field;}):[];if(providerControls){element('streamProviderHelp');element('streamUrlLabel');}nodes.get('registerForm').querySelectorAll=selector=>selector==='input[name="stream_provider"]'?providers:[];
  if(inline){element('streamSetupPanel');element('streamUrlRow');}
  const window={isSecureContext:secure,addEventListener(type,fn){windowEvents[type]=fn;}};
  const navigator={clipboard:clipboard?{async writeText(value){copied.push(value);return clipboardResult;}}:undefined};
@@ -33,8 +33,15 @@ test('result popup falls back to visible inline feedback if absent, declined or 
  for(const behavior of ['missing','false','throws']){const f=registrationFixture({url:'https://stream.example.com/live'}),notice=f.nodes.get('streamTestStatus');let calls=0;if(behavior!=='missing')f.window.showStreamTestResult=()=>{calls++;if(behavior==='throws')throw Error('Popup unavailable');return false;};await f.nodes.get('testStream').onclick();assert.equal(notice.hidden,false,behavior);assert.equal(notice.dataset.state,'unconfirmed',behavior);assert.match(notice.textContent,/could not be confirmed/,behavior);assert.equal(calls,behavior==='missing'?0:1);f.language();assert.equal(notice.hidden,false);}
 });
 
-test('numeric IP and playlist terminal results use the popup without any stream-check request',async()=>{
- for(const [url,key] of [['http://8.8.8.8:8000/live','registration.ipTestUnavailable'],['https://stream.example.com/listen.pls?sid=2','registration.playlistTestUnavailable']]){const f=registrationFixture({url}),calls=[];f.window.showStreamTestResult=result=>{calls.push(result);return true;};await f.nodes.get('testStream').onclick();assert.equal(calls.length,1);assert.equal(calls[0].key,key);assert.equal(calls[0].state,'unconfirmed');assert.equal(f.nodes.get('streamTestStatus').hidden,true);assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);assert.equal(f.prepare(),true);}
+test('playlist terminal results use the popup without any stream-check request',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/listen.pls?sid=2'}),calls=[];f.window.showStreamTestResult=result=>{calls.push(result);return true;};await f.nodes.get('testStream').onclick();assert.equal(calls.length,1);assert.equal(calls[0].key,'registration.playlistTestUnavailable');assert.equal(calls[0].state,'unconfirmed');assert.equal(f.nodes.get('streamTestStatus').hidden,true);assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);assert.equal(f.prepare(),true);
+});
+
+test('public numeric IP checks use the protected API and private IPs stay rejected locally',async()=>{
+ for(const url of ['http://162.244.81.219:8020/live','http://8.8.8.8:8000/;?sid=1']){
+  const f=registrationFixture({url}),shown=[];f.window.showStreamTestResult=result=>{shown.push(result);return true;};f.result({result:'audio_response',audio_response:true});await f.nodes.get('testStream').onclick();assert.equal(f.humanCalls.length,1);assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,url);assert.equal(f.apiCalls[0].body.turnstile_token,'checked-token');assert.equal(shown.length,1);assert.equal(shown[0].key,'registration.audioResponse');assert.equal(f.prepare(),true);
+ }
+ const privateTarget=registrationFixture({url:'http://192.168.1.2:8020/live'});await privateTarget.nodes.get('testStream').onclick();assert.equal(privateTarget.prepare(),false);assert.equal(privateTarget.humanCalls.length,0);assert.equal(privateTarget.apiCalls.length,0);
 });
 
 test('current test errors show one result while validation and clipboard status never show a popup',async()=>{
@@ -60,6 +67,13 @@ test('Icecast and SHOUTcast expand server fields inline and never show the gener
 
 test('Stream URL expands editable direct entry and disables hidden stale server validation',()=>{
  const f=inlineFixture(),n=f.nodes;f.providerClick('icecast');f.input('streamHost','stream.example.com');f.input('streamPort','99999');assert.equal(f.prepare(),false);f.provider('other');assert.equal(n.get('streamSetupPanel').hidden,false);assert.equal(n.get('streamUrlRow').hidden,false);assert.equal(n.get('streamManualSetup').hidden,true);assert.equal(n.get('streamUrlInput').disabled,false);assert.equal(n.get('streamUrlInput').readOnly,false);assert.equal(n.get('streamUrlInput').required,true);for(const id of ['streamHost','streamPort','streamProtocol','streamPath']){assert.equal(n.get(id).disabled,true);assert.equal(n.get(id).validationMessage,'');}f.address('http://stream.example.com:8000/live?sid=1');assert.equal(f.prepare(),true);assert.equal(n.get('streamUrlInput').value,'http://stream.example.com:8000/live?sid=1');
+});
+
+test('Radio Mast opens editable public listening URL entry and retains server drafts when switching',()=>{
+ const f=inlineFixture(),n=f.nodes;f.providerClick('icecast');f.input('streamHost','stream.example.com');f.input('streamProtocol','http');f.input('streamPort','8020');f.input('streamPath','/live?sid=2');const manual=n.get('streamUrlInput').value;
+ f.provider('radiomast');assert.equal(n.get('streamSetupPanel').hidden,false);assert.equal(n.get('streamManualSetup').hidden,true);assert.equal(n.get('streamAddressFields').hidden,true);assert.equal(n.get('streamUrlRow').hidden,false);assert.equal(n.get('streamUrlInput').readOnly,false);assert.equal(n.get('streamUrlInput').required,true);for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(n.get(id).disabled,true);
+ const listening='https://streams.radiomast.io/355ab84d-d2b2-4dd5-90f2-372befc49547';f.address(listening);assert.equal(f.prepare(),true);f.provider('other');assert.equal(n.get('streamUrlInput').value,listening);assert.equal(n.get('streamUrlInput').readOnly,false);f.provider('shoutcast');assert.equal(n.get('streamHost').value,'streams.radiomast.io');assert.equal(n.get('streamPort').value,'');assert.equal(n.get('streamPath').value,'/355ab84d-d2b2-4dd5-90f2-372befc49547');assert.equal(f.prepare(),true);assert.notEqual(manual,listening);
+ f.provider('radiomast');f.address('https://owner:source-password@streams.radiomast.io/live');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,n.get('streamUrlInput'));assert.doesNotMatch(n.get('streamTestStatus').textContent,/source-password/);
 });
 
 test('Save Station reveals missing setup and focuses the visible server field',()=>{
@@ -131,9 +145,9 @@ test('an incomplete direct draft is preserved separately and a later valid URL r
 });
 
 test('provider modes retain public-address, credential and private-query validation',()=>{
- for(const provider of ['icecast','shoutcast','other']){const f=registrationFixture({providerControls:true,provider}),n=f.nodes;
-  if(provider==='other')f.address('http://192.168.1.2/live');else{f.input('streamHost','192.168.1.2');f.input('streamPath','/live');}assert.equal(f.prepare(),false);assert.equal(n.get('testStream').disabled,true);assert.equal(f.document.activeElement,n.get(provider==='other'?'streamUrlInput':'streamHost'));
-  if(provider==='other')f.address('https://owner:private-password@stream.example.com/live?token=private-token');else{f.input('streamHost','stream.example.com');f.input('streamPath','/live?token=private-token');}assert.equal(f.prepare(),false);assert.equal(n.get('testStream').disabled,true);assert.doesNotMatch(n.get('streamTestStatus').textContent,/private-password|private-token/);assert.equal(f.apiCalls.length,0);
+ for(const provider of ['icecast','shoutcast','radiomast','other']){const f=registrationFixture({providerControls:true,provider}),n=f.nodes;
+  if(['radiomast','other'].includes(provider))f.address('http://192.168.1.2/live');else{f.input('streamHost','192.168.1.2');f.input('streamPath','/live');}assert.equal(f.prepare(),false);assert.equal(n.get('testStream').disabled,true);assert.equal(f.document.activeElement,n.get(['radiomast','other'].includes(provider)?'streamUrlInput':'streamHost'));
+  if(['radiomast','other'].includes(provider))f.address('https://owner:private-password@stream.example.com/live?token=private-token');else{f.input('streamHost','stream.example.com');f.input('streamPath','/live?token=private-token');}assert.equal(f.prepare(),false);assert.equal(n.get('testStream').disabled,true);assert.doesNotMatch(n.get('streamTestStatus').textContent,/private-password|private-token/);assert.equal(f.apiCalls.length,0);
  }
 });
 
@@ -142,7 +156,7 @@ test('provider switching invalidates an old stream check without extra requests 
 });
 
 test('both server and direct modes support copy and optional testing through the same safe endpoint',async()=>{
- const f=registrationFixture({providerControls:true,url:'http://stream.example.com:8000/;?sid=2'});for(const provider of ['icecast','shoutcast','other']){f.provider(provider);await f.nodes.get('copyGeneratedStream').onclick();assert.equal(f.copied.at(-1),'http://stream.example.com:8000/;?sid=2');await f.nodes.get('testStream').onclick();assert.equal(f.apiCalls.at(-1).body.stream_url,'http://stream.example.com:8000/;?sid=2');assert.equal(f.prepare(),true);}assert.equal(f.apiCalls.length,3);
+ const f=registrationFixture({providerControls:true,url:'http://stream.example.com:8000/;?sid=2'});for(const provider of ['icecast','shoutcast','radiomast','other']){f.provider(provider);await f.nodes.get('copyGeneratedStream').onclick();assert.equal(f.copied.at(-1),'http://stream.example.com:8000/;?sid=2');await f.nodes.get('testStream').onclick();assert.equal(f.apiCalls.at(-1).body.stream_url,'http://stream.example.com:8000/;?sid=2');assert.equal(f.prepare(),true);}assert.equal(f.apiCalls.length,4);
 });
 
 test('mode labels and guidance translate, and reset returns to empty Icecast setup',async()=>{
@@ -244,8 +258,8 @@ test('not-confirmed and malformed acknowledgements do not become playback succes
  assert.equal(f.apiCalls.length,2);
 });
 
-test('numeric IP and playlist checks explain their limits without bot checks or API calls and remain saveable',async()=>{
- for(const [url,explanation] of [['http://8.8.8.8:8000/live',/numeric IP addresses/],['https://stream.example.com/listen.pls?sid=1',/playlist link/],['https://stream.example.com/live.m3u',/playlist link/],['https://stream.example.com/live.m3u8',/playlist link/],['https://stream.example.com/live.xspf',/playlist link/]]){
+test('playlist checks explain their limits without bot checks or API calls and remain saveable',async()=>{
+ for(const [url,explanation] of [['https://stream.example.com/listen.pls?sid=1',/playlist link/],['https://stream.example.com/live.m3u',/playlist link/],['https://stream.example.com/live.m3u8',/playlist link/],['https://stream.example.com/live.xspf',/playlist link/]]){
   const f=registrationFixture({url});await f.nodes.get('testStream').onclick();assert.equal(f.nodes.get('streamTestStatus').dataset.state,'unconfirmed',url);assert.match(f.nodes.get('streamTestStatus').textContent,explanation,url);assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);assert.equal(f.prepare(),true);assert.equal(f.nodes.get('saveRegistration').disabled,false);assert.equal(f.nodes.get('testStream').disabled,false);
  }
 });

@@ -30,8 +30,8 @@
 :is(#register,#editor) .stream-provider-choice img{display:block;object-fit:contain;max-width:100%;flex-shrink:0}
 :is(#register,#editor) .stream-provider-brand>img:not(.shoutcast-wordmark){width:24px;height:26px}
 :is(#register,#editor) .stream-provider-choice .shoutcast-wordmark{width:112px;height:auto;max-width:100%}
-:is(#register,#editor) .stream-provider-other{grid-column:1/-1;min-height:44px;font-size:14px;color:#1553a5;font-weight:650}
-:is(#register,#editor) .stream-provider-other .stream-provider-copy{flex-direction:row;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+:is(#register,#editor) .stream-provider-other{font-size:14px;color:#1553a5;font-weight:650}
+:is(#register,#editor) .stream-provider-other .stream-provider-copy{align-items:flex-start;gap:3px}
 :is(#register,#editor) .stream-setup-panel{margin-top:10px;padding:10px;border:1px solid #dce7f6;border-radius:9px;background:#f7faff}
 :is(#register,#editor) .stream-setup-panel .stream-address-fields{padding:0;border:0;background:transparent}
 :is(#register,#editor) .stream-setup-panel #streamUrlRow{margin:8px 0 0}

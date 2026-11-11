@@ -11,8 +11,22 @@ const mp3=()=>{const data=new Uint8Array(417);data.set([255,251,144,0]);return d
 async function fixture(){const f=await operationsFixture();f.env.STREAM_CHECK_PUBLIC_FETCH='true';f.env.PUBLIC_ORIGIN=origin;return f;}
 const body=stream_url=>({stream_url,turnstile_token:'test-only-token'});
 function deferred(){let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};}
-async function check(f,url=audioUrl,fetcher=async()=>new Response(mp3(),{headers:{'Content-Type':'audio/mpeg'}})){
- return (await streamCheckRoutes(f.request(path,body(url)),f.env,f.now,{human:async()=>{},fetch:fetcher})).json();
+async function check(f,url=audioUrl,fetcher=async()=>new Response(mp3(),{headers:{'Content-Type':'audio/mpeg'}}),extras={}){
+ return (await streamCheckRoutes(f.request(path,body(url)),f.env,f.now,{human:async()=>{},fetch:fetcher,...extras})).json();
+}
+const encode=value=>new TextEncoder().encode(value);
+function rawResponse(payload=mp3(),headers='Content-Type: audio/mpeg\r\n',status='HTTP/1.1 200 OK'){
+ const head=encode(status+'\r\n'+headers+'\r\n'),result=new Uint8Array(head.length+payload.length);result.set(head);result.set(payload,head.length);return result;
+}
+function sockets(responses){
+ const state={addresses:[],sent:[],closes:0};
+ state.connect=(address,options)=>{
+  state.addresses.push({address,options});const bytes=responses.shift();if(bytes instanceof Error)throw bytes;
+  assert.ok(bytes,'Unexpected additional socket');
+  return {opened:Promise.resolve({}),closed:Promise.resolve(),readable:new ReadableStream({start(controller){controller.enqueue(bytes);controller.close();}}),
+   writable:new WritableStream({write(bytes){state.sent.push(new TextDecoder().decode(bytes));}}),close(){state.closes++;}};
+ };
+ return state;
 }
 test('saved URL validation allows public hostnames and public IPv4 with ports while blocking special/private addresses',()=>{
  assert.equal(publicStreamUrl('https://STREAM.example.com/live?x=1'),'https://stream.example.com/live?x=1');
@@ -49,7 +63,7 @@ test('failed bot checks are limited before the provider and no stream is request
  await assert.rejects(streamCheckRoutes(f.request(path,body(audioUrl)),f.env,f.now,deps),e=>e.status===429);
  assert.equal(calls,6);assert.equal(streams,0);
 });
-test('missing strictly-public deployment attestation fails closed and numeric URLs are not fetched',async()=>{
+test('missing strictly-public deployment attestation fails closed and numeric URLs never use global fetch',async()=>{
  const f=await fixture();let calls=0;const fetcher=async()=>{calls++;throw Error('must not fetch');};
  delete f.env.STREAM_CHECK_PUBLIC_FETCH;
  await assert.rejects(check(f,audioUrl,fetcher),e=>e.status===503);
@@ -58,6 +72,46 @@ test('missing strictly-public deployment attestation fails closed and numeric UR
   const result=await check(f,url,fetcher);assert.equal(result.result,'not_confirmed');assert.equal(result.audio_response,false);
  }
  assert.equal(calls,0);
+});
+
+test('a public IPv4 audio response earns the same exact-URL proof without browser headers or upstream disclosure',async()=>{
+ const f=await fixture(),url='http://162.244.81.219:8020/live',state=sockets([rawResponse(mp3(),'Content-Type: audio/mpeg\r\nX-Secret: private-upstream\r\n','ICY 200 OK')]);
+ const result=await check(f,url,()=>{throw Error('IP must not use fetch');},{connect:state.connect});
+ assert.equal(result.audio_response,true);assert.equal(state.addresses.length,1);assert.equal(state.addresses[0].address.port,8020);assert.equal(state.closes,1);
+ assert.ok(!JSON.stringify(result).includes('private-upstream'));assert.doesNotMatch(state.sent[0],/Cookie|Authorization|X-CSRF|test-only-token/);
+ const receipt=f.sqlite.prepare('SELECT * FROM stream_check_results').get();assert.equal(receipt.stream_url,url);assert.equal(receipt.checked_at,f.now);assert.equal(receipt.expires,f.now+3600);
+ assert.equal(f.sqlite.prepare('SELECT status FROM stations WHERE code=?').get(f.station).status,'published');
+});
+
+test('redirect limits and original-URL evidence are shared across hostname and numeric transports',async()=>{
+ const f=await fixture(),original='http://stream.example.com/live';let fetches=0;
+ const state=sockets([rawResponse(new Uint8Array(),'Location: https://final.example.com/live\r\n','HTTP/1.0 302 Found')]);
+ const result=await check(f,original,async(url)=>{
+  fetches++;if(fetches===1)return new Response(null,{status:302,headers:{Location:'http://162.244.81.219:8020/live'}});
+  assert.equal(url,'https://final.example.com/live');assert.equal(state.closes,1);return new Response(mp3(),{headers:{'Content-Type':'audio/mpeg'}});
+ },{connect:state.connect});
+ assert.equal(result.audio_response,true);assert.equal(fetches,2);assert.equal(state.addresses.length,1);assert.equal(f.sqlite.prepare('SELECT stream_url FROM stream_check_results').get().stream_url,original);
+ const g=await fixture(),loop=sockets(Array.from({length:3},()=>rawResponse(new Uint8Array(),'Location: /again\r\n','HTTP/1.1 302 Found')));
+ assert.equal((await check(g,'http://162.244.81.219:8020/live',()=>{throw Error('Unexpected fetch');},{connect:loop.connect})).audio_response,false);
+ assert.equal(loop.addresses.length,3);assert.equal(loop.closes,3);
+});
+
+test('numeric redirects revalidate every target and never open private, credentialed, own-host or downgraded targets',async()=>{
+ for(const location of ['http://127.0.0.1/','http://2130706433/','http://169.254.169.254/','http://192.168.0.1/','http://[::ffff:127.0.0.1]/',
+  'https://user:secret@other.example.com/live','https://other.example.com/live?token=secret','https://radiolocals.com/','https://child.radiolocals.com/','http://other.example.com/live']){
+  const f=await fixture(),state=sockets([rawResponse(new Uint8Array(),'Location: '+location+'\r\n','HTTP/1.1 302 Found')]);let fetches=0;
+  const result=await check(f,'https://162.244.81.219:8443/live',()=>{fetches++;throw Error('Unexpected follow-up');},{connect:state.connect});
+  assert.equal(result.audio_response,false,location);assert.equal(fetches,0,location);assert.equal(state.addresses.length,1,location);assert.equal(state.closes,1,location);
+ }
+});
+
+test('socket failures and misleading numeric responses cannot earn proof or trigger insecure retries',async()=>{
+ for(const response of [new Error('certificate mismatch secret'),rawResponse(encode('<html>no audio</html>')),rawResponse(mp3(),'Content-Type: text/html\r\n')]){
+  const f=await fixture(),state=sockets([response]);let fetches=0;
+  const result=await check(f,'https://162.244.81.219:8443/live',()=>{fetches++;throw Error('Unexpected fallback');},{connect:state.connect});
+  assert.equal(result.audio_response,false);assert.equal(fetches,0);assert.equal(state.addresses.length,1);assert.equal(state.addresses[0].options.secureTransport,'on');
+  assert.ok(!JSON.stringify(result).includes('secret'));assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM stream_check_results').get().n,0);
+ }
 });
 test('a bounded audio sample is reported without claiming playback or forwarding browser credentials',async()=>{
  const f=await fixture();let cancelled=false,read=0;

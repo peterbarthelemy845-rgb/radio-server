@@ -9,7 +9,8 @@
  let initialized=false,station='',provider='other',source='url',internal=false,draft=false,workingUrl='';
  let manualUrl='',manualSource='ip',manualEdited=false,directDraft='',directEdited=false;
  const text=(key,fallback)=>{const value=window.appI18n?.t(key);return typeof value==='string'&&value!==key?value:fallback;};
- const manual=()=>provider!=='other';
+ const isManual=value=>['icecast','shoutcast'].includes(value);
+ const manual=()=>isManual(provider);
  const busy=()=>['1','true'].includes(form.dataset.busy)||form.getAttribute?.('aria-busy')==='true'||form.querySelector('button[type="submit"]')?.disabled===true;
  const issue=(key,fallback,field)=>({key,message:text(key,fallback),field});
  function parse(value){
@@ -30,7 +31,7 @@
  }
  function render(){
   nodes.ownerStreamSetupPanel.hidden=false;nodes.ownerStreamAddressFields.hidden=!manual();nodes.ownerStreamUrlRow.hidden=manual();
-  const [key,fallback]=provider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:provider==='icecast'?['registration.providerIcecast','Enter your public server, port and mount point.']:['registration.providerOther','Paste your complete public listening URL.'];
+  const [key,fallback]=provider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:provider==='icecast'?['registration.providerIcecast','Enter your public server, port and mount point. Choose HTTPS for SSL.']:provider==='radiomast'?['registration.providerRadioMast','Paste the public listening URL from Radio Mast, not the encoder server.']:['registration.providerOther','Paste your complete public listening URL.'];
   nodes.ownerStreamProviderHelp.dataset.i18n=key;nodes.ownerStreamProviderHelp.textContent=text(key,fallback);
   for(const choice of choices)choice.checked=choice.value===provider;controls();
  }
@@ -50,7 +51,7 @@
  function changeProvider(value){
   if(busy()||editor.hidden){for(const choice of choices)choice.checked=choice.value===provider;return;}
   if(value===provider)return;
-  const wasManual=manual(),nextManual=value!=='other';
+  const wasManual=manual(),nextManual=isManual(value);
   if(wasManual&&!nextManual){manualUrl=url.value;manualSource=source;if(manualEdited){try{parse(url.value);directDraft=url.value;}catch{}}manualEdited=false;directEdited=false;write(directDraft);source='url';}
   else if(!wasManual&&nextManual){directDraft=url.value;if(directEdited){try{syncBuilder(parse(directDraft));manualUrl=directDraft;manualSource='url';}catch{}}write(manualUrl);source=manualSource;directEdited=false;manualEdited=false;}
   provider=value;render();validate();form.dispatchEvent(new Event('owner-stream-mode-changed'));

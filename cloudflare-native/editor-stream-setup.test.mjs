@@ -12,7 +12,7 @@ function fixture(value='http://STREAM.EXAMPLE.COM:8000/;stream.nsv?sid=1&foo=a%2
   setCustomValidity(value){this.validationMessage=value;},reportValidity(){this.reported=true;return !this.validationMessage;},focus(){document.activeElement=this;},getAttribute(name){return this.attrs[name]??null;},
   addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatchEvent(event){const delivered={type:event.type,bubbles:event.bubbles,target:event.target||this};for(const fn of listeners[event.type]||[])fn(delivered);if(event.bubbles&&id!=='editForm')nodes.get('editForm').dispatchEvent(delivered);return true;}};nodes.set(id,node);return node;}
  for(const id of ['editor','editForm','ownerSave','ownerStreamSetupPanel','ownerStreamProviderHelp','ownerStreamAddressFields','ownerStreamHost','ownerStreamPort','ownerStreamProtocol','ownerStreamPath','ownerStreamUrlRow','ownerStreamUrlInput'])element(id);
- const form=nodes.get('editForm'),url=nodes.get('ownerStreamUrlInput'),choices=['icecast','shoutcast','other'].map(value=>{const field=element('provider-'+value);field.value=value;field.name='owner_stream_provider';field.checked=value==='other';return field;});
+ const form=nodes.get('editForm'),url=nodes.get('ownerStreamUrlInput'),choices=['icecast','shoutcast','radiomast','other'].map(value=>{const field=element('provider-'+value);field.value=value;field.name='owner_stream_provider';field.checked=value==='other';return field;});
  form.dataset.stationCode='13';form.elements={stream_url:url};url.value=value;url.name='stream_url';nodes.get('ownerStreamProtocol').value='https';
  form.querySelectorAll=selector=>selector==='input[name="owner_stream_provider"]'?choices:[];form.querySelector=()=>nodes.get('ownerSave');
  form.addEventListener('input',event=>{if(event.target===url)canonicalInputs++;if(event.target.name!=='owner_stream_provider')form.dataset.dirty='1';});form.addEventListener('owner-stream-mode-changed',()=>{modeEvents++;});
@@ -37,6 +37,12 @@ test('Icecast and SHOUTcast expose editable server fields while hiding the enabl
 
 test('real manual edits update the sole canonical URL, mark a draft and notify existing test cancellation',()=>{
  const f=fixture(),n=f.nodes;f.select('shoutcast');f.input('ownerStreamPath','/NewMount?sid=3&source=a%2Fb');assert.equal(f.url.value,'http://stream.example.com:8000/NewMount?sid=3&source=a%2Fb');assert.equal(f.form.dataset.dirty,'1');assert.equal(f.canonicalInputs(),1);assert.equal(f.prepare(),true);assert.equal(f.canonicalInputs(),1,'validation and canonicalization are not synthetic user edits');assert.equal(f.url.disabled,false);assert.equal(n.get('ownerStreamUrlRow').hidden,true);
+});
+
+test('Radio Mast uses direct listening URL input and preserves exact paths across all providers',()=>{
+ const f=fixture(),n=f.nodes;f.select('radiomast');assert.equal(n.get('ownerStreamAddressFields').hidden,true);assert.equal(n.get('ownerStreamUrlRow').hidden,false);assert.equal(f.url.readOnly,false);assert.equal(f.url.required,true);for(const id of ['ownerStreamHost','ownerStreamPort','ownerStreamProtocol','ownerStreamPath'])assert.equal(n.get(id).disabled,true);assert.equal(f.form.dataset.dirty,undefined);
+ const listening='https://streams.radiomast.io/355ab84d-d2b2-4dd5-90f2-372befc49547?sid=2&source=a%2Fb';f.input('ownerStreamUrlInput',listening);for(const provider of ['other','icecast','shoutcast','radiomast']){f.select(provider);assert.equal(f.prepare(),true);assert.equal(f.url.value,listening);if(['icecast','shoutcast'].includes(provider))assert.equal(n.get('ownerStreamPath').value,'/355ab84d-d2b2-4dd5-90f2-372befc49547?sid=2&source=a%2Fb');}assert.equal(f.canonicalInputs(),1);
+ f.input('ownerStreamUrlInput','https://source:private-secret@streams.radiomast.io/live');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,f.url);assert.doesNotMatch(f.url.validationMessage,/private-secret/);
 });
 
 test('invalid manual edits remain dirty and block Save at a visible field even when URL is hidden',()=>{
@@ -64,7 +70,7 @@ test('a different station resets provider and discards the old station partial d
 });
 
 test('public URL policy rejects private hosts, credentials and private tokens in both owner modes',()=>{
- for(const provider of ['icecast','shoutcast','other']){const f=fixture(),n=f.nodes;f.select(provider);if(provider==='other')f.input('ownerStreamUrlInput','http://192.168.1.2/live');else f.input('ownerStreamHost','192.168.1.2');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,n.get(provider==='other'?'ownerStreamUrlInput':'ownerStreamHost'));if(provider==='other')f.input('ownerStreamUrlInput','https://owner:private-secret@stream.example.com/live');else{f.input('ownerStreamHost','stream.example.com');f.input('ownerStreamPath','/live?token=private-secret');}assert.equal(f.prepare(),false);assert.doesNotMatch(f.document.activeElement.validationMessage,/private-secret/);}
+ for(const provider of ['icecast','shoutcast','radiomast','other']){const f=fixture(),n=f.nodes;f.select(provider);if(['radiomast','other'].includes(provider))f.input('ownerStreamUrlInput','http://192.168.1.2/live');else f.input('ownerStreamHost','192.168.1.2');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,n.get(['radiomast','other'].includes(provider)?'ownerStreamUrlInput':'ownerStreamHost'));if(['radiomast','other'].includes(provider))f.input('ownerStreamUrlInput','https://owner:private-secret@stream.example.com/live');else{f.input('ownerStreamHost','stream.example.com');f.input('ownerStreamPath','/live?token=private-secret');}assert.equal(f.prepare(),false);assert.doesNotMatch(f.document.activeElement.validationMessage,/private-secret/);}
 });
 
 test('strict port, protocol and path checks match registration and do not invent a SHOUTcast mount',()=>{
