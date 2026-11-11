@@ -135,6 +135,15 @@ test('station confirmation identifies a saved station and restores an explicit A
   assert.equal(f.$('shareSavedNotice').hidden,false);assert.equal(f.$('shareSubmit').textContent,'Add again');assert.equal(f.$('shareSubmit').disabled,false);assert.equal(f.$('shareSubmit').hidden,false);assert.equal(f.$('shareWifiHelp').hidden,true);assert.equal(f.statuses.at(-1).text,'');
 });
 
+test('an unchecked retained snapshot prevents automatic re-addition and labels its saved notice honestly',async()=>{
+ const f=confirmationFixture();f.answers.push({known:true,codes:new Set(['10']),stale:true,unavailable:true});assert.equal(await f.check(),undefined,'Unchecked inventory must not authorize an automatic addition');assert.equal(f.$('shareSavedNotice').hidden,false);assert.equal(f.$('shareSavedNotice').textContent,'Previously on your radio');assert.equal(f.$('shareSavedNotice').dataset.i18n,'station.previouslySaved');assert.match(f.statuses.at(-1).text,/not checked.*last known list/);
+ f.answers.push({known:true,codes:new Set(['10'])});assert.equal(await f.check(),true);assert.equal(f.$('shareSavedNotice').textContent,'Already on your radio');assert.equal(f.$('shareSavedNotice').dataset.i18n,'station.alreadySaved');assert.equal(f.statuses.at(-1).text,'');
+});
+
+test('an unchecked empty snapshot also requires an explicit Add instead of automatically assuming the station is missing',async()=>{
+ const f=confirmationFixture();f.answers.push({known:true,codes:new Set(),stale:true,unavailable:true});assert.equal(await f.check(),undefined);assert.equal(f.$('shareSavedNotice').hidden,true);assert.equal(f.$('shareSubmit').textContent,'Add station');assert.match(f.statuses.at(-1).text,/not checked/);
+});
+
 test('unknown or unavailable inventory never treats command history or an empty report as saved',async()=>{
   for(const inventory of [{known:true,codes:new Set()},{known:false,codes:new Set(['10'])},{known:false,codes:new Set(),unavailable:true}]){
     const f=confirmationFixture();f.answers.push(inventory);assert.equal(await f.check(),false);

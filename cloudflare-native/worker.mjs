@@ -19,7 +19,7 @@ import {authenticate,deviceRoutes} from './devices.mjs';
 import {adsRoutes} from './local-ads.mjs';
 import {inventoryStatements} from './saved-inventory.mjs';
 import {sessionCleanupStatements} from './session-maintenance.mjs';
-import {publicStation,directoryResponse} from './public-directory.mjs';
+import {publicStation,publicStationBatch,directoryResponse} from './public-directory.mjs';
 import {publicStaticPath,publicHeadPath,rewritePublicHtml} from './public-pages.mjs';
 import {publicArtworkResponse} from './public-artwork.mjs';
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
@@ -64,6 +64,7 @@ export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   if(request.method==='GET' && path==='/api/stations') {
     return directoryResponse(request,env);
   }
+  if(request.method==='GET'&&path==='/api/stations/batch')return publicStationBatch(request,env);
   if(request.method==='GET'&&path==='/api/device/default-station')return json({name:'La Voix Divine',url:'https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live',listener_code:'',logo_url:'/assets/radiolavoixdivine.png'});
   if(request.method==='GET'&&path==='/api/device/station-revisions'){
     const values=url.searchParams.getAll('codes'),input=values[0]||'';

@@ -2,7 +2,7 @@
 // Load specialist tools only on their own screens. Only these application-owned
 // same-origin paths can execute; user content never supplies a script URL.
 const appFeatureFiles={
- owner:{css:['registration-form.css','operations.css','station-code-recovery.css'],js:['action-prompts.js','registration-form.js','editor-stream-test.js','station-code-recovery.js','policy-preview.js','ads.js','operations.js']},
+ owner:{css:['registration-form.css','operations.css','station-code-recovery.css'],js:['action-prompts.js','registration-form.js','editor-stream-test.js','station-code-recovery.js','policy-preview.js','ads.js','operations.js','owner-session-warning.js']},
  admin:{css:['operations.css'],js:['action-prompts.js','admin-tools.js','ads.js','operations.js','admin-overview.js']},
  advertise:{css:['operations.css'],js:['action-prompts.js','ads.js']},
  support:{css:['support-status.css'],js:['support-status.js']}

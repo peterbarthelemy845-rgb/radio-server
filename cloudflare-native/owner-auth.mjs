@@ -1,7 +1,7 @@
 import {publicStreamUrl} from './public-stream-url.mjs';
 import {HttpError,json,digest,randomHex,mac,otp,encrypt,decrypt,limit,readJson,session,browserWrite,human} from './security.mjs';
 import {screenStation} from './moderation.mjs';
-import {stationState,ownerRevision,stationStateGuard} from './station-edits.mjs';
+import {stationState,ownerRevision,stationStateGuard,stationName} from './station-edits.mjs';
 const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
 const emailPattern=/^[^\s@\r\n]{1,64}@[^\s@\r\n]+\.[^\s@\r\n]+$/;
@@ -101,8 +101,8 @@ export async function authRoutes(request,env,now,deps={human}){
   const path=new URL(request.url).pathname;
   if(path==='/api/session'&&request.method==='GET'){
     await limit(env.DB,'session-create',request.headers.get('CF-Connecting-IP')||'unknown',60,60,now);
-    const current=await session(request,env,now,true),response=json({csrf:current.csrf,turnstile_site_key:env.TURNSTILE_SITE_KEY||'',agreement_version:VERSION,
-      owner_station:current.owner_expires>now?current.owner_station:null});
+    const current=await session(request,env,now,true),response=json({csrf:current.csrf,turnstile_site_key:env.TURNSTILE_SITE_KEY||'',agreement_version:VERSION,server_time:now,
+      owner_station:current.owner_expires>now?current.owner_station:null,owner_expires:current.owner_station&&current.owner_expires>now?current.owner_expires:null});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);return response;
   }
   if(path==='/api/owner/artwork'&&request.method==='GET'){
@@ -122,7 +122,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!station)return json({message:'Station not found.'},404);
     if(['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     const draft=pending||station,revision=await ownerRevision(env,station,pending);
-    return json({station:{code:station.code,name:station.name,stream_url:draft.stream_url,bio:draft.bio,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,approved:{stream_url:station.stream_url,bio:station.bio,status:station.status}}});
+    return json({owner_expires:current.owner_expires,server_time:now,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,status:station.status}}});
   }
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now);
@@ -165,9 +165,7 @@ export async function authRoutes(request,env,now,deps={human}){
   }
   if(path==='/api/owner/register'){
     await deps.human(request,env,body.turnstile_token,'station-submit',now);
-    const name=String(body.name||'').trim(),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase();
-    if(!name)throw new HttpError(400,'Enter a station name.');
-    if(/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96)throw new HttpError(400,'Shorten the station name so it fits on the radio.');
+    const name=stationName(body.name),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase();
     if(bio.length>250||email.length>254||!emailPattern.test(email))throw new HttpError(400,'Check the station bio and email.');
     if(body.rights_confirmed!==true||body.agreement_version!==VERSION)throw new HttpError(400,'Confirm station rights and the current terms.');
     let requestId=body.request_id;
@@ -288,31 +286,31 @@ export async function authRoutes(request,env,now,deps={human}){
     const consumed=results[0]?.results?.[0];
     if(!consumed)throw new HttpError(400,'Incorrect or expired code.');
     const approved=await screenStation(env,consumed.station_code);
-    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved});
+    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?'Email verified. Your station is awaiting safety review.':'Signed in.',station_code:String(consumed.station_code),owner_expires:now+1800,server_time:now,registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved});
   }
   if(path==='/api/owner/station'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
     const {station,pending}=await stationState(env,current.owner_station);
     if(!station||['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     if(typeof body.revision!=='string'||body.revision!==await ownerRevision(env,station,pending))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
-    const url=streamUrl(body.stream_url),bio=String(body.bio||'').trim();
+    const draft=pending||station,name=stationName(body.name===undefined?draft.name:body.name),url=streamUrl(body.stream_url),bio=String(body.bio||'').trim();
     if(bio.length>250)throw new HttpError(400,'Bio must be 250 characters or fewer.');
-    const draft=pending||station,key=body.artwork?await artwork(env,body.artwork):draft.artwork_key;
+    const key=body.artwork?await artwork(env,body.artwork):draft.artwork_key;
     const guard=stationStateGuard(station,pending),editRevision=randomHex(16);
-    if(url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key){
+    if(name===draft.name&&url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key){
       if(!await env.DB.prepare('SELECT 1 WHERE '+guard.sql).bind(...guard.values).first())throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
       return json({status:'ok',unchanged:true,review_required:!!pending,message:'No changes to save.'});
     }
-    const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at)
-      SELECT ?,?,?,?,?,?,? WHERE ${guard.sql}
-      ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at RETURNING revision`)
-      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,...guard.values).first();
+    const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name)
+      SELECT ?,?,?,?,?,?,?,? WHERE ${guard.sql}
+      ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at,name=excluded.name RETURNING revision`)
+      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,...guard.values).first();
     if(!changed)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     let approved=await screenStation(env,station.code,fetch,now,editRevision);
     const latest=await stationState(env,station.code);
     if(!latest.station||['deleted','suspended'].includes(latest.station.status))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     if(latest.pending?.revision!==editRevision){
-      approved=!latest.pending&&latest.station.status==='published'&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key;
+      approved=!latest.pending&&latest.station.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key;
       if(!approved)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     }
     return json({status:'ok',review_required:!approved,message:approved?'Changes saved successfully.':'Changes saved for safety review.'});

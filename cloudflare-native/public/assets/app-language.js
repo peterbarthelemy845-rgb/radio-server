@@ -135,6 +135,20 @@ Object.assign(appCreole,{
  'guide.previousShort':'Anvan','guide.nextShort':'Apre','guide.previous':'Gid anvan an','guide.next':'Gid apre a','guide.position':'{current} sou {total}',
  'title.myRadio':'Radyo','title.support':'Sipò','title.wifiSetup':'Konfigirasyon Wi-Fi','title.login':'Konekte','title.register':'Kreye estasyon','title.editor':'Modifye estasyon','title.shared':'Ajoute estasyon sou radyo','title.admin':'Administratè','title.legal':'Enfòmasyon legal ak kontak','title.advertise':'Fè piblisite','title.adReview':'Revize piblisite','title.reports':'Rapò','title.backups':'Kopi sekou'
 });
+Object.assign(appEnglish,{
+ 'station.previouslySaved':'Previously on your radio','station.inventoryStale':'Saved stations not checked. Showing the last known list.',
+ 'directory.results':'{count} stations shown.','directory.resultsMore':'{count} stations shown. More available.',
+ 'owner.stationName':'Station name','owner.latestName':'Latest station name:','owner.nameRequired':'Enter a station name.','owner.nameTooLong':'Shorten the station name so it fits on the radio.',
+ 'owner.sessionEnding':'Your sign-in ends soon. Save your changes or sign in again. Your edits stay in this tab.',
+ 'owner.sessionEnded':'Your sign-in ended. Sign in again to save. Your edits stay in this tab.'
+});
+Object.assign(appCreole,{
+ 'station.previouslySaved':'Te sou radyo ou','station.inventoryStale':'Lis estasyon yo poko verifye. Men dènye lis nou te resevwa a.',
+ 'directory.results':'{count} estasyon parèt.','directory.resultsMore':'{count} estasyon parèt. Gen lòt toujou.',
+ 'owner.stationName':'Non estasyon','owner.latestName':'Dènye non estasyon an:','owner.nameRequired':'Antre yon non estasyon.','owner.nameTooLong':'Rakousi non estasyon an pou li ka parèt sou radyo a.',
+ 'owner.sessionEnding':'Koneksyon ou pral ekspire. Anrejistre chanjman ou yo oswa konekte ankò. Chanjman ou yo rete nan onglet sa a.',
+ 'owner.sessionEnded':'Koneksyon ou ekspire. Konekte ankò pou anrejistre. Chanjman ou yo rete nan onglet sa a.'
+});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';

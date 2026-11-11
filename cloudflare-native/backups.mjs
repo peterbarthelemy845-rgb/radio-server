@@ -1,5 +1,6 @@
 import {json,encrypt,decrypt,randomHex,readJson,limit,HttpError} from './security.mjs';import {administrator} from './access.mjs';
 import {publicStreamUrl} from './public-stream-url.mjs';
+import {stationName} from './station-edits.mjs';
 export const BACKUP_TABLES=['stations','station_edits','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies'];
 const MAX_RECORDS=50000,MAX_MEDIA=250,MAX_MANIFEST_BYTES=8*1024*1024,MAX_MEDIA_BYTES=50*1024*1024;
 // AES-GCM adds a 16-byte tag; the existing envelope hex-encodes ciphertext
@@ -12,7 +13,7 @@ function validateStationEditSnapshot(stations,edits,media){
  for(const edit of edits){
   const station=approved.get(edit.station_code);
   if(!Number.isSafeInteger(edit.station_code)||seen.has(edit.station_code)||!station||!['published','pending_review'].includes(station.status)||!station.email_verified_at||!Number.isSafeInteger(edit.base_updated_at)||edit.base_updated_at!==station.updated_at||typeof edit.revision!=='string'||!/^[a-f0-9]{32}$/.test(edit.revision)||typeof edit.stream_url!=='string'||edit.stream_url.length>1024||typeof edit.bio!=='string'||edit.bio.length>250||!Number.isSafeInteger(edit.created_at)||edit.created_at<0||edit.artwork_key!==null&&(typeof edit.artwork_key!=='string'||!/^[a-f0-9]{64}\.png$/.test(edit.artwork_key)))throw new HttpError(400,'Invalid proposed station changes in backup.');
-  try{publicStreamUrl(edit.stream_url);}catch{throw new HttpError(400,'Invalid proposed station changes in backup.');}
+  try{publicStreamUrl(edit.stream_url);if(typeof edit.name!=='string'||stationName(edit.name)!==edit.name)throw Error('name');}catch{throw new HttpError(400,'Invalid proposed station changes in backup.');}
   if(media&&edit.artwork_key&&!media.has('sanitized/'+edit.artwork_key))throw new HttpError(400,'Backup media is incomplete.');seen.add(edit.station_code);
  }
 }
@@ -62,6 +63,12 @@ export async function createBackup(env,now,kind='manual'){
 export async function restoreBackup(env,id,now,actor=null){
  const run=await env.DB.prepare("SELECT 1 FROM backup_runs WHERE id=? AND state='ready'").bind(id).first();if(!run)throw new HttpError(404,'Backup not found.');const object=await env.MEDIA.get('backups/'+id+'/manifest.enc');if(!object||object.size>MAX_ENCRYPTED_MANIFEST_BYTES)throw new HttpError(400,'Backup manifest unavailable.');let snapshot;try{const plain=await decrypt(env,await object.text());if(new TextEncoder().encode(plain).length>MAX_MANIFEST_BYTES)throw Error('manifest capacity');snapshot=JSON.parse(plain);}catch{throw new HttpError(400,'Backup could not be authenticated.');}
  if(snapshot.version!==1||!snapshot.tables||!Array.isArray(snapshot.media)||snapshot.media.length>MAX_MEDIA||Object.keys(snapshot.tables).some(t=>!BACKUP_TABLES.includes(t)))throw new HttpError(400,'Unsupported backup.');
+ // Before proposed names were introduced, each proposal implicitly kept its
+ // approved station name. Recover only that same snapshot's approved name.
+ if(Array.isArray(snapshot.tables.station_edits)&&Array.isArray(snapshot.tables.stations)){
+  const names=new Map(snapshot.tables.stations.map(row=>[row?.code,row?.name]));
+  snapshot.tables.station_edits=snapshot.tables.station_edits.map(row=>row&&typeof row==='object'&&!Array.isArray(row)&&!Object.hasOwn(row,'name')?{...row,name:names.get(row.station_code)}:row);
+ }
  const statements=[];let count=0;
  for(const table of BACKUP_TABLES){
   // Older snapshots omit tables added in migrations 0010 and 0011. Preserve

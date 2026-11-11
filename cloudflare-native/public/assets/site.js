@@ -3,19 +3,37 @@ const $=id=>document.getElementById(id);let state,verificationId,stations=[],hum
 function page(id){sitePageGeneration++;if(typeof cancelOwnerAccess==='function')cancelOwnerAccess();if(id==='library')id='myRadio';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
 function message(text){$('message').textContent=text;}
 async function api(path,body,options={}){
- if(!navigator.onLine)throw new Error('No internet. Check your connection and try again.');
- const request={method:body?'POST':'GET',credentials:'same-origin',signal:AbortSignal.timeout(20000),headers:body?{'Content-Type':'application/json','X-CSRF-Token':state?.csrf||''}:{},body:body?JSON.stringify(body):undefined,...(options.cache?{cache:options.cache}:{})};
  const failure=(text,status,reference)=>{const safeReference=typeof reference==='string'&&/^[a-f0-9]{16,32}$/.test(reference)?reference:'';const error=new Error(text+(safeReference?' Reference: '+safeReference+'.':''));if(status!==undefined)error.status=status;if(safeReference)error.errorReference=safeReference;return error;};
+ const cancelled=()=>{const error=new Error('Request cancelled.');error.name='AbortError';return error;};
+ const caller=options.signal;if(caller?.aborted)throw cancelled();
+ if(caller&&(typeof caller.addEventListener!=='function'||typeof caller.removeEventListener!=='function'))throw new TypeError('Invalid request signal.');
+ if(!navigator.onLine)throw new Error('No internet. Check your connection and try again.');
+ const controller=new AbortController(),deadline=AbortSignal.timeout(20000);let abortKind;
+ const abort=kind=>{if(controller.signal.aborted)return;abortKind=kind;controller.abort();},onTimeout=()=>abort('timeout'),onCaller=()=>abort('caller');
+ const abortFailure=status=>abortKind==='caller'?cancelled():failure('Request timed out. Please try again.',status);
+ // The caller stops obsolete reads; the independent deadline still bounds all
+ // requests. Aborting a sent write does not undo it or automatically replay it.
+ deadline.addEventListener('abort',onTimeout,{once:true});if(caller)caller.addEventListener('abort',onCaller,{once:true});
+ if(caller?.aborted)onCaller();else if(deadline.aborted)onTimeout();
+ const waitFor=(operation,status)=>new Promise((resolve,reject)=>{
+  let settled=false;const finish=(ok,value)=>{if(settled)return;settled=true;controller.signal.removeEventListener('abort',onAbort);if(ok)resolve(value);else reject(value);},onAbort=()=>finish(false,abortFailure(status));
+  controller.signal.addEventListener('abort',onAbort,{once:true});if(controller.signal.aborted){onAbort();return;}
+  try{Promise.resolve(operation()).then(value=>finish(true,value),error=>finish(false,error));}catch(error){finish(false,error);}
+ });
  const timedOut=error=>error?.name==='TimeoutError'||error?.name==='AbortError';
- let response;
- try{response=await fetch(path,request);}
- catch(error){if(timedOut(error))throw failure('Request timed out. Please try again.');if(error?.name==='TypeError')throw failure('Could not connect. Check your internet connection and try again.');throw error;}
- let result;
- try{result=await response.json();}
- catch(error){if(timedOut(error))throw failure('Request timed out. Please try again.',response.status);if(error?.name==='SyntaxError')throw failure('The website is temporarily unavailable. Please try again.',response.status);throw error;}
- if(result===null||typeof result!=='object')throw failure('The website is temporarily unavailable. Please try again.',response.status);
- if(!response.ok)throw failure(typeof result.message==='string'&&result.message?result.message:'Please try again.',response.status,result.error_reference);
- return result;
+ try{
+  const request={method:body?'POST':'GET',credentials:'same-origin',signal:controller.signal,headers:body?{'Content-Type':'application/json','X-CSRF-Token':state?.csrf||''}:{},body:body?JSON.stringify(body):undefined,...(options.cache?{cache:options.cache}:{})};
+  let response;
+  try{response=await waitFor(()=>fetch(path,request));}
+  catch(error){if(controller.signal.aborted)throw abortFailure();if(timedOut(error))throw failure('Request timed out. Please try again.');if(error?.name==='TypeError')throw failure('Could not connect. Check your internet connection and try again.');throw error;}
+  if(controller.signal.aborted)throw abortFailure();let result;
+  try{result=await waitFor(()=>response.json(),response.status);}
+  catch(error){if(controller.signal.aborted)throw abortFailure(response.status);if(timedOut(error))throw failure('Request timed out. Please try again.',response.status);if(error?.name==='SyntaxError')throw failure('The website is temporarily unavailable. Please try again.',response.status);throw error;}
+  if(controller.signal.aborted)throw abortFailure(response.status);
+  if(result===null||typeof result!=='object')throw failure('The website is temporarily unavailable. Please try again.',response.status);
+  if(!response.ok)throw failure(typeof result.message==='string'&&result.message?result.message:'Please try again.',response.status,result.error_reference);
+  return result;
+ }finally{deadline.removeEventListener('abort',onTimeout);if(caller)caller.removeEventListener('abort',onCaller);}
 }
 const formBusyStates=new WeakMap();
 let pairingCleanupPending=0;
@@ -78,7 +96,7 @@ function verify(result){verificationGeneration++;verificationPageGeneration=site
 window.addEventListener?.('app-language-changed',renderVerificationResend);
 function registrationMessage(text){const target=$('registerMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
 function loginMessage(text){const target=$('loginMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
-function loadOwnerSession(){if(!ownerSessionPromise){const generation=ownerSessionGeneration;ownerSessionPromise=api('/api/session').then(result=>{if(generation===ownerSessionGeneration)state=result;return result;}).finally(()=>{ownerSessionPromise=null;});}return ownerSessionPromise;}
+function loadOwnerSession(){if(!ownerSessionPromise){const generation=ownerSessionGeneration;ownerSessionPromise=api('/api/session').then(result=>{if(generation===ownerSessionGeneration){state=result;window.dispatchEvent(new CustomEvent('owner-session-updated',{detail:result}));}return result;}).finally(()=>{ownerSessionPromise=null;});}return ownerSessionPromise;}
 async function ensureOwnerSession(){if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)await loadOwnerSession();if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)throw new Error('Website setup is not ready. Please refresh and try again.');}
 async function registrationRequest(data,current=()=>true){const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');if(!current())return '';if(fingerprint!==registrationRequestFingerprint){registrationRequestFingerprint=fingerprint;registrationRequestId=crypto.randomUUID().replaceAll('-','');}return registrationRequestId;}
 function ownerAccessSuccess(result){$('stationSuccessTitle').textContent=result.registration_completed?(result.review_required?'Waiting for review':'Station added'):'Signed in';$('stationSuccessText').textContent=result.registration_completed?'Station code #'+result.station_code+'.':'You can edit your station.';if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='';if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=true;if(!$('stationSuccess').open)$('stationSuccess').showModal();}
@@ -88,10 +106,11 @@ function applyOwnerStation(station,preserveDraft=false){
  ownerEditFeedback(stale?ownerText('owner.conflict','This station changed elsewhere. Your edits are kept. Review the latest saved version before saving again.'):'',false,stale);
  $('ownerName').textContent=station.name;if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(station.artwork_url);
  $('ownerStatus').textContent='Station code #'+station.code+' · '+station.status.replaceAll('_',' ')+(station.review_pending?' · '+(station.status==='published'?ownerText('owner.pendingEdit','Changes waiting for review. Your last approved station stays live.'):ownerText('owner.pendingEditPrivate','Changes waiting for review. Your station is not published yet.')):'');
- if(!keepDraft){form.elements.stream_url.value=station.stream_url;form.elements.bio.value=station.bio;form.elements.artwork.value='';delete form.dataset.dirty;form.dataset.revision=station.revision||'';}
+ if(!keepDraft){form.elements.name.value=station.name;form.elements.stream_url.value=station.stream_url;form.elements.bio.value=station.bio;form.elements.artwork.value='';delete form.dataset.dirty;form.dataset.revision=station.revision||'';}
  form.dataset.stationCode=String(station.code);
 }
-async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;applyOwnerStation(result.station,preserveDraft);return true;}
+function applyOwnerExpiry(result){if(!Number.isInteger(result.owner_expires))return;if(state){state.owner_expires=result.owner_expires;if(Number.isInteger(result.server_time))state.server_time=result.server_time;}const event=new Event('owner-session-updated');event.detail=result;window.dispatchEvent(event);}
+async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft);return true;}
 $('openLogin').onclick=()=>{page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await window.loadAppFeature?.('owner');if(generation!==sitePageGeneration)return;await loadOwnerSession();if(generation!==sitePageGeneration)return;if(state?.owner_station)await editor(true,generation);else page('login');}catch(e){if(generation===sitePageGeneration)message(e.message);}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
 $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.preventDefault();});
 $('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
@@ -104,7 +123,7 @@ $('registerForm').onsubmit=async event=>{
 $('loginForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;loginMessage('');const data=Object.fromEntries(new FormData(form)),attempt=beginOwnerAccess(form),current=()=>currentOwnerAccess(attempt);try{await ensureOwnerSession();if(!current())return;data.turnstile_token=await human(form,'station-access',attempt.controller.signal);if(!current())return;const result=await api('/api/owner/login',data);if(current())verify(result);}catch(e){if(current())loginMessage(e.message);}finally{finishOwnerAccess(attempt);}};
 $('verifyForm').onsubmit=async event=>{
  event.preventDefault();if(verificationBusy||!verificationId||!$('verification').open)return;const form=event.target,generation=verificationGeneration,id=verificationId,code=form.elements.code.value;setVerificationBusy(true);
- try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;const view=sitePageGeneration;setVerificationBusy(false);$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{if(await editor(!result.registration_completed,view)!==false&&!result.registration_completed)message(result.message);}catch(e){if(view===sitePageGeneration)ownerEditorUnavailable(result,e);}}
+ try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;const view=sitePageGeneration;setVerificationBusy(false);$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;applyOwnerExpiry(result);if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{if(await editor(!result.registration_completed,view)!==false&&!result.registration_completed)message(result.message);}catch(e){if(view===sitePageGeneration)ownerEditorUnavailable(result,e);}}
  catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}
 };
 $('resend').onclick=async()=>{if(verificationBusy||!verificationId||!$('verification').open||Date.now()<verificationResendDeadline)return;const generation=verificationGeneration,id=verificationId;setVerificationBusy(true);try{const token=await human($('verification'),'verification-resend');if(!currentVerification(generation,id))return;const result=await api('/api/owner/resend',{verification_id:id,turnstile_token:token});if(!currentVerification(generation,id))return;verificationId=result.verification_id;verificationResendDeadline=Date.now()+60000;$('verifyForm').reset();$('verifyMessage').textContent='A new code has been requested. Use only the newest email code.';}catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}};
@@ -124,7 +143,7 @@ if($('ownerReviewLatest'))$('ownerReviewLatest').onclick=async()=>{
  const form=$('editForm'),button=$('ownerReviewLatest');if(formIsBusy(form)||ownerLogoutBusy||button.disabled||$('editor').hidden)return;const generation=sitePageGeneration;button.disabled=true;busy(form,true,true);
  try{
   const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return;
-  const station=result.station,summary=ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
+  const station=result.station,summary=ownerText('owner.latestName','Latest station name:')+'\n'+station.name+'\n\n'+ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
   if(await listenerActionDialog(ownerText('owner.reviewLatest','Review latest version'),summary,ownerText('owner.useLatest','Use latest version'),true)&&generation===sitePageGeneration)applyOwnerStation(station,false);
  }catch(error){if(generation===sitePageGeneration)ownerEditFeedback(error.message,false,true);}
  finally{button.disabled=false;busy(form,false);}
@@ -172,7 +191,8 @@ $('editForm').elements.artwork.onchange=async event=>{ownerCoverGeneration++;cle
 window.addEventListener?.('pagehide',()=>{ownerCoverGeneration++;clearOwnerCoverUrl();});
 $('editForm').onsubmit=async event=>{
  event.preventDefault();const form=event.target;if(formIsBusy(form)||ownerLogoutBusy)return;
- const generation=sitePageGeneration,data={revision:form.dataset.revision,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
+ const name=form.elements.name.value.trim();if(!name||/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96){ownerEditFeedback(!name?ownerText('owner.nameRequired','Enter a station name.'):ownerText('owner.nameTooLong','Shorten the station name so it fits on the radio.'));form.elements.name.focus();return;}form.elements.name.value=name;
+ const generation=sitePageGeneration,data={revision:form.dataset.revision,name,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
  try{
   if(artwork&&!await validateOwnerArtwork(artwork,{focus:true}))return;
   if(generation!==sitePageGeneration)return;
@@ -212,7 +232,7 @@ function stationDirectoryNotice(text){const host=$('stationDirectoryStatus'),not
 function requestStationDirectory(append=false){
  if(stationDirectoryTimer!==null){clearTimeout(stationDirectoryTimer);stationDirectoryTimer=null;}
  stationDirectoryRequest?.controller.abort();
- const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,controller=new AbortController(),previous=stations;
+ const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,controller=new AbortController(),previous=stations,moreFocused=append&&document.activeElement===$('loadMoreStations');let receivedCodes=[];
  stationDirectoryStarted=true;stationDirectoryLastAttempt=Date.now();stationDirectoryState.loading=true;stationDirectoryState.failed=false;stationDirectoryControls();
  if(append||stationDirectoryState.loadedQuery!==query)list();
  const promise=(async()=>{
@@ -231,11 +251,12 @@ function requestStationDirectory(append=false){
     cursor=next;if(result.stations.length||!hasMore)break;
    }
    const unique=new Map();for(const station of [...(append?previous:[]),...collected]){const code=String(station.listener_code??station.code??'');if(!code)continue;unique.set(code,station);stationDirectoryMetadata.set(code,station);}
+   receivedCodes=collected.map(station=>String(station.listener_code??station.code??'')).filter(code=>!previous.some(station=>String(station.listener_code??station.code??'')===code));
    stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append;
    stationDirectoryNotice('');return stations;
   }
   catch(e){if(generation===stationDirectoryGeneration&&!controller.signal.aborted){stationDirectoryState.failed=true;stationDirectoryNotice(previous.length&&stationDirectoryState.loadedQuery===query?'Could not update stations. Showing the last loaded list. Check your connection and try again.':'Stations could not load. Check your connection and try again.');}return stations;}
-  finally{if(generation===stationDirectoryGeneration){stationDirectoryState.loading=false;stationDirectoryControls();list();}if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
+  finally{if(generation===stationDirectoryGeneration){stationDirectoryState.loading=false;stationDirectoryControls();list();window.onStationDirectoryComplete?.({query,append,moreFocused,receivedCodes,failed:stationDirectoryState.failed,hasMore:stationDirectoryState.hasMore});}if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
  })();
  stationDirectoryRequest={generation,promise,controller};return promise;
 }
@@ -300,7 +321,7 @@ async function adminList(){
  for(const station of result.stations){
   const card=document.createElement('article');card.style.borderTop='1px solid #bbc';card.style.padding='12px 0';const title=document.createElement('h2');title.textContent=station.name+' · #'+station.code;card.append(title);
   const details=document.createElement('p');details.textContent=station.status.replaceAll('_',' ')+' · '+station.contact_email;card.append(details);
-  function content(value,label){const heading=document.createElement('h3');heading.textContent=label;const bio=document.createElement('p');bio.textContent=value.bio;const stream=document.createElement('p');stream.textContent=value.stream_url;stream.style.overflowWrap='anywhere';card.append(heading,bio,stream);if(value.artwork_key){const image=document.createElement('img');image.src='/api/admin/artwork/'+value.artwork_key;image.alt=label+' cover art';image.width=120;image.height=120;image.style.objectFit='contain';card.append(image);}}
+  function content(value,label){const heading=document.createElement('h3');heading.textContent=label;const name=document.createElement('p');name.textContent=value.name;const bio=document.createElement('p');bio.textContent=value.bio;const stream=document.createElement('p');stream.textContent=value.stream_url;stream.style.overflowWrap='anywhere';card.append(heading,name,bio,stream);if(value.artwork_key){const image=document.createElement('img');image.src='/api/admin/artwork/'+value.artwork_key;image.alt=label+' cover art';image.width=120;image.height=120;image.style.objectFit='contain';card.append(image);}}
   content(station,station.status==='published'?'Currently published':'Current station');if(station.pending_edit)content(station.pending_edit,'Proposed changes — awaiting review');
   for(const action of ['approve','reject_edit','reject','delete']){
    if(action==='approve'&&(!station.email_verified_at||station.status==='suspended'||(!station.pending_edit&&station.status!=='pending_review')))continue;if(action==='reject_edit'&&!station.pending_edit)continue;

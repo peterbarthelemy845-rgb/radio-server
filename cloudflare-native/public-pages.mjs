@@ -1,7 +1,7 @@
 import {publicStation} from './public-directory.mjs';
 const pages=new Set(['/','/radiolavoixdivine','/radiolavoixdivine/','/add-station','/create-station','/station-edit','/admin','/device','/support','/wifi-setup','/terms','/privacy','/copyright','/counter-notice','/manifest.webmanifest','/sw.js','/offline.html']);
 export const publicStaticPath=path=>pages.has(path)||/^\/(?:station|advertise)\/[0-9]{2,6}$/.test(path)||/^\/assets\/[a-z0-9.-]+$/.test(path);
-export const publicHeadPath=path=>publicStaticPath(path)||/^\/artwork\/[a-f0-9]{64}\.png$/.test(path)||path==='/api/stations'||/^\/api\/(?:device\/)?stations\/[0-9]{2,6}$/.test(path)||path==='/health';
+export const publicHeadPath=path=>publicStaticPath(path)||/^\/artwork\/[a-f0-9]{64}\.png$/.test(path)||path==='/api/stations'||path==='/api/stations/batch'||/^\/api\/(?:device\/)?stations\/[0-9]{2,6}$/.test(path)||path==='/health';
 export function publicOrigin(env){try{const url=new URL(env.PUBLIC_ORIGIN||'https://radiolocals.com');if(url.protocol==='https:'&&!url.username&&!url.password)return url.origin;}catch{}return 'https://radiolocals.com';}
 const escape=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const titles={'/offline.html':'Offline','/':'Radio','/support':'Support','/device':'Support','/wifi-setup':'Wi-Fi setup','/add-station':'Station sign in','/create-station':'Create your station','/station-edit':'Edit your station','/admin':'Administrator','/terms':'Station terms','/privacy':'Privacy','/copyright':'Copyright and contact','/counter-notice':'Counter-notice','/radiolavoixdivine':'La Voix Divine','/radiolavoixdivine/':'La Voix Divine'};

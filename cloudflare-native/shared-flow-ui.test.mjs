@@ -146,6 +146,10 @@ test('tapping a station already reported on the radio does not add it again with
  f.answers.push({command_id:'explicit-add-again'},{state:'added'});await f.submit();assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,1);assert.deepEqual(f.dialogs.map(dialog=>dialog[0]),['Station added']);
 });
 
+test('a stale saved snapshot never authorizes automatic addition whether or not its last checked list includes the station',async()=>{
+ for(const codes of [[],['10']]){const f=fixture({inventory:async()=>({known:true,codes:new Set(codes),stale:true,unavailable:true})});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:true}]});await f.open('10',true,true);assert.equal(f.calls.filter(call=>call.path==='/api/phone/add').length,0);assert.match(f.id('shareStatus').textContent,/not checked.*last known list/);assert.equal(f.id('shareSavedNotice').hidden,codes.length===0);if(codes.length)assert.equal(f.id('shareSavedNotice').textContent,'Previously on your radio');}
+});
+
 test('closing during the saved inventory check prevents a later automatic station addition',async()=>{
  const inventory=deferred(),f=fixture({inventory:()=>inventory.promise});f.answers.push({name:'Station',listener_code:'10'},{radios:[{id:'one',online:true}]});const opening=f.open('10',true,true);await until(()=>f.inventoryCalls.length===1);f.cancel();inventory.resolve({known:true,codes:new Set()});await opening;
  assert.equal(f.calls.length,2);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);assert.equal(f.id('shared').hidden,true);assert.equal(f.get('shareRunning'),false);assert.equal(f.dialogs.length,0);

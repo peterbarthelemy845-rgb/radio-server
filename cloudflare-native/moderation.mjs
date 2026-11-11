@@ -1,7 +1,7 @@
 // Only sanitized public-facing station content is sent to the moderation API.
 // Any missing configuration, incomplete response, or service failure keeps it private.
 import {ownerNotification,commitOwnerNotification} from './notifications.mjs';
-import {stationState,publishStationEdit} from './station-edits.mjs';
+import {stationState,publishStationEdit,stationName} from './station-edits.mjs';
 const words=['fuck','fucking','fucker','motherfucker','shit','bullshit','asshole','bitch','cunt','porn','porno','pornography','xxx','blowjob','merde','putain','salope','connard','enculer','getmaman','kokomaman','kalanmaman'];
 export function needsTextReview(text){
   const clean=text.normalize('NFKD').toLowerCase().replace(/[\p{M}\p{Cf}]/gu,'').replace(/[013457@$!]/g,c=>({'0':'o','1':'i','3':'e','4':'a','5':'s','7':'t','@':'a','$':'s','!':'i'}[c]));
@@ -32,7 +32,8 @@ export async function screenStation(env,code,fetcher=fetch,now=Math.floor(Date.n
   const snapshot=await stationState(env,code),proposal=snapshot.pending,live=snapshot.station;
   if(expectedRevision&&proposal?.revision!==expectedRevision)return false;
   if(proposal){
-    if(!live?.email_verified_at||proposal.base_updated_at!==live.updated_at||['deleted','suspended','pending_email'].includes(live.status)||!await scanCreative(env,live.name+'\n'+proposal.bio,proposal.artwork_key,fetcher))return false;
+    try{if(stationName(proposal.name)!==proposal.name)return false;}catch{return false;}
+    if(!live?.email_verified_at||proposal.base_updated_at!==live.updated_at||['deleted','suspended','pending_email'].includes(live.status)||!await scanCreative(env,proposal.name+'\n'+proposal.bio,proposal.artwork_key,fetcher))return false;
     try{
       const notice=await ownerNotification(env,{kind:'station-approved',stationCode:live.code,recipient:live.contact_email,event:[live,proposal]});
       return await commitOwnerNotification(env,now,publishStationEdit(env,live,proposal,now),notice,[{sql:'DELETE FROM station_edits WHERE station_code=? AND revision=? AND OWNER_NOTIFICATION_APPLIED',values:[live.code,proposal.revision]}]);

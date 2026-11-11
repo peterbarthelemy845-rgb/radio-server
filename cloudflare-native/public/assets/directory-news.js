@@ -27,6 +27,8 @@ function shareButton(label,name,url,{standalone=false}={}){
 }
 let stationListSnapshot='';
 function renderStationSlider(track,found,emptyText,saved=false){
+ const active=document.activeElement,focusedItem=track.contains?.(active)?active.closest?.('.station-slider-item'):null;
+ const focusedCode=focusedItem?.getAttribute?.('data-station-code'),focusedShare=active?.classList?.contains('station-tile-share'),focusedIndex=focusedItem?[...track.children].indexOf(focusedItem):-1;
  track.replaceChildren();
  for(const station of found){
   const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — on your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
@@ -42,20 +44,21 @@ function renderStationSlider(track,found,emptyText,saved=false){
    if(pending){feedback.setAttribute('data-i18n','busy.adding');const text=typeof window!=='undefined'?window.appI18n?.t('busy.adding'):null;feedback.textContent=text&&text!=='busy.adding'?text:'Adding…';}
    else{feedback.removeAttribute('data-i18n');feedback.textContent='';}
   };
-  tile.append(image,name,feedback);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.append(tile);
+  tile.append(image,name,feedback);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.setAttribute('data-station-code',String(station.listener_code));item.append(tile);
   if(typeof shareButton==='function'){const share=shareButton('Share '+station.name,station.name,location.origin+'/station/'+station.listener_code,{standalone:true});share.className='station-tile-share';share.textContent='Share';share.setAttribute('data-i18n','sharing.share');item.append(share);}
   track.append(item);tile.updateDeliveryStatus();
  }
  if(!found.length){const empty=document.createElement('p');empty.className='station-slider-empty';empty.textContent=emptyText;track.append(empty);}
  if(typeof updateStationSliderControls==='function')updateStationSliderControls(track);
+ if(focusedIndex>=0&&!document.hidden&&(typeof $!=='function'||!$('myRadio')?.hidden)&&!document.querySelector?.('dialog[open]')){const items=[...track.children].filter(item=>item.className==='station-slider-item'),item=items.find(item=>item.getAttribute?.('data-station-code')===focusedCode)||items[Math.min(focusedIndex,items.length-1)],target=item?.children[focusedShare?1:0]||item?.children[0]||(typeof $==='function'?$('search'):null);target?.focus?.({preventScroll:true});}
 }
 list=function(){
  const fold=value=>String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),query=fold($('search').value.slice(0,96).trim().replace(/^#\s*(?=\d)/,'')),radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',inventory=typeof readRadioInventory==='function'?readRadioInventory(radioId):null,known=!!inventory?.known;
  if(radioId&&typeof loadRadioInventory==='function')loadRadioInventory(radioId);
  const directory=typeof readStationDirectoryState==='function'?readStationDirectoryState():null,savedCodes=known?inventory.codes:new Set(),matches=s=>fold(s.name+' '+s.listener_code).includes(query);
- const saved=known?[...savedCodes].map(code=>stations.find(s=>String(s.listener_code)===code)||(typeof getStationDirectoryStation==='function'?getStationDirectoryStation(code):null)||{listener_code:code,name:'Station '+code,logo_url:''}).filter(matches):[];
+ const saved=known?[...savedCodes].map(code=>(typeof getSavedStationMetadata==='function'?getSavedStationMetadata(code):null)||stations.find(s=>String(s.listener_code)===code)||(typeof getStationDirectoryStation==='function'?getStationDirectoryStation(code):null)||{listener_code:code,name:'Station '+code,logo_url:''}).filter(matches):[];
  const current=!directory||directory.loadedQuery===query,available=current?stations.filter(s=>!savedCodes.has(String(s.listener_code))&&matches(s)):[];
- const hint=!radioId?'':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
+ const hint=!radioId?'':inventory?.stale?'Saved stations not checked. Showing the last known list.':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
  const waiting=directory?.loading?'Loading stations…':directory?.hasMore?'More stations may match. Load more to continue.':directory?.failed?'Stations could not load. Try again.':'';
  const snapshot=JSON.stringify([radioId,known,query,hint,saved,available,available.length?'':waiting]);if(snapshot===stationListSnapshot)return;stationListSnapshot=snapshot;
  $('stationCount').textContent='';$('savedStationsSection').hidden=!known||saved.length===0;$('stationInventoryHelp').textContent=hint;$('stationInventoryHelp').hidden=!hint;
@@ -68,9 +71,26 @@ if(typeof searchStationDirectory==='function')$('search').oninput=()=>searchStat
 $('clearStationSearch').onclick=()=>{$('search').value='';if(typeof searchStationDirectory==='function')searchStationDirectory('');else list();$('search').focus({preventScroll:true});};
 const libraryHelp=$('library').querySelector('details');if(libraryHelp)$('search').after(libraryHelp);
 
+// Results are announced once after a completed search or explicit pagination.
+// No visible count is added, and background polls with the same result stay quiet.
+const stationResultAnnouncement=document.createElement('p');stationResultAnnouncement.id='stationResultAnnouncement';stationResultAnnouncement.className='station-screen-reader-only';stationResultAnnouncement.dataset.i18nSkip='1';stationResultAnnouncement.setAttribute('role','status');stationResultAnnouncement.setAttribute('aria-live','polite');stationResultAnnouncement.setAttribute('aria-atomic','true');$('library').append(stationResultAnnouncement);
+let stationResultAnnouncementSignature='';
+window.onStationDirectoryComplete=function(detail={}){
+ if(detail.failed||document.hidden||$('myRadio').hidden)return;
+ const tracks=[$('savedStations'),$('stations')],items=tracks.flatMap(track=>[...track.children].filter(item=>item.className==='station-slider-item'));
+ const signature=JSON.stringify([detail.query||'',items.map(item=>item.getAttribute('data-station-code')),!!detail.hasMore]);
+ if(signature!==stationResultAnnouncementSignature){stationResultAnnouncementSignature=signature;const key=detail.hasMore?'directory.resultsMore':'directory.results',fallback=items.length+' stations shown.'+(detail.hasMore?' More available.':''),translated=window.appI18n?.t(key,{count:items.length});stationResultAnnouncement.textContent=translated&&translated!==key?translated:fallback;}
+ if(!detail.append||!detail.moreFocused||document.querySelector('dialog[open]'))return;
+ const more=$('loadMoreStations'),active=document.activeElement;if(active!==more&&active!==document.body)return;
+ if(detail.hasMore){more.focus({preventScroll:true});return;}
+ const added=new Set(detail.receivedCodes||[]),available=[...$('stations').children].filter(item=>item.className==='station-slider-item'),saved=[...$('savedStations').children].filter(item=>item.className==='station-slider-item'),target=available.find(item=>added.has(item.getAttribute('data-station-code')))?.children[0]||available.at(-1)?.children[0]||saved.at(-1)?.children[0]||$('search');
+ target.focus({preventScroll:true});target.scrollIntoView?.({block:'nearest',inline:'nearest',behavior:'auto'});
+};
+
 window.addEventListener('radio-locals-ready',list);
 window.addEventListener('radio-selection-changed',list);
 window.addEventListener('radio-inventory-changed',event=>{if(event.detail.radioId===readSelectedRadio())list();});
+window.addEventListener('saved-station-metadata-changed',list);
 window.addEventListener('station-delivery-changed',()=>{
  for(const id of ['savedStations','stations'])for(const item of $(id).children)item.children[0]?.updateDeliveryStatus?.();
 });

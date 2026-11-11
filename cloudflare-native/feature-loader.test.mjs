@@ -7,7 +7,7 @@ function fixture(){const appended=[],events=[],ctx={document:{createElement(tag)
 test('features load styles first, then execute their scripts in declared order, with one shared promise',async()=>{
  const f=fixture(),request=f.load('owner');assert.equal(f.load('owner'),request);assert.equal(f.appended.length,3);assert.ok(f.appended.every(element=>element.tag==='link'));const css=f.appended.slice();css[0].completed=true;css[0].onload();await f.tick();assert.equal(f.appended.length,3);
  for(const element of css.slice(1)){element.completed=true;element.onload();}await f.tick();assert.equal(f.path(f.appended[3]),'/assets/action-prompts.js');assert.equal(f.appended[3].async,false);assert.equal(f.appended.length,4);await f.finish();await request;
- assert.deepEqual(f.appended.filter(element=>element.tag==='script').map(f.path),['action-prompts.js','registration-form.js','editor-stream-test.js','station-code-recovery.js','policy-preview.js','ads.js','operations.js'].map(file=>'/assets/'+file));assert.deepEqual(f.events,['app-content-changed']);
+ assert.deepEqual(f.appended.filter(element=>element.tag==='script').map(f.path),['action-prompts.js','registration-form.js','editor-stream-test.js','station-code-recovery.js','policy-preview.js','ads.js','operations.js','owner-session-warning.js'].map(file=>'/assets/'+file));assert.deepEqual(f.events,['app-content-changed']);
  const count=f.appended.length;await f.load('owner');assert.equal(f.appended.length,count);
 });
 test('simultaneous overlapping features fetch each application-owned asset only once',async()=>{

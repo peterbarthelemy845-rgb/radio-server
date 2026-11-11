@@ -6,10 +6,10 @@ import {readFileSync} from 'node:fs';
 const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
 const source=site.slice(site.indexOf('async function api('),site.indexOf('const formBusyStates='));
 function fixture(reply){
- const calls=[],signals=[];
- const context=vm.createContext({navigator:{onLine:true},state:{csrf:'test-csrf'},AbortSignal:{timeout(milliseconds){signals.push(milliseconds);return {timeout:milliseconds};}},fetch:async(path,options)=>{calls.push({path,options});if(reply instanceof Error)throw reply;return reply;}});
+ const calls=[],signals=[],deadlines=[];
+ const context=vm.createContext({navigator:{onLine:true},state:{csrf:'test-csrf'},AbortController,AbortSignal:{timeout(milliseconds){signals.push(milliseconds);const deadline=new AbortController();deadlines.push(deadline);return deadline.signal;}},fetch:async(path,options)=>{calls.push({path,options});if(reply instanceof Error)throw reply;if(typeof reply==='function')return await reply(path,options);return reply;}});
  vm.runInContext(source,context);
- return {calls,signals,context,request(body,options={}){context.body=body;context.options=options;return vm.runInContext("api('/api/test',body,options)",context);}};
+ return {calls,signals,deadlines,context,request(body,options={}){context.body=body;context.options=options;return vm.runInContext("api('/api/test',body,options)",context);}};
 }
 const jsonResponse=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
 
@@ -54,4 +54,41 @@ test('unexpected errors and invalid caller data remain programming errors rather
 test('requests retain their method, CSRF protection, same-origin credentials and bounded deadline',async()=>{
  const f=fixture(jsonResponse({status:'ok'}));await f.request({code:'13'},{cache:'no-store'});assert.equal(f.calls[0].path,'/api/test');assert.equal(f.calls[0].options.method,'POST');assert.equal(f.calls[0].options.credentials,'same-origin');assert.equal(f.calls[0].options.headers['X-CSRF-Token'],'test-csrf');assert.equal(f.calls[0].options.headers['Content-Type'],'application/json');assert.equal(f.calls[0].options.body,'{"code":"13"}');assert.equal(f.calls[0].options.cache,'no-store');assert.deepEqual(f.signals,[20000]);
  const offline=fixture(jsonResponse({status:'ok'}));offline.context.navigator.onLine=false;await assert.rejects(offline.request(),/No internet. Check your connection and try again./);assert.equal(offline.calls.length,0);
+});
+
+function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
+async function until(check){for(let i=0;i<30;i++){if(check())return;await Promise.resolve();}throw Error('API test did not reach expected phase');}
+const intentional=error=>error.name==='AbortError'&&error.message==='Request cancelled.'&&!/timed out/.test(error.message);
+
+test('pre-aborted obsolete requests dispatch neither fetch nor a new timeout, including writes',async()=>{
+ const caller=new AbortController();caller.abort(new Error('Private cancellation reason'));const f=fixture(jsonResponse({status:'ok'}));f.context.navigator.onLine=false;await assert.rejects(f.request({station_code:'13'},{signal:caller.signal}),intentional);assert.equal(f.calls.length,0);assert.equal(f.signals.length,0);
+});
+
+test('caller cancellation aborts an in-flight fetch without waiting for its response or treating it as a timeout',async()=>{
+ const waiting=deferred(),caller=new AbortController(),f=fixture(()=>waiting.promise),request=f.request(undefined,{signal:caller.signal});await until(()=>f.calls.length===1);assert.notEqual(f.calls[0].options.signal,caller.signal);caller.abort('Private reason');await assert.rejects(request,intentional);assert.equal(f.calls[0].options.signal.aborted,true);waiting.reject(new Error('Late transport failure'));await Promise.resolve();assert.equal(f.calls.length,1);
+});
+
+test('obsolete JSON body reads reject promptly and ignore a later successful parse',async()=>{
+ const waiting=deferred(),caller=new AbortController();let parsing=false;const f=fixture({status:200,ok:true,json:()=>{parsing=true;return waiting.promise;}}),request=f.request(undefined,{signal:caller.signal});await until(()=>parsing);caller.abort();await assert.rejects(request,intentional);assert.equal(f.calls[0].options.signal.aborted,true);waiting.resolve({status:'ok',private_result:'obsolete'});await Promise.resolve();assert.equal(f.calls.length,1);
+});
+
+test('the independent 20-second deadline still ends fetch or JSON reads when a caller signal exists',async()=>{
+ for(const phase of ['fetch','body']){const waiting=deferred(),caller=new AbortController();let parsing=false;const f=fixture(phase==='fetch'?()=>waiting.promise:{status:502,ok:false,json:()=>{parsing=true;return waiting.promise;}}),request=f.request(undefined,{signal:caller.signal});await until(()=>phase==='fetch'?f.calls.length===1:parsing);f.deadlines[0].abort();await assert.rejects(request,error=>error.name!=='AbortError'&&error.message==='Request timed out. Please try again.'&&error.status===(phase==='body'?502:undefined));assert.equal(caller.signal.aborted,false);assert.equal(f.calls[0].options.signal.aborted,true);waiting.reject(Error('Late body/network failure'));}
+});
+
+test('the first abort source wins when timeout and caller cancellation happen together',async()=>{
+ for(const first of ['caller','timeout']){const waiting=deferred(),caller=new AbortController(),f=fixture(()=>waiting.promise),request=f.request(undefined,{signal:caller.signal});await until(()=>f.calls.length);if(first==='caller'){caller.abort();f.deadlines[0].abort();await assert.rejects(request,intentional);}else{f.deadlines[0].abort();caller.abort();await assert.rejects(request,error=>error.name!=='AbortError'&&/timed out/.test(error.message));}waiting.resolve(jsonResponse({status:'ok'}));}
+});
+
+test('caller and timeout listeners are removed after success or programming errors',async()=>{
+ for(const invalidBody of [false,true]){const caller=new AbortController(),f=fixture(jsonResponse({status:'ok'}));let body,added=0,removed=0;const add=caller.signal.addEventListener.bind(caller.signal),remove=caller.signal.removeEventListener.bind(caller.signal);caller.signal.addEventListener=(...args)=>{added++;add(...args);};caller.signal.removeEventListener=(...args)=>{removed++;remove(...args);};if(invalidBody){body={};body.self=body;await assert.rejects(f.request(body,{signal:caller.signal}),error=>error.name==='TypeError');assert.equal(f.calls.length,0);}else{assert.equal((await f.request(undefined,{signal:caller.signal})).status,'ok');caller.abort();f.deadlines[0].abort();assert.equal(f.calls[0].options.signal.aborted,false);}assert.equal(added,1);assert.equal(removed,1);}
+});
+
+test('invalid signals and non-Error rejection values retain their programming-error semantics',async()=>{
+ const invalid=fixture(jsonResponse({status:'ok'}));await assert.rejects(invalid.request(undefined,{signal:{aborted:false}}),error=>error.name==='TypeError'&&error.message==='Invalid request signal.');assert.equal(invalid.calls.length,0);assert.equal(invalid.signals.length,0);
+ const rejected=fixture(()=>Promise.reject(null));await assert.rejects(rejected.request(),error=>error===null);
+});
+
+test('cancelling a dispatched write never replays it or claims its server operation was undone',async()=>{
+ const waiting=deferred(),caller=new AbortController(),f=fixture(()=>waiting.promise),request=f.request({station_code:'13'},{signal:caller.signal,cache:'no-store'});await until(()=>f.calls.length===1);caller.abort();await assert.rejects(request,intentional);assert.equal(f.calls[0].options.method,'POST');assert.equal(f.calls[0].options.body,'{"station_code":"13"}');waiting.resolve(jsonResponse({status:'ok'}));await Promise.resolve();assert.equal(f.calls.length,1);
 });

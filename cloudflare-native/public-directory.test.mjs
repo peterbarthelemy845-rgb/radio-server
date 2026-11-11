@@ -30,3 +30,19 @@ test('all directory pages and thumbnail URLs are restricted to currently publish
  const hidden=f.sqlite.prepare('SELECT code FROM stations WHERE code>? ORDER BY code LIMIT 1').get(f.station).code;f.sqlite.prepare("UPDATE stations SET status='suspended' WHERE code=?").run(hidden);const next=await f.page('?limit=1&cursor='+encodeURIComponent(first.next_cursor));assert.equal(next.stations.some(station=>station.listener_code===String(hidden)),false);
  const lookup=await(await handle(new Request('https://radiolocals.com/api/stations/'+f.station),f.env,f.now)).json();assert.equal(lookup.logo_thumb_url,first.stations[0].logo_thumb_url);assert.equal(lookup.contact_email,undefined);
 });
+
+test('saved-station metadata batches reach later codes while exposing only published public details',async()=>{
+ const f=await fixture(80),later=f.sqlite.prepare('SELECT MAX(code) code FROM stations').get().code,hidden=f.station+1;f.sqlite.prepare("UPDATE stations SET status='pending_review' WHERE code=?").run(hidden);f.sqlite.prepare('UPDATE stations SET artwork_key=? WHERE code=?').run('b'.repeat(64)+'.png',later);
+ const result=await(await handle(new Request('https://radiolocals.com/api/stations/batch?codes='+[later,hidden,f.station,later,'999999'].join(',')),f.env,f.now)).json();assert.deepEqual(result.stations.map(s=>s.listener_code),[String(f.station),String(later)]);assert.equal(result.stations[1].logo_thumb_url,'/artwork/'+'b'.repeat(64)+'.png?size=192');
+ for(const row of result.stations){assert.equal(row.contact_email,undefined);assert.equal(row.owner_email,undefined);assert.equal(row.status,undefined);}
+ const unknown=await(await handle(new Request('https://radiolocals.com/api/stations/batch?codes=999999'),f.env,f.now)).json();assert.deepEqual(unknown.stations,[]);
+});
+
+test('saved metadata batches validate their bounded code list before querying',async()=>{
+ const f=await fixture();for(const input of ['', '?codes=', '?codes=1','?codes=000013','?codes=13&codes=14','?codes=13%2Cbad','?codes='+Array(101).fill('13').join(','),'?codes='+('9'.repeat(700))]){const response=await fetchHandler(new Request('https://radiolocals.com/api/stations/batch'+input),f.env);assert.equal(response.status,400,input);}
+ const duplicate=await(await handle(new Request('https://radiolocals.com/api/stations/batch?codes='+Array(100).fill(String(f.station)).join(',')),f.env,f.now)).json();assert.equal(duplicate.stations.length,1);
+});
+
+test('public saved metadata batches support HEAD with the same status and headers and no response body',async()=>{
+ const f=await fixture();for(const query of ['?codes='+f.station,'?codes=999999','?codes=1','?codes=13&codes=14']){const url='https://radiolocals.com/api/stations/batch'+query,get=await fetchHandler(new Request(url),f.env),head=await fetchHandler(new Request(url,{method:'HEAD'}),f.env);assert.equal(head.status,get.status,query);assert.equal(head.headers.get('content-type'),get.headers.get('content-type'));assert.equal(head.headers.get('cache-control'),get.headers.get('cache-control'));assert.equal(await head.text(),'');}
+});

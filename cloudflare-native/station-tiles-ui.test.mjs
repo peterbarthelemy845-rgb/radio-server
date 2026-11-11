@@ -47,6 +47,12 @@ test('unlinked station lists omit repeated connection instructions but retain us
  }
 });
 
+test('an unchecked saved snapshot stays in its saved section instead of silently becoming an automatic-add tile',()=>{
+ const nodes=new Map(),rendered=[],$=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,textContent:''});return nodes.get(id);};
+ const context={$,stations:[{listener_code:'13',name:'Saved Radio'},{listener_code:'14',name:'Available Radio'}],readSelectedRadio:()=>'one',readRadioInventory:()=>({known:true,stale:true,unavailable:true,codes:new Set(['13'])}),loadRadioInventory(){},renderStationSlider(track,found,empty,saved){rendered.push({track,found,saved});}};
+ const list=runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('list=function()'),source.indexOf("$('search').oninput=list;"))+';list;',context);list();assert.equal($('savedStationsSection').hidden,false);assert.equal($('stationInventoryHelp').textContent,'Saved stations not checked. Showing the last known list.');assert.deepEqual(Array.from(rendered[0].found,s=>s.listener_code),['13']);assert.equal(rendered[0].saved,true);assert.deepEqual(Array.from(rendered[1].found,s=>s.listener_code),['14']);
+});
+
 function searchFixture({known=true,codes=['13'],stations=[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],directory=null,metadata=new Map()}={}){
  const nodes=new Map(),openings=[],focusCalls=[];
  function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}

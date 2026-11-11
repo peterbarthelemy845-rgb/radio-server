@@ -50,4 +50,6 @@ body.app-large-text.app-owner-page .check input{min-height:20px}
 #library.radio-library .station-slider-item{display:flex;flex-direction:column;align-self:stretch}
 #library.radio-library .station-tile-share{margin-top:0}
 #loadMoreStations{width:auto;min-height:44px;margin:12px 0 0}
+.station-screen-reader-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.owner-session-notice{margin:10px 0;padding:10px 12px;border:1px solid #e7cf9d;border-radius:10px;background:#fff8e9;color:#634414}.owner-session-notice[hidden]{display:none}.owner-session-notice p{font-size:14px;line-height:1.45;margin:0 0 8px}.owner-session-notice button{margin:0;min-height:44px}.owner-session-notice[data-state="expired"]{background:#fff1f2;border-color:#e9c0c5;color:#882538}
 .support-guide-navigation{display:flex;align-items:center;gap:8px;justify-content:space-between;margin:8px 0 12px}.support-guide-navigation button{width:44px;min-width:44px;min-height:44px;margin:0;padding:4px;background:#edf3fc;color:#225da5}.support-guide-navigation span{font-size:14px;color:#526782}

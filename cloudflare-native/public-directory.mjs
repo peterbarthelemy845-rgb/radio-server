@@ -5,6 +5,12 @@ const stationColumns=`CAST(code AS TEXT) AS listener_code,CAST(updated_at AS TEX
  CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key||'?size=192' END AS logo_thumb_url`;
 export function foldDirectorySearch(value){return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 export async function publicStation(db,code){return db.prepare(`SELECT ${stationColumns} FROM stations WHERE code=? AND status='published'`).bind(Number(code)).first();}
+export async function publicStationBatch(request,env){
+ const params=new URL(request.url).searchParams,values=params.getAll('codes'),input=values[0]||'',codes=input.split(',');
+ if(values.length!==1||input.length>699||codes.length>100||codes.some(code=>!/^[1-9][0-9]{1,5}$/.test(code)))throw new HttpError(400,'Choose up to 100 station codes.');
+ const unique=[...new Set(codes.map(Number))],rows=await env.DB.prepare(`SELECT ${stationColumns} FROM stations WHERE status='published' AND code IN (${unique.map(()=>'?').join(',')}) ORDER BY code`).bind(...unique).all();
+ return json({stations:rows.results});
+}
 const encode=value=>btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(value)))).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 function decode(value){return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(value.replaceAll('-','+').replaceAll('_','/')),char=>char.charCodeAt(0))));}
 function sameSignature(a,b){if(a.length!==b.length)return false;let difference=0;for(let i=0;i<a.length;i++)difference|=a.charCodeAt(i)^b.charCodeAt(i);return difference===0;}

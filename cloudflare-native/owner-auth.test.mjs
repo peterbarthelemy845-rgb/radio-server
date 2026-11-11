@@ -7,7 +7,7 @@ import {decrypt,human,encrypt} from './security.mjs';
 const now=1800000000,host='https://radio-locals-native.example';
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64'));
 async function fixture(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql','0021_station_edits.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql','0021_station_edits.sql','0023_station_edit_names.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
   let batchLock=Promise.resolve(),imageReads=0;
   const DB={sqlite,failBatchAfter:null,prepare(sql){let args=[];const statement=sqlite.prepare(sql);const q={bind(...values){args=values;return q;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){return statement.run(...args);},async execute(){return statement.columns().length?{results:statement.all(...args)}:statement.run(...args);}};return q;},
     async batch(queries){const task=async()=>{sqlite.exec('BEGIN');try{const results=[];let completed=0;for(const q of queries){results.push(await q.execute());if(++completed===DB.failBatchAfter)throw new Error('Simulated database write failure');}sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}};const result=batchLock.then(task);batchLock=result.catch(()=>{});return result;}};
@@ -29,7 +29,37 @@ async function ownerLoginChallenge(f,headers={}){const result=await(await f.post
 function pauseOwnerBatch(f){const batch=f.env.DB.batch;let release,arrived,paused=false;const reached=new Promise(resolve=>{arrived=resolve;}),waiting=new Promise(resolve=>{release=resolve;});f.env.DB.batch=async queries=>{if(!paused){paused=true;arrived();await waiting;}return batch(queries);};return {reached,release};}
 test('fresh session uses secure host-only cookie; absent server key fails closed',async()=>{
   const f=await fixture();assert.match(f.cookie,/^__Host-rl_session=/);assert.equal(f.state.csrf.length,64);
+  assert.equal(f.state.owner_expires,null);assert.equal(f.state.server_time,now);
   await assert.rejects(authRoutes(new Request(host+'/api/session'),{...f.env,DATA_ENCRYPTION_KEY:''},now),e=>e.status===503);
+});
+
+test('owner expiry is an exact non-renewing server deadline on verification, session and editor responses',async()=>{
+ const f=await registered(),verified=await(await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code})).json();assert.equal(verified.owner_expires,now+1800);assert.equal(verified.server_time,now);
+ for(const path of ['/api/session','/api/owner/station']){const body=await(await authRoutes(new Request(host+path,{headers:{Cookie:f.cookie}}),f.env,now+700)).json();assert.equal(body.owner_expires,now+1800);assert.equal(body.server_time,now+700);}
+ assert.equal(f.sqlite.prepare('SELECT owner_expires FROM sessions').get().owner_expires,now+1800);
+ const expired=await(await authRoutes(new Request(host+'/api/session',{headers:{Cookie:f.cookie}}),f.env,now+1800)).json();assert.equal(expired.owner_station,null);assert.equal(expired.owner_expires,null);assert.equal(expired.server_time,now+1800);
+});
+
+test('a name-only owner change stays private until review and loaded draft names participate in no-op and stale-save protection',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});f.sqlite.exec("UPDATE stations SET status='published'");const before=f.sqlite.prepare('SELECT * FROM stations').get(),loaded=await f.owner();
+ const changed=await(await f.post('/api/owner/station',{revision:loaded.revision,name:'  New Community Radio  ',stream_url:loaded.stream_url,bio:loaded.bio})).json();assert.equal(changed.review_required,true);assert.deepEqual(f.sqlite.prepare('SELECT * FROM stations').get(),before);
+ const draft=await f.owner(),pending=f.sqlite.prepare('SELECT * FROM station_edits').get();assert.equal(draft.name,'New Community Radio');assert.equal(draft.approved.name,before.name);assert.equal(pending.name,'New Community Radio');assert.notEqual(draft.revision,loaded.revision);
+ const same=await(await f.post('/api/owner/station',{revision:draft.revision,name:'New Community Radio',stream_url:draft.stream_url,bio:draft.bio})).json();assert.equal(same.unchanged,true);assert.deepEqual(f.sqlite.prepare('SELECT * FROM station_edits').get(),pending);
+ const legacy=await(await f.post('/api/owner/station',{revision:draft.revision,stream_url:draft.stream_url,bio:draft.bio})).json();assert.equal(legacy.unchanged,true);assert.equal((await f.owner()).name,'New Community Radio');
+ await assert.rejects(f.post('/api/owner/station',{revision:loaded.revision,name:'Stale Name',stream_url:loaded.stream_url,bio:loaded.bio}),error=>error.status===409);assert.equal((await f.owner()).name,'New Community Radio');
+});
+
+test('owner name validation matches registration byte limits and rejects invalid names before image processing',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});f.sqlite.exec("UPDATE stations SET status='published'");const loaded=await f.owner(),reads=f.imageReads();
+ for(const name of ['', '   ', 'a'.repeat(97), '\u00e9'.repeat(49), 'Bad\nName'])await assert.rejects(f.post('/api/owner/station',{revision:loaded.revision,name,stream_url:loaded.stream_url,bio:loaded.bio,artwork:f.registration.artwork}),error=>error.status===400);
+ assert.equal(f.imageReads(),reads);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM station_edits').get().n,0);assert.equal((await f.owner()).revision,loaded.revision);
+ await f.post('/api/owner/station',{revision:loaded.revision,name:'\u00e9'.repeat(48),stream_url:loaded.stream_url,bio:loaded.bio});assert.equal((await f.owner()).name,'\u00e9'.repeat(48));
+});
+
+test('migration preserves the approved name for pre-existing proposed changes',()=>{
+ const sqlite=new DatabaseSync(':memory:');for(const name of ['0001_core.sql','0021_station_edits.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
+ sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,created_at,updated_at) VALUES ('Existing approved name','https://example.com/live','owner@example.com',?,?)").run(now,now);sqlite.prepare('INSERT INTO station_edits VALUES (?,?,?,?,?,?,?)').run(10,'a'.repeat(32),now,'https://example.com/new','Existing pending bio',null,now);
+ sqlite.exec(readFileSync(new URL('./migrations/0023_station_edit_names.sql',import.meta.url),'utf8'));assert.equal(sqlite.prepare('SELECT name FROM station_edits').get().name,'Existing approved name');
 });
 
 test('station-code recovery emails only the registered verified active owner and does not grant access',async()=>{
