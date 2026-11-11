@@ -36,3 +36,11 @@ test('signed-in editor offers the same inline setup and submits only one stream 
  for(const id of ['ownerStreamSetupPanel','ownerStreamAddressFields','ownerStreamHost','ownerStreamPort','ownerStreamProtocol','ownerStreamPath','ownerStreamUrlRow','ownerStreamUrlInput'])assert.ok(editor.includes('id="'+id+'"'),id);
  assert.doesNotMatch(editor,/Generated stream URL|<dialog/);
 });
+
+
+test('both port boxes accept plain numeric-keyboard typing without number spinners or a preset value',()=>{
+ for(const id of ['streamPort','ownerStreamPort']){
+  const input=html.match(new RegExp('<input id="'+id+'"[^>]*>'))[0];
+  assert.match(input,/type="text"/);assert.match(input,/inputmode="numeric"/);assert.match(input,/maxlength="5"/);assert.match(input,/pattern="\[0-9\]\{1,5\}"/);assert.doesNotMatch(input,/\svalue=|type="number"/);
+ }
+});

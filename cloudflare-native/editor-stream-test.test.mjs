@@ -24,7 +24,7 @@ function fixture(value='https://stream.example.com/live'){
  window.parsePublicStreamUrl=vm.runInContext(registrationSource.slice(registrationSource.indexOf(' function registrationPublicIpv4('),registrationSource.indexOf(' function registrationSetUrl('))+';registrationParse;',context);
  vm.runInContext(moduleSource,context);
  function notify(target,attribute){for(const observer of observers)if(observer.target===target&&observer.options.attributeFilter.includes(attribute))observer.fn([{target,attributeName:attribute}]);}
- return {nodes,form,field,button,save,window,context,humanCalls,apiCalls,media:()=>media,focused:()=>focused,start:()=>button.onclick(),human(value){humanResult=value;},result(value){apiResult=value;},input(value){field.value=value;field.dispatch('input');},
+ return {nodes,form,field,button,save,window,context,humanCalls,apiCalls,media:()=>media,focused:()=>focused,start:()=>button.onclick(),human(value){humanResult=value;},result(value){apiResult=value;},input(value){field.value=value;field.dispatch('input');},event(type){events.get(type)?.();},
   hide(){nodes.get('editor').hidden=true;notify(nodes.get('editor'),'hidden');},show(){nodes.get('editor').hidden=false;notify(nodes.get('editor'),'hidden');},reset(){form.dispatch('reset');field.value='';},stationChanged(){form.dataset.stationCode='14';notify(form,'data-station-code');},
   saveStart(){form.dataset.busy='1';form.attrs['aria-busy']='true';field.disabled=true;save.disabled=true;button.disabled=true;notify(form,'data-busy');},saveEnd(){delete form.dataset.busy;delete form.attrs['aria-busy'];field.disabled=false;save.disabled=false;button.disabled=true;form.dispatch('form-busy-changed');notify(form,'data-busy');},
  };
@@ -75,4 +75,45 @@ test('unconfirmed, malformed and failed checks stay neutral about playback and p
 });
 test('missing URL policy fails closed without network calls',async()=>{
  const f=fixture();delete f.window.parsePublicStreamUrl;await f.start();assert.equal(f.apiCalls.length,0);assert.equal(f.humanCalls.length,0);assert.match(f.nodes.get('ownerStreamTestStatus').textContent,/could not be confirmed/);assert.equal(f.save.disabled,false);
+});
+
+test('a current terminal owner result opens one result popup while checking and validation stay inline',async()=>{
+ const f=fixture(),pending=deferred(),shown=[];f.window.showStreamTestResult=value=>{shown.push(value);return true;};f.result(pending.promise);const check=f.start();await settle();
+ const notice=f.nodes.get('ownerStreamTestStatus');assert.equal(shown.length,0);assert.equal(notice.dataset.state,'checking');assert.equal(notice.hidden,false);
+ pending.resolve({result:'audio_response',audio_response:true});await check;assert.equal(shown.length,1);assert.equal(shown[0].source,'owner');assert.equal(shown[0].key,'registration.audioResponse');assert.equal(shown[0].state,'success');assert.match(shown[0].fallback,/Playback is not verified/);assert.equal(notice.hidden,true);assert.equal(f.save.disabled,false);assert.equal(f.button.disabled,false);
+ f.input('https://');await f.start();assert.equal(shown.length,1);assert.equal(notice.dataset.state,'invalid');assert.equal(notice.hidden,false);
+});
+
+test('immediate numeric IP and playlist results use the owner popup without a network request',async()=>{
+ for(const [url,key] of [['http://8.8.8.8:8000/live','registration.ipTestUnavailable'],['https://stream.example.com/live.m3u8','registration.playlistTestUnavailable']]){
+  const f=fixture(url),shown=[];f.window.showStreamTestResult=value=>{shown.push(value);return true;};await f.start();assert.equal(shown.length,1);assert.equal(shown[0].source,'owner');assert.equal(shown[0].key,key);assert.equal(shown[0].state,'unconfirmed');assert.equal(f.nodes.get('ownerStreamTestStatus').hidden,true);assert.equal(f.apiCalls.length,0);assert.equal(f.humanCalls.length,0);assert.equal(f.save.disabled,false);
+ }
+});
+
+test('unconfirmed and failed checks show terminal popups with the existing safe result text',async()=>{
+ const neutral=fixture(),shown=[];neutral.window.showStreamTestResult=value=>{shown.push(value);return true;};await neutral.start();assert.equal(shown.length,1);assert.equal(shown[0].key,'registration.notConfirmed');assert.equal(shown[0].state,'unconfirmed');
+ const failed=fixture(),errors=[];failed.window.showStreamTestResult=value=>{errors.push(value);return true;};failed.human(Promise.reject(Error('Security check expired. Please try again.')));await failed.start();assert.equal(errors.length,1);assert.equal(errors[0].source,'owner');assert.equal(errors[0].key,'');assert.equal(errors[0].state,'error');assert.match(errors[0].fallback,/Security check expired/);assert.equal(failed.nodes.get('ownerStreamTestStatus').hidden,true);assert.equal(failed.button.disabled,false);
+});
+
+test('missing, unavailable or failed popup helper leaves the owner result visible inline',async()=>{
+ for(const helper of [undefined,()=>false,()=>{throw Error('Dialog unavailable');}]){
+  const f=fixture();f.window.showStreamTestResult=helper;await f.start();const notice=f.nodes.get('ownerStreamTestStatus');assert.equal(notice.hidden,false);assert.equal(notice.dataset.state,'unconfirmed');assert.match(notice.textContent,/still save/);assert.equal(f.button.disabled,false);
+ }
+});
+
+test('abandoning an owner check closes only its result and a late result cannot open a popup',async()=>{
+ for(const action of [f=>f.input('https://new.example.com/live'),f=>f.hide(),f=>f.stationChanged(),f=>f.saveStart(),f=>f.form.dispatch('owner-stream-mode-changed'),f=>f.event('pagehide')]){
+  const f=fixture(),pending=deferred(),shown=[],closed=[];f.window.showStreamTestResult=value=>{shown.push(value);return true;};f.window.closeStreamTestResult=source=>closed.push(source);f.result(pending.promise);const check=f.start();await settle();action(f);pending.resolve({result:'audio_response',audio_response:true});await check;assert.equal(shown.length,0);assert.ok(closed.length>=1);assert.ok(closed.every(source=>source==='owner'));assert.equal(f.nodes.get('ownerStreamTestStatus').hidden,false);assert.equal(f.nodes.get('ownerStreamTestStatus').textContent,'');
+ }
+ const f=fixture(),closed=[];f.window.showStreamTestResult=()=>true;f.window.closeStreamTestResult=source=>closed.push(source);await f.start();assert.equal(f.nodes.get('ownerStreamTestStatus').hidden,true);f.input('https://new.example.com/live');assert.deepEqual(closed,['owner']);assert.equal(f.nodes.get('ownerStreamTestStatus').hidden,false);
+});
+
+test('late superseded results cannot open a popup for the new address',async()=>{
+ const f=fixture(),old=deferred(),fresh=deferred(),shown=[];f.window.showStreamTestResult=value=>{shown.push(value);return true;};f.result(old.promise);const first=f.start();await settle();f.input('https://new.example.com/live');f.result(fresh.promise);const second=f.start();await settle();old.resolve({result:'audio_response',audio_response:true});await first;assert.equal(shown.length,0);assert.equal(f.nodes.get('ownerStreamTestStatus').dataset.state,'checking');assert.equal(f.button.disabled,true);fresh.resolve({result:'not_confirmed',audio_response:false});await second;assert.equal(shown.length,1);assert.equal(shown[0].state,'unconfirmed');
+});
+
+test('language changes update existing inline text without reopening a popup or changing visibility',async()=>{
+ for(const displayed of [true,false]){
+  const f=fixture(),shown=[];f.window.showStreamTestResult=value=>{shown.push(value);return displayed;};await f.start();f.window.appI18n.t=key=>key==='registration.notConfirmed'?'Translated result':key;f.event('app-language-changed');const notice=f.nodes.get('ownerStreamTestStatus');assert.equal(shown.length,1);assert.equal(notice.textContent,'Translated result');assert.equal(notice.hidden,displayed);
+ }
 });

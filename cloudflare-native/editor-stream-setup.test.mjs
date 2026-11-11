@@ -78,3 +78,10 @@ test('busy and language updates preserve draft state and never re-enable capture
 test('reset clears owner setup drafts and missing shared URL policy fails closed without network work',async()=>{
  const f=fixture(),n=f.nodes;f.select('icecast');f.input('ownerStreamPort','99999');await f.reset();assert.equal(f.choices.find(choice=>choice.checked).value,'other');assert.equal(n.get('ownerStreamPort').value,'');assert.equal(f.url.value,'');f.input('ownerStreamUrlInput','https://stream.example.com/live');delete f.window.parsePublicStreamUrl;assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,f.url);assert.match(f.url.validationMessage,/validation is unavailable/);
 });
+
+
+test('owner may enter the port first and retain it while completing the remaining server fields',()=>{
+ const f=fixture(''),n=f.nodes;f.select('icecast');f.input('ownerStreamPort','8000');assert.equal(n.get('ownerStreamPort').disabled,false);assert.equal(n.get('ownerStreamPort').value,'8000');assert.equal(f.url.value,'');
+ f.input('ownerStreamHost','stream.example.com');f.input('ownerStreamProtocol','http');f.input('ownerStreamPath','/live');assert.equal(n.get('ownerStreamPort').value,'8000');assert.equal(f.prepare(),true);assert.equal(f.url.value,'http://stream.example.com:8000/live');
+ f.input('ownerStreamPort','');assert.equal(f.prepare(),true);assert.equal(f.url.value,'http://stream.example.com/live');
+});

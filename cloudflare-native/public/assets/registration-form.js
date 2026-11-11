@@ -42,12 +42,17 @@
   const select=()=>{if(!field.checked)return;if(registrationBusy()){for(const choice of registrationProviderFields)choice.checked=registrationExpanded&&choice.value===registrationProvider;return;}if(!registrationExpanded||field.value!==registrationProvider)registrationSelectProvider(field.value);};
   field.addEventListener('change',select);if(registrationPanel)field.addEventListener('click',select);
  }
- function registrationStatus(key,fallback,state=''){
-  const target=registrationNodes.streamTestStatus;target.dataset.state=state;registrationStatusKey=key;registrationStatusFallback=fallback;
+ function registrationStatus(key,fallback,state='',preserveHidden=false){
+  const target=registrationNodes.streamTestStatus;if(!preserveHidden)target.hidden=false;target.dataset.state=state;registrationStatusKey=key;registrationStatusFallback=fallback;
   if(key)target.setAttribute('data-i18n',key);else target.removeAttribute('data-i18n');
   target.textContent=key?registrationText(key,fallback):fallback;
  }
- function registrationInvalidate(){registrationVersion++;registrationActiveTest=null;registrationStatus('','');}
+ function registrationTerminal(key,fallback,state){
+  registrationStatus(key,fallback,state);let displayed=false;
+  try{displayed=window.showStreamTestResult?.({source:'registration',key,fallback,state})===true;}catch{}
+  registrationNodes.streamTestStatus.hidden=displayed;
+ }
+ function registrationInvalidate(){registrationVersion++;registrationActiveTest=null;try{window.closeStreamTestResult?.('registration');}catch{}registrationStatus('','');}
  function registrationValidateName(report=false){
   if(!registrationName)return true;
   const name=registrationName.value.trim(),missing=!name,invalid=missing||/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96;
@@ -140,22 +145,22 @@
  registrationNodes.testStream.onclick=async()=>{
   if(registrationBusy()||!registrationExpanded||registrationActiveTest||!registrationValidate(true,true))return;
   const target=new URL(registrationUrl.value);
-  if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){registrationStatus('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save and check it on your radio.','unconfirmed');return;}
-  if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationStatus('registration.playlistTestUnavailable','This is a playlist link. Automatic testing cannot confirm it; use a direct listening link when available. You can still save.','unconfirmed');return;}
+  if(/^\d+\.\d+\.\d+\.\d+$/.test(target.hostname)){registrationTerminal('registration.ipTestUnavailable','Automatic testing is unavailable for numeric IP addresses. You can still save and check it on your radio.','unconfirmed');return;}
+  if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationTerminal('registration.playlistTestUnavailable','This is a playlist link. Automatic testing cannot confirm it; use a direct listening link when available. You can still save.','unconfirmed');return;}
   const version=registrationVersion,value=registrationUrl.value,attempt={};registrationActiveTest=attempt;registrationControls();
   registrationStatus('registration.checking','Checking the stream. No audio will play.','checking');
   const current=()=>registrationActiveTest===attempt&&registrationVersion===version&&registrationUrl.value===value&&!registrationBusy()&&!document.getElementById('register').hidden&&registrationExpanded;
   try{
    const turnstile_token=await human(registrationNodes.streamTestHuman,'stream-check');if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:value,turnstile_token});if(!current())return;
-   if(response.result==='audio_response'&&response.audio_response===true)registrationStatus('registration.audioResponse','Stream responded with audio data. Playback is not verified.','success');
-   else if(response.result==='not_confirmed'&&response.audio_response===false)registrationStatus('registration.notConfirmed','Stream could not be confirmed. You can still save it.','unconfirmed');
-   else registrationStatus('registration.notConfirmed','Stream could not be confirmed. You can still save it.','unconfirmed');
-  }catch(error){if(current())registrationStatus('',String(error.message||'The stream check did not complete. You can still save it.').slice(0,400),'error');}
+   if(response.result==='audio_response'&&response.audio_response===true)registrationTerminal('registration.audioResponse','Stream responded with audio data. Playback is not verified.','success');
+   else if(response.result==='not_confirmed'&&response.audio_response===false)registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save it.','unconfirmed');
+   else registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save it.','unconfirmed');
+  }catch(error){if(current())registrationTerminal('',String(error.message||'The stream check did not complete. You can still save it.').slice(0,400),'error');}
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };
  new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
- window.addEventListener('app-language-changed',()=>{registrationRenderMode();registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
+ window.addEventListener('app-language-changed',()=>{registrationRenderMode();registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state,true);});
  registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast';registrationExpanded=!registrationPanel||registrationProviderFields.some(field=>field.checked);registrationSource=registrationManualMode()?'ip':'url';registrationManualUrl='';registrationManualSource='ip';registrationManualEdited=false;registrationDirectDraft='';registrationDirectEdited=false;registrationUrl.value='';registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationRenderMode();registrationValidateName();registrationValidate();});});
  for(const field of registrationBuilder){field.disabled=false;field.required=false;field.setCustomValidity('');}
  registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=false;registrationNodes.streamManualSetup.open=false;
