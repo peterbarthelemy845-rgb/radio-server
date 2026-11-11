@@ -5,11 +5,12 @@ import {readFileSync} from 'node:fs';
 import {publicStreamUrl} from './public-stream-url.mjs';
 
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
-function registrationFixture({url='',secure=true,clipboard=true}={}){
+function registrationFixture({url='',secure=true,clipboard=true,providerControls=true}={}){
  const nodes=new Map(),observers=[],windowEvents={},humanCalls=[],apiCalls=[],copied=[];let dirty=0,humanResult=Promise.resolve('checked-token'),apiResult=Promise.resolve({result:'not_confirmed',audio_response:false,message:'Not confirmed. You can still save.'});
  const ids=['register','registerForm','stationName','streamManualSetup','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman','saveRegistration'];
  function element(id){const listeners={};const node={id,value:'',hidden:false,open:false,disabled:false,readOnly:false,required:false,dataset:{},attrs:{},validity:{badInput:false},validationMessage:'',textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},querySelector(){return id==='registerForm'?nodes.get('saveRegistration'):null;},setCustomValidity(value){this.validationMessage=value;},reportValidity(){this.reported=true;return !this.validationMessage;},focus(){document.activeElement=this;},select(){this.selected=true;},addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatchEvent(event){for(const fn of listeners[event.type]||[])fn(event);if(event.bubbles&&id!=='registerForm')nodes.get('registerForm').dispatchEvent(event);return true;}};nodes.set(id,node);return node;}
  ids.forEach(element);const document={activeElement:null,getElementById:id=>nodes.get(id)};nodes.get('registerForm').elements={name:nodes.get('stationName')};nodes.get('stationName').value='Test station';nodes.get('streamProtocol').value='https';nodes.get('streamUrlInput').value=url;nodes.get('registerForm').addEventListener('input',()=>{dirty++;});
+ const providers=providerControls?['icecast','shoutcast','other'].map((value,index)=>{const field=element('provider-'+value);field.name='stream_provider';field.type='radio';field.value=value;field.checked=index===0;return field;}):[];if(providerControls)element('streamProviderHelp');nodes.get('registerForm').querySelectorAll=selector=>selector==='input[name="stream_provider"]'?providers:[];
  const window={isSecureContext:secure,addEventListener(type,fn){windowEvents[type]=fn;}};
  const navigator={clipboard:clipboard?{async writeText(value){copied.push(value);}}:undefined};
  const context=vm.createContext({window,document,navigator,URL,Event,Promise,TextEncoder,queueMicrotask,MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(target){this.target=target;}},human:async(container,action)=>{humanCalls.push({container,action});return humanResult;},api:async(path,body)=>{apiCalls.push({path,body});return apiResult;},Audio:class{constructor(){throw Error('Registration must never play audio.');}},fetch(){throw Error('Registration may use only the authenticated stream-check API.');}});
@@ -17,8 +18,43 @@ function registrationFixture({url='',secure=true,clipboard=true}={}){
  function input(id,value){nodes.get(id).value=value;nodes.get(id).dispatchEvent(new Event('input',{bubbles:true}));}
  function address(value){input('streamUrlInput',value);}
  async function flush(){await Promise.resolve();await Promise.resolve();await Promise.resolve();}
- return {nodes,window,document,input,address,flush,humanCalls,apiCalls,copied,dirty:()=>dirty,prepare:()=>window.prepareRegistrationStream(),human(result){humanResult=result;},result(result){apiResult=result;},async reset(){nodes.get('registerForm').dispatchEvent(new Event('reset'));for(const id of ['streamHost','streamPort','streamPath','streamUrlInput'])nodes.get(id).value='';nodes.get('streamProtocol').value='https';await flush();},hide(){nodes.get('register').hidden=true;for(const observer of observers)if(observer.target===nodes.get('register'))observer.fn([]);},language(){windowEvents['app-language-changed']?.();}};
+ return {nodes,window,document,input,address,flush,humanCalls,apiCalls,copied,providers,provider(value){for(const field of providers)field.checked=field.value===value;providers.find(field=>field.checked)?.dispatchEvent(new Event('change',{bubbles:true}));},dirty:()=>dirty,prepare:()=>window.prepareRegistrationStream(),human(result){humanResult=result;},result(result){apiResult=result;},async reset(){nodes.get('registerForm').dispatchEvent(new Event('reset'));for(const id of ['streamHost','streamPort','streamPath','streamUrlInput'])nodes.get(id).value='';nodes.get('streamProtocol').value='https';for(const field of providers)field.checked=field.value==='icecast';await flush();},hide(){nodes.get('register').hidden=true;for(const observer of observers)if(observer.target===nodes.get('register'))observer.fn([]);},language(){windowEvents['app-language-changed']?.();}};
 }
+
+test('Icecast guidance is the default and provider choices never guess a listening path',()=>{
+ const f=registrationFixture(),help=f.nodes.get('streamProviderHelp');assert.equal(f.providers.find(field=>field.checked).value,'icecast');assert.equal(help.attrs['data-i18n'],'registration.providerIcecast');assert.match(help.textContent,/public Icecast listening link/);assert.match(help.textContent,/mount point/);
+ for(const provider of ['shoutcast','other','icecast']){f.provider(provider);assert.equal(f.nodes.get('streamUrlInput').value,'');assert.equal(f.nodes.get('streamPath').value,'');assert.equal(f.nodes.get('streamHost').value,'');assert.equal(f.nodes.get('streamPort').value,'');assert.equal(f.nodes.get('testStream').disabled,true);assert.equal(f.prepare(),false);}
+ f.provider('shoutcast');assert.match(help.textContent,/supplied by your provider/);assert.doesNotMatch(help.textContent,/\/;stream/);assert.equal(f.apiCalls.length,0);assert.equal(f.humanCalls.length,0);
+});
+
+test('provider changes preserve an exact pasted URL, its path/query and optional manual details',()=>{
+ const url='http://STREAM.EXAMPLE.COM:8000/ExactPath.mp3?sid=2&source=a%2Fb',f=registrationFixture({url}),ids=['streamUrlInput','streamHost','streamPort','streamProtocol','streamPath'],before=ids.map(id=>f.nodes.get(id).value),dirty=f.dirty();
+ for(const provider of ['shoutcast','other','icecast']){f.provider(provider);assert.deepEqual(ids.map(id=>f.nodes.get(id).value),before);assert.equal(f.dirty(),dirty,'help changes must not dispatch synthetic draft edits');for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(f.nodes.get(id).required,false);assert.equal(f.nodes.get('streamUrlInput').readOnly,false);}
+ assert.equal(f.nodes.get('streamUrlInput').value,url);assert.equal(f.prepare(),true);assert.equal(f.nodes.get('streamUrlInput').value,'http://stream.example.com:8000/ExactPath.mp3?sid=2&source=a%2Fb');
+});
+
+test('switching providers keeps a manually composed address and query without changing the active source',()=>{
+ const f=registrationFixture();f.input('streamHost','stream.example.com');f.input('streamPort','8443');f.input('streamProtocol','http');f.input('streamPath','/provider-mount?sid=3&source=community');const expected=f.nodes.get('streamUrlInput').value,dirty=f.dirty();
+ for(const provider of ['shoutcast','other','icecast']){f.provider(provider);assert.equal(f.nodes.get('streamUrlInput').value,expected);assert.equal(f.nodes.get('streamPath').value,'/provider-mount?sid=3&source=community');assert.equal(f.nodes.get('streamPort').value,'8443');assert.equal(f.dirty(),dirty);assert.equal(f.prepare(),true);}
+ f.input('streamPath','/next-mount?sid=4');assert.equal(f.nodes.get('streamUrlInput').value,'http://stream.example.com:8443/next-mount?sid=4');
+});
+
+test('provider guidance never bypasses public-address, credential or private-query validation',()=>{
+ for(const provider of ['icecast','shoutcast','other'])for(const url of ['http://192.168.1.2/live','https://owner:private-password@stream.example.com/live','https://stream.example.com/live?token=private-token']){const f=registrationFixture({url});f.provider(provider);assert.equal(f.nodes.get('streamUrlInput').value,url);assert.equal(f.prepare(),false);assert.equal(f.nodes.get('testStream').disabled,true);assert.doesNotMatch(f.nodes.get('streamProviderHelp').textContent,/private-password|private-token/);assert.equal(f.apiCalls.length,0);}
+});
+
+test('provider help can change during a stream check without invalidating or expanding its request',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live?sid=2'}),pending=deferred();f.result(pending.promise);const checking=f.nodes.get('testStream').onclick();await f.flush();f.provider('shoutcast');assert.equal(f.nodes.get('streamTestStatus').dataset.state,'checking');assert.equal(f.apiCalls.length,1);assert.deepEqual(Object.keys(f.apiCalls[0].body).sort(),['stream_url','turnstile_token']);assert.equal(f.apiCalls[0].body.stream_url,'https://stream.example.com/live?sid=2');
+ pending.resolve({result:'audio_response',audio_response:true});await checking;assert.equal(f.nodes.get('streamTestStatus').dataset.state,'success');f.provider('other');assert.equal(f.nodes.get('streamTestStatus').dataset.state,'success');assert.equal(f.apiCalls.length,1);assert.equal(f.humanCalls.length,1);
+});
+
+test('provider guidance translates in place and resets to the browser default after form reset',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'}),help=f.nodes.get('streamProviderHelp');f.provider('shoutcast');f.window.appI18n={t:key=>key==='registration.providerShoutcast'?'Sèvi ak lyen piblik founisè SHOUTcast la.':key==='registration.providerIcecast'?'Sèvi ak lyen piblik Icecast la.':key};f.language();assert.equal(help.textContent,'Sèvi ak lyen piblik founisè SHOUTcast la.');assert.equal(help.attrs['data-i18n'],'registration.providerShoutcast');assert.equal(f.providers.find(field=>field.checked).value,'shoutcast');await f.reset();assert.equal(help.attrs['data-i18n'],'registration.providerIcecast');assert.equal(help.textContent,'Sèvi ak lyen piblik Icecast la.');assert.equal(f.nodes.get('streamUrlInput').value,'');
+});
+
+test('an older signup form without provider controls keeps its original URL validation and optional builder',()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live',providerControls:false});assert.equal(f.prepare(),true);assert.equal(f.nodes.has('streamProviderHelp'),false);f.input('streamPort','8000');assert.equal(f.nodes.get('streamUrlInput').value,'https://stream.example.com:8000/live');
+});
 
 test('station names fit the radio UTF-8 capacity and reject embedded control characters',()=>{
  const f=registrationFixture({url:'https://stream.example.com/live'});

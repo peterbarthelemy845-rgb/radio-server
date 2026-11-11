@@ -75,3 +75,13 @@ test('ordinary verification success still requires a completed security token an
  const f=fixture(),pending=f.submit('loginForm');await settle();await f.submit('loginForm');assert.equal(f.widgets.length,1);assert.equal(f.calls.length,0);f.widgets[0].options.callback('valid-token');await pending;
  assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.turnstile_token,'valid-token');assert.equal(f.verified.length,1);assert.equal(f.busy('loginForm'),false);
 });
+test('provider choices stay out of signup fingerprints and API payloads while exact listening URLs remain unchanged',async()=>{
+ const stream='http://stream.example.com:8000/;Stream/2?sid=2&client=radio%2Fone';
+ for(const provider of ['icecast','shoutcast','other']){
+  const f=fixture(),form=f.get('registerForm'),choice=f.get('selectedProvider');choice.type='radio';choice.name='stream_provider';choice.value=provider;choice.checked=true;form.elements.stream_provider=choice;form.fields.push(choice);form.elements.stream_url.value=stream;let fingerprint;
+  f.context.registrationRequest=async(data,current)=>{assert.equal(current(),true);fingerprint={...data};return 'provider-independent-request';};
+  f.page('register');const pending=f.submit('registerForm');await settle();assert.ok(fingerprint,provider);assert.equal(Object.hasOwn(fingerprint,'stream_provider'),false,provider);assert.equal(fingerprint.stream_url,stream,provider);assert.equal(f.calls.length,0);
+  f.widgets[0].options.callback('provider-token');await pending;
+  assert.equal(f.calls.length,1,provider);assert.equal(f.calls[0].path,'/api/owner/register');assert.equal(Object.hasOwn(f.calls[0].body,'stream_provider'),false,provider);assert.equal(f.calls[0].body.stream_url,stream,provider);assert.equal(f.calls[0].body.request_id,'provider-independent-request');assert.equal(f.calls[0].body.turnstile_token,'provider-token');assert.equal(form.elements.stream_url.value,stream);assert.equal(f.verified.length,1);
+ }
+});

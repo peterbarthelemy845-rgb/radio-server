@@ -5,8 +5,18 @@
  const registrationNodes=Object.fromEntries(registrationIds.map(id=>[id,document.getElementById(id)]));
  if(!registrationForm||registrationIds.some(id=>!registrationNodes[id]))return;
  const registrationUrl=registrationNodes.streamUrlInput,registrationName=registrationForm.elements?.name,registrationBuilder=[registrationNodes.streamHost,registrationNodes.streamPort,registrationNodes.streamProtocol,registrationNodes.streamPath];
+ const registrationProviderFields=[...(registrationForm.querySelectorAll?.('input[name="stream_provider"]')||[])],registrationProviderHelpNode=document.getElementById('streamProviderHelp');
  let registrationSource='url',registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
+ function registrationProviderHelp(){
+  if(!registrationProviderHelpNode)return;
+  const selected=registrationProviderFields.find(field=>field.checked)?.value;
+  const [key,fallback]=selected==='shoutcast'?['registration.providerShoutcast','Use the public SHOUTcast listening link or mount point supplied by your provider. Keep its exact path and query string.']:selected==='other'?['registration.providerOther','Use any compatible public listening link supplied by your stream provider.']:['registration.providerIcecast','Use the public Icecast listening link from your provider, including its mount point (for example, /live).'];
+  registrationProviderHelpNode.setAttribute('data-i18n',key);registrationProviderHelpNode.textContent=registrationText(key,fallback);
+ }
+ // Provider choices explain the address supplied by the provider. They never
+ // infer mount points, change inputs or relax the public-URL safety rules.
+ for(const field of registrationProviderFields)field.addEventListener('change',registrationProviderHelp);
  function registrationStatus(key,fallback,state=''){
   const target=registrationNodes.streamTestStatus;target.dataset.state=state;registrationStatusKey=key;registrationStatusFallback=fallback;
   if(key)target.setAttribute('data-i18n',key);else target.removeAttribute('data-i18n');
@@ -113,8 +123,8 @@
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };
  new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
- window.addEventListener('app-language-changed',()=>{registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
- registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationSource='url';registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationValidateName();registrationValidate();});});
+ window.addEventListener('app-language-changed',()=>{registrationProviderHelp();registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state);});
+ registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationSource='url';registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationProviderHelp();registrationValidateName();registrationValidate();});});
  for(const field of registrationBuilder){field.disabled=false;field.required=false;field.setCustomValidity('');}
- registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=false;registrationNodes.streamManualSetup.open=false;registrationValidate();
+ registrationNodes.streamAddressFields.hidden=false;registrationUrl.readOnly=false;registrationNodes.streamManualSetup.open=false;registrationProviderHelp();registrationValidate();
 })();
