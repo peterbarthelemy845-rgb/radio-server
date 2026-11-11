@@ -14,6 +14,7 @@
  function abandon(){const previous=active;active=null;generation++;if(previous){previous.controller.abort();previous.restoreLabel();}status('');controls();}
  button.onclick=async()=>{
   if(active||saving()||editor.hidden)return;
+  if(window.prepareOwnerStreamSetup&&!window.prepareOwnerStreamSetup())return;
   const raw=field.value;let target;
   try{if(typeof window.parsePublicStreamUrl!=='function')throw new Error(text('registration.notConfirmed','Stream could not be confirmed. You can still save it.'));target=window.parsePublicStreamUrl(raw);}
   catch(error){status(error.key||'',String(error.message||'Check the stream address and try again.').slice(0,400),'invalid');field.focus();controls();return;}
@@ -30,6 +31,7 @@
   finally{if(active===attempt){active=null;attempt.restoreLabel();controls();}}
  };
  field.addEventListener('input',abandon);field.addEventListener('change',abandon);
+ form.addEventListener('owner-stream-mode-changed',abandon);
  form.addEventListener('reset',()=>{abandon();queueMicrotask(controls);});
  form.addEventListener('form-busy-changed',()=>{if(saving())abandon();else controls();});
  new MutationObserver(()=>{if(saving())abandon();else controls();}).observe(form,{attributes:true,attributeFilter:['data-busy','aria-busy']});

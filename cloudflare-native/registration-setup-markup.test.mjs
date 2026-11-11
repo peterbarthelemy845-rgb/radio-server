@@ -27,3 +27,12 @@ test('new signup shows three unselected choices with inline setup collapsed',()=
  for(const choice of choices){assert.doesNotMatch(choice,/\schecked(?:\s|>)|aria-haspopup/);assert.match(choice,/aria-controls="streamSetupPanel"/);}
  assert.match(signup,/id="streamSetupPanel"[^>]*hidden/);
 });
+
+test('signed-in editor offers the same inline setup and submits only one stream URL',()=>{
+ const choices=[...editor.matchAll(/<input[^>]*name="owner_stream_provider"[^>]*>/g)].map(match=>match[0]);
+ assert.equal(choices.length,3);assert.equal(choices.filter(choice=>/\schecked(?:\s|>)/.test(choice)).length,1);
+ assert.equal([...editor.matchAll(/name="stream_url"/g)].length,1);
+ for(const choice of choices){assert.match(choice,/aria-controls="ownerStreamSetupPanel"/);assert.doesNotMatch(choice,/aria-haspopup/);}
+ for(const id of ['ownerStreamSetupPanel','ownerStreamAddressFields','ownerStreamHost','ownerStreamPort','ownerStreamProtocol','ownerStreamPath','ownerStreamUrlRow','ownerStreamUrlInput'])assert.ok(editor.includes('id="'+id+'"'),id);
+ assert.doesNotMatch(editor,/Generated stream URL|<dialog/);
+});

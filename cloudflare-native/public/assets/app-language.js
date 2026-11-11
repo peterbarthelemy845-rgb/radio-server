@@ -54,12 +54,14 @@ const appCreole={
  'supportStatus.title':'Demann èd mwen','supportStatus.intro':'Gade estati demann ou ak repons yo. Verifye imèl ou si w ap itilize yon lòt navigatè.','supportStatus.reference':'Referans demann nan','supportStatus.email':'Imèl ou te itilize pou demann nan','supportStatus.sendCode':'Voye yon kòd prive pa imèl','supportStatus.verifyTitle':'Verifye imèl ou','supportStatus.verifyHelp':'Si imèl la ak referans demann nan koresponn, w ap resevwa yon kòd prive talè. Antre kòd 6 chif la isit la. Li ekspire nan 15 minit.','supportStatus.emailCode':'Kòd 6 chif nan imèl la','supportStatus.verifyButton':'Verifye epi louvri demann nan','supportStatus.cancel':'Anile','supportStatus.open':'Ouvè','supportStatus.review':'N ap egzamine li','supportStatus.closed':'Fèmen','supportStatus.loading':'N ap verifye estati demann nan…','supportStatus.original':'Mesaj ou','supportStatus.replies':'Repons sipò yo','supportStatus.noReplies':'Poko gen repons. Estati demann ou ap mete ajou isit la.','supportStatus.checked':'Verifye','supportStatus.refresh':'Rafrechi estati','supportStatus.closePrivate':'Fèmen demann prive a'
 };
 Object.assign(appEnglish,{
+ 'registration.setupUnavailable':'Stream address validation is unavailable. Refresh and try again.',
  'registration.server':'Stream setup','registration.otherProvider':'Stream URL','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Your stream URL appears here',
  'registration.providerIcecast':'Enter your public server, port and mount point.',
  'registration.providerShoutcast':'Enter your public server, port and listening path.',
  'registration.providerOther':'Paste your complete public listening URL.'
 });
 Object.assign(appCreole,{
+ 'registration.setupUnavailable':'Nou pa ka valide adrès difizyon an. Rafrechi paj la epi eseye ankò.',
  'registration.server':'Konfigirasyon difizyon','registration.otherProvider':'Adrès difizyon','registration.directPlaceholder':'https://example.com/stream.mp3','registration.generatedPlaceholder':'Adrès difizyon ou ap parèt la',
  'registration.providerIcecast':'Antre sèvè piblik ou, pò a ak chemen difizyon an.',
  'registration.providerShoutcast':'Antre sèvè piblik ou, pò a ak chemen pou koute a.',

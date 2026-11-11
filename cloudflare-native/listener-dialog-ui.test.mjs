@@ -58,6 +58,15 @@ test('provider guidance alone creates no draft warning and never clears real sta
  assert.equal(form.dataset.dirty,'1');assert.equal(f.unload().prevented,true);
 });
 
+test('owner provider choices are guidance while partial server edits remain protected drafts',()=>{
+ const f=draftFixture(),form=f.forms.get('editForm');
+ for(const value of ['icecast','shoutcast','other'])form.dispatch('input',{target:{name:'owner_stream_provider',value}});
+ assert.equal(form.dataset.dirty,undefined);assert.equal(f.unload().prevented,undefined);
+ form.dispatch('input',{target:{id:'ownerStreamPort',name:'',value:'99999'}});
+ form.dispatch('input',{target:{name:'owner_stream_provider',value:'other'}});
+ assert.equal(form.dataset.dirty,'1');assert.equal(f.unload().prevented,true);
+});
+
 test('visible and hidden drafts survive internal tabs without misleading discard prompts',()=>{
  const f=draftFixture(),form=f.forms.get('registerForm');form.dispatch('input');
  const navigation=f.navigate();assert.equal(navigation.prevented,undefined);assert.equal(f.confirms(),0);assert.equal(form.dataset.dirty,'1');assert.equal(f.unload().prevented,true);

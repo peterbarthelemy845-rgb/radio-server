@@ -30,6 +30,11 @@ function fixture(value='https://stream.example.com/live'){
  };
 }
 
+test('owner setup validation runs before a stream check and a mode change cancels stale work',async()=>{
+ const blocked=fixture();let prepared=0;blocked.window.prepareOwnerStreamSetup=()=>{prepared++;return false;};await blocked.start();assert.equal(prepared,1);assert.equal(blocked.humanCalls.length,0);assert.equal(blocked.apiCalls.length,0);
+ const f=fixture(),bot=deferred();f.human(bot.promise);const pending=f.start();await settle();f.form.dispatch('owner-stream-mode-changed');assert.equal(f.humanCalls[0].signal.aborted,true);bot.resolve('stale-token');await pending;assert.equal(f.apiCalls.length,0);assert.equal(f.nodes.get('ownerStreamTestStatus').textContent,'');
+});
+
 test('owner stream checking is optional, uses the protected endpoint once and never plays audio',async()=>{
  const f=fixture(),pending=deferred();f.result(pending.promise);const first=f.start(),duplicate=f.start();await settle();
  assert.equal(f.humanCalls.length,1);assert.equal(f.humanCalls[0].container,f.nodes.get('ownerStreamTestHuman'));assert.equal(f.humanCalls[0].action,'stream-check');assert.ok(f.humanCalls[0].signal);assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,'https://stream.example.com/live');assert.equal(f.apiCalls[0].body.turnstile_token,'checked-token');assert.equal(f.save.disabled,false);assert.equal(f.field.disabled,false);assert.equal(f.button.textContent,'Checking…');

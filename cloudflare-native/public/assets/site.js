@@ -107,7 +107,7 @@ function applyOwnerStation(station,preserveDraft=false){
  $('ownerName').textContent=station.name;if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(station.artwork_url);
  $('ownerStatus').textContent='Station code #'+station.code+' · '+station.status.replaceAll('_',' ')+(station.review_pending?' · '+(station.status==='published'?ownerText('owner.pendingEdit','Changes waiting for review. Your last approved station stays live.'):ownerText('owner.pendingEditPrivate','Changes waiting for review. Your station is not published yet.')):'');
  if(!keepDraft){form.elements.name.value=station.name;form.elements.stream_url.value=station.stream_url;form.elements.bio.value=station.bio;form.elements.artwork.value='';delete form.dataset.dirty;form.dataset.revision=station.revision||'';}
- form.dataset.stationCode=String(station.code);
+ form.dataset.stationCode=String(station.code);if(!keepDraft)window.syncOwnerStreamSetup?.({accepted:true});
 }
 function applyOwnerExpiry(result){if(!Number.isInteger(result.owner_expires))return;if(state){state.owner_expires=result.owner_expires;if(Number.isInteger(result.server_time))state.server_time=result.server_time;}const event=new Event('owner-session-updated');event.detail=result;window.dispatchEvent(event);}
 async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft);return true;}
@@ -191,6 +191,7 @@ $('editForm').elements.artwork.onchange=async event=>{ownerCoverGeneration++;cle
 window.addEventListener?.('pagehide',()=>{ownerCoverGeneration++;clearOwnerCoverUrl();});
 $('editForm').onsubmit=async event=>{
  event.preventDefault();const form=event.target;if(formIsBusy(form)||ownerLogoutBusy)return;
+ if(window.prepareOwnerStreamSetup&&!window.prepareOwnerStreamSetup())return;
  const name=form.elements.name.value.trim();if(!name||/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96){ownerEditFeedback(!name?ownerText('owner.nameRequired','Enter a station name.'):ownerText('owner.nameTooLong','Shorten the station name so it fits on the radio.'));form.elements.name.focus();return;}form.elements.name.value=name;
  const generation=sitePageGeneration,data={revision:form.dataset.revision,name,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
  try{

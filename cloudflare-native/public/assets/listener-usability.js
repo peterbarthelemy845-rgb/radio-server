@@ -84,7 +84,7 @@ function listenerActionDialog(title,text,confirmLabel='Done',allowCancel=false){
   try{listenerDialog.showModal();(allowCancel?listenerDialogCancel:listenerDialogConfirm).focus();}catch(error){listenerDialog.removeEventListener('close',closed);listenerDialogPending=false;reject(error);}
  });
 }
-const draftForms=['registerForm','editForm','ticketForm','advertiseForm'];for(const id of draftForms){const form=$(id);form.addEventListener('input',event=>{if(id==='registerForm'&&event?.target?.name==='stream_provider')return;form.dataset.dirty='1';});form.addEventListener('reset',()=>delete form.dataset.dirty);}
+const draftForms=['registerForm','editForm','ticketForm','advertiseForm'];for(const id of draftForms){const form=$(id);form.addEventListener('input',event=>{if(id==='registerForm'&&event?.target?.name==='stream_provider'||id==='editForm'&&event?.target?.name==='owner_stream_provider')return;form.dataset.dirty='1';});form.addEventListener('reset',()=>delete form.dataset.dirty);}
 // Internal tabs retain their hidden forms. A real reload or departure discards
 // all in-memory drafts, including those on a page that is no longer visible.
 window.addEventListener('beforeunload',event=>{if(draftForms.some(id=>$(id).dataset.dirty)){event.preventDefault();event.returnValue='';}});

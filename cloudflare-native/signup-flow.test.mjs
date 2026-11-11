@@ -46,6 +46,14 @@ test('busy state changes notify stream tools after controls are frozen and resto
  const f=fixture(),form=f.registration,seen=[];form.addEventListener('form-busy-changed',()=>seen.push({busy:form.dataset.busy==='1',disabled:form.submit.disabled}));f.busy(form,true,true);f.busy(form,true,true);f.busy(form,false);assert.deepEqual(seen,[{busy:true,disabled:true},{busy:false,disabled:false}]);
 });
 
+test('owner Save validates server setup before capturing or uploading anything',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm');let prepared=0;f.context.window.prepareOwnerStreamSetup=()=>{prepared++;return false;};await f.submit(form);assert.equal(prepared,1);assert.equal(f.calls.length,0);assert.equal(f.files.length,0);assert.equal(form.submit.disabled,false);
+});
+
+test('saved owner loads synchronize setup after station identity while same-station drafts stay untouched',async()=>{
+ for(const preserve of [false,true]){const f=fixture(),form=f.nodes.get('editForm'),seen=[];form.dataset.stationCode='13';form.dataset.dirty='1';form.elements.stream_url.value='https://draft.example.com/live';f.context.window.syncOwnerStreamSetup=options=>seen.push({code:form.dataset.stationCode,url:form.elements.stream_url.value,accepted:options.accepted});f.context.showOwnerCover=()=>{};vm.runInContext('editor=actualEditor',f.context);f.answers.push({station:{code:'13',name:'Saved station',status:'published',stream_url:'https://saved.example.com/live',bio:'Saved bio',revision:'new'}});await vm.runInContext('editor('+preserve+')',f.context);assert.deepEqual(seen,preserve?[]:[{code:'13',url:'https://saved.example.com/live',accepted:true}]);assert.equal(form.elements.stream_url.value,preserve?'https://draft.example.com/live':'https://saved.example.com/live');}
+});
+
 test('signup snapshots before disabling fields, validates the captured logo, and suppresses duplicate submits',async()=>{
  const f=fixture(),pending=deferred(),original=f.registration.elements.artwork.files[0];f.logo(pending.promise);const first=f.submit(f.registration);await until(()=>f.logoFiles.length===1);assert.equal(f.registration.elements.name.disabled,true);await f.submit(f.registration);assert.equal(f.logoFiles.length,1);pending.resolve(true);await first;assert.equal(f.calls.length,1);assert.equal(f.calls[0].body.name,'Sample Radio');assert.equal(f.calls[0].body.email,'owner@example.com');assert.equal(Object.hasOwn(f.calls[0].body,'bio'),false);assert.equal(f.calls[0].body.rights_confirmed,true);assert.equal(f.logoFiles[0],original);assert.equal(f.files[0],original);assert.match(f.calls[0].body.request_id,/^[a-f0-9]{32}$/);assert.equal(f.registration.elements.name.disabled,false);assert.equal(f.nodes.get('verification').open,true);
 });
