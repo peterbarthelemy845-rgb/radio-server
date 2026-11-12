@@ -8,11 +8,11 @@ const between=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 async function settle(){for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));}
 function fixture({sdkReady=true}={}){
- const nodes=new Map(),widgets=[],removed=[],scripts=[],calls=[],verified=[],answers=[],timers=new Map();let clock=0,focused;
+ const nodes=new Map(),widgets=[],removed=[],scripts=[],calls=[],verified=[],answers=[],timers=new Map(),windowEvents=new Map();let clock=0,focused;
  function node(id,tagName='DIV'){
-  const value={id,tagName,dataset:{},attrs:{},disabled:false,hidden:true,open:false,textContent:'',value:'',type:tagName==='BUTTON'?'submit':'text',elements:{},fields:[],buttons:[],
+  const value={id,tagName,dataset:{},attrs:{},disabled:false,hidden:true,open:false,textContent:'',value:'',type:tagName==='BUTTON'?'submit':'text',elements:{},fields:[],buttons:[],children:[],append(child){this.children.push(child);},
    focus(){focused=this;},getAttribute(key){return Object.hasOwn(this.attrs,key)?this.attrs[key]:null;},setAttribute(key,val){this.attrs[key]=val;},removeAttribute(key){delete this.attrs[key];},
-   querySelectorAll(selector){return selector.includes('input')?[...this.fields,...this.buttons]:this.buttons;},querySelector(selector){return selector==='.human'?this.area:this.buttons[0];},
+   querySelectorAll(selector){return selector.includes('input')?[...this.fields,...this.buttons]:this.buttons;},querySelector(selector){if(selector==='span')return this.children.find(child=>child.tagName==='SPAN')||null;return selector==='.human'?this.area:this.buttons[0];},
    replaceChildren(){this.emptied=true;},dispatchEvent(){},remove(){this.removed=true;},
   };nodes.set(id,value);return value;
  }
@@ -21,10 +21,10 @@ function fixture({sdkReady=true}={}){
  for(const id of ['loginForm','registerForm']){const form=node(id,'FORM');form.hidden=false;form.area=node(id+'Human');const submit=node(id+'Submit','BUTTON');submit.textContent=id==='loginForm'?'Log in to edit station':'Save Station';form.buttons=[submit];for(const [name,value] of Object.entries(id==='loginForm'?{email:'owner@example.com',code:'13'}:{name:'Test station',email:'owner@example.com',stream_url:'https://example.com/live',bio:'My programme'})){const field=node(id+name,'INPUT');field.value=value;form.elements[name]=field;form.fields.push(field);}form.elements.rights_confirmed={checked:true};form.elements.artwork={files:[{name:'logo.png',size:10}],validationMessage:''};}
  const registrationHuman=get('registrationHuman');registrationHuman.area=node('registrationHumanArea');
  const sdk={render(area,options){const widget={id:'widget-'+(widgets.length+1),area,options};widgets.push(widget);return widget.id;},remove(id){removed.push(id);}};
- const document={hidden:false,getElementById:get,createElement(tag){return node('element-'+nodes.size,tag.toUpperCase());},head:{append(script){scripts.push(script);}}};
- const window={appI18n:{t:key=>key},prepareRegistrationStream:()=>true,registrationStreamSaveAllowed:()=>true};if(sdkReady)window.turnstile=sdk;
- const context=vm.createContext({document,window,$:get,state:{csrf:'fixture-csrf',agreement_version:'fixture-terms',turnstile_site_key:'fixture-site-key'},verificationId:null,humanLoading:undefined,sitePageGeneration:1,AbortController,Promise,Event:class{},TextEncoder,Uint8Array,
-  setTimeout(fn,ms){const id=++clock;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},
+ const document={hidden:false,getElementById:get,addEventListener(){},createElement(tag){return node('element-'+nodes.size,tag.toUpperCase());},head:{append(script){scripts.push(script);}}};
+ const window={addEventListener(type,fn){const events=windowEvents.get(type)||[];events.push(fn);windowEvents.set(type,events);},dispatchEvent(event){for(const fn of windowEvents.get(event.type)||[])fn(event);},appI18n:{t:key=>key},prepareRegistrationStream:()=>true,registrationStreamSaveAllowed:()=>true};if(sdkReady)window.turnstile=sdk;
+ const context=vm.createContext({document,window,ownerText:(key,fallback)=>fallback,$:get,state:{csrf:'fixture-csrf',agreement_version:'fixture-terms',turnstile_site_key:'fixture-site-key'},verificationId:null,humanLoading:undefined,sitePageGeneration:1,AbortController,Promise,Event:class{},TextEncoder,Uint8Array,
+  MutationObserver:class{observe(){}},setTimeout(fn,ms){const id=++clock;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},
   FormData:class{constructor(form){this.entries=Object.entries(form.elements).filter(([,field])=>typeof field.value==='string'&&!field.disabled).map(([key,field])=>[key,field.value]);}*[Symbol.iterator](){yield* this.entries;}},
   ensureOwnerSession:async()=>{},fileData:async file=>({name:file.name,base64:'fixture'}),registrationRequest:async(data,current)=>current()?'fixture-request':'',
   api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;return answer===undefined?{verification_id:'fixture-verification'}:await answer;},verify:result=>verified.push(result),
@@ -35,15 +35,17 @@ function fixture({sdkReady=true}={}){
  vm.runInContext(between('function registrationMessage(','function loadOwnerSession('),context);
  vm.runInContext(between('function page(','async function api('),context);
  vm.runInContext(between("$('registerForm').onsubmit=async event=>", "$('verifyForm').onsubmit=async event=>"),context);
+ vm.runInContext(readFileSync(new URL('./public/assets/owner-navigation-state.js',import.meta.url),'utf8'),context);
  const submit=id=>get(id).onsubmit({target:get(id),preventDefault(){}});
  return {get,nodes,widgets,removed,scripts,calls,verified,answers,context,sdk,timers,focused:()=>focused,submit,page:id=>context.page(id),busy:id=>context.formIsBusy(get(id)),loadSdk(){window.turnstile=sdk;scripts[0].onload();}};
 }
 
 function ownerNavigationFixture({owner=null,session=Promise.resolve(),feature=Promise.resolve()}={}){
  const f=fixture(),events=[],history=[];f.context.window.loadAppFeature=async name=>{events.push(['feature',name]);await feature;};f.context.history={replaceState(_state,_title,url){history.push(url);}};
- f.context.loadOwnerSession=async()=>{events.push(['session']);await session;f.context.state.owner_station=owner;};f.context.editor=async(preserve,generation)=>{events.push(['editor',preserve,generation]);f.page('editor');};
+ f.context.loadOwnerSession=async()=>{events.push(['session']);await session;const snapshot={owner_station:owner,owner_expires:owner?2000:null,server_time:1000};Object.assign(f.context.state,snapshot);f.context.window.dispatchEvent({type:'owner-session-updated',detail:snapshot});};f.context.editor=async(preserve,generation)=>{events.push(['editor',preserve,generation]);f.page('editor');};
  vm.runInContext(between("$('openLogin').onclick=", ";$('navAdd').onclick="),f.context);
  vm.runInContext(between("$('navAdd').onclick=async()=>", ";$('navLibrary').onclick="),f.context);
+ vm.runInContext(between('function ownerAccountUnavailable()','async function ensureOwnerSession()'),f.context);
  return {...f,navigation:events,history,open:()=>f.get('navAdd').onclick()};
 }
 
@@ -75,6 +77,30 @@ test('Add Station opens Create Station for an unowned session and Sign in remain
 
 test('Add Station retains the authenticated editor path with its existing draft-preservation contract',async()=>{
  const f=ownerNavigationFixture({owner:'13'});f.page('myRadio');await f.open();assert.equal(f.get('editor').hidden,false);assert.equal(f.get('register').hidden,true);assert.equal(f.get('login').hidden,true);assert.deepEqual(f.navigation.map(event=>event[0]),['feature','session','editor']);assert.equal(f.navigation[2][1],true);assert.equal(typeof f.navigation[2][2],'number');assert.equal(f.context.state.owner_station,'13');
+ assert.equal(f.get('navAdd').querySelector('span').textContent,'Station account');
+});
+
+test('an authenticated owner cannot reopen sign-in or create tabs through direct routing or old buttons',async()=>{
+ const f=ownerNavigationFixture({owner:'13'});await f.open();
+ for(const route of ['login','register']){f.page(route);assert.equal(f.get('editor').hidden,false);assert.equal(f.get(route).hidden,true);}
+ for(const id of ['openLogin','openRegister']){await f.get(id).onclick();assert.equal(f.get('editor').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.get('register').hidden,true);}
+ assert.equal(f.navigation.filter(event=>event[0]==='editor').length,3);assert.equal(f.calls.length,0);assert.equal(f.widgets.length,0);
+});
+
+test('expired ownership returns explicit Sign in and Create station entry without treating an old identity as active',async()=>{
+ const f=ownerNavigationFixture({owner:'13'});await f.open();
+ f.context.window.ownerAccountNavigation.accept({owner_station:'13',owner_expires:999,server_time:1000});
+ assert.equal(f.context.window.ownerAccountNavigation.active(),false);assert.equal(f.get('navAdd').querySelector('span').textContent,'Create station');
+ f.get('openLogin').onclick();assert.equal(f.get('login').hidden,false);assert.equal(f.focused(),f.get('signInTab'));
+ f.get('openRegister').onclick();assert.equal(f.get('register').hidden,false);assert.equal(f.focused(),f.get('createStationTab'));
+ assert.equal(f.navigation.filter(event=>event[0]==='editor').length,1);
+});
+
+test('account navigation access failures show owner recovery and logout rather than unrelated authentication forms',async()=>{
+ for(const status of [undefined,403,404]){
+  const f=ownerNavigationFixture({owner:'13'});f.page('myRadio');f.get('ownerEntryLogout').hidden=true;f.context.editor=async()=>{throw Object.assign(Error('Account temporarily unavailable'),{status});};
+  await f.open();assert.equal(f.get('ownerEntryLoading').hidden,false);assert.equal(f.get('ownerEntryLogout').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.get('register').hidden,true);assert.equal(f.context.window.ownerAccountNavigation.active(),true);assert.match(f.get('ownerEntryText').textContent,/Tap Station account/);assert.equal(f.get('message').textContent,'Account temporarily unavailable');
+ }
 });
 
 test('leaving while Add Station loads cannot open Create Station or an owner editor afterwards',async()=>{

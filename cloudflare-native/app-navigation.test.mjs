@@ -8,8 +8,8 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  function node(id='',tag='DIV'){
   const listeners={};const n={id,tagName:tag,hidden:false,dataset:{},children:[],scrollLeft:0,isConnected:true,textContent:'',attrs:{},classList:{values:new Set(),toggle(name,on){if(on)this.values.add(name);else this.values.delete(name);}},setAttribute(key,value){this.attrs[key]=value;},addEventListener(key,fn){(listeners[key]??=[]).push(fn);},append(...items){this.children.push(...items);},before(...items){(this.beforeNodes??=[]).push(...items);},scrollTo(options){this.lastScroll=options;this.scrollLeft=options.left;this.dispatch('scroll');},focus(){document.activeElement=this;},querySelectorAll(){return [];},showModal(){this.open=true;},close(){this.open=false;queueMicrotask(()=>{for(const fn of listeners.close||[])fn({});});},dispatch(name,event={}){for(const fn of listeners[name]||[])fn(event);}};if(id)nodes.set(id,n);return n;
  }
- const ids=['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','wifiContinueConnection','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','shareWifiHelp','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;nodes.get('wifiContinueConnection').hidden=true;
- for(const id of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(id).hidden=id!==initial;
+ const ids=['myRadio','support','wifiSetup','login','register','editor','ownerEntryLoading','shared','admin','legal','advertise','adReview','reports','backups','navAdd','navRadio','navLibrary','openWifiSetup','wifiBackToRadio','wifiContinueConnection','search','listenerAppTitle','stations','savedStations','supportVideos','ticketForm','supportMessage','shareStatus','shareForm','shareName','shareWifiHelp','ticketStationContext','ticketStationName','clearTicketStation','reportStationProblem','verification','message'];ids.forEach(id=>node(id));nodes.get('ticketStationContext').hidden=true;nodes.get('wifiContinueConnection').hidden=true;
+ for(const id of ['myRadio','support','wifiSetup','login','register','editor','ownerEntryLoading','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(id).hidden=id!==initial;
  const supportLink=node('supportLink','A');supportLink.href='https://radio.example/support';const wifiLink=nodes.get('openWifiSetup');wifiLink.tagName='A';wifiLink.href='https://radio.example/wifi-setup';
  const document={body:node(),activeElement:null,querySelector(selector){return selector.startsWith('nav a')?supportLink:null;},createElement:tag=>node('',tag.toUpperCase())};nodes.get('ticketForm').elements=Object.fromEntries(['name','email','device_code','subject','message','station_code'].map(key=>[key,Object.assign(node('ticket-'+key,'INPUT'),{value:''})]));
  const location={origin:'https://radio.example'};
@@ -19,7 +19,7 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
  const stationPopup=node('stationAddPopup','DIALOG'),stationPopupClose=node('stationPopupClose','BUTTON');
  const window={showRadioCodeEntry(){connectionSteps.push('code');nodes.get('search').focus();},showRadioConnectionChoices(){connectionSteps.push('choices');},scrollX:0,scrollY:0,appI18n:i18n,scrollTo(x,y){this.scrollX=x;this.scrollY=y;},addEventListener(key,fn){const list=events.get(key)||[];list.push(fn);events.set(key,list);}};
  const context=vm.createContext({document,window,history,location,navigator:{standalone:false},matchMedia:query=>({matches:query==='(prefers-reduced-motion: reduce)'?reducedMotion:standalone,addEventListener(name,fn){mediaEvents[name]=fn;}}),URL,URLSearchParams,Object,Map,Promise,queueMicrotask,requestAnimationFrame:fn=>frames.push(fn),$:(id)=>nodes.get(id),stationPopup,stationPopupClose,radioCardViews:new Map(),
-  page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0,stopWaitingForSharedStation(){context.shareRunning=false;context.sharedOpenGeneration++;},invalidateSharedView(){context.shareRunning=false;context.sharedOpenGeneration++;}});
+  page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','ownerEntryLoading','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0,stopWaitingForSharedStation(){context.shareRunning=false;context.sharedOpenGeneration++;},invalidateSharedView(){context.shareRunning=false;context.sharedOpenGeneration++;}});
  if(ownerLifecycle){
   const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
   vm.runInContext('let sitePageGeneration=0,verificationId=null,verificationGeneration=0,verificationPageGeneration=0,verificationResendDeadline=0,verificationBusy=false;function setVerificationBusy(value){verificationBusy=value;}',context);
@@ -93,6 +93,23 @@ test('owner-page navigation also unloads a playing tutorial without touching the
 test('listener installation uses Radio/Support while direct owner screens keep their navigation',()=>{
  for(const options of [{app:true},{standalone:true}]){const f=fixture(options);assert.equal(f.nodes.get('navAdd').hidden,true);assert.equal(f.document.body.classList.values.has('listener-app'),true);vm.runInContext("page('editor')",f.context);assert.equal(f.nodes.get('navAdd').hidden,false);assert.equal(f.document.body.classList.values.has('app-listener-page'),false);}
  const browser=fixture();assert.equal(browser.nodes.get('navAdd').hidden,false);assert.equal(browser.document.body.classList.values.has('app-listener-page'),true);
+});
+
+test('a standalone owner loading or retry card keeps account navigation available and its own title',()=>{
+ for(const options of [{app:true},{standalone:true}]){
+  const f=fixture({...options,path:'/add-station',initial:'ownerEntryLoading'});
+  assert.equal(f.nodes.get('ownerEntryLoading').hidden,false);
+  assert.equal(f.nodes.get('navAdd').hidden,false);
+  assert.equal(f.document.body.classList.values.has('app-listener-page'),false);
+  assert.equal(f.document.title,'Station account — Radio Locals');
+  // A failed owner read leaves the loading card as the retry screen. Startup
+  // reconciliation must not reinterpret it as Radio and hide its retry tab.
+  f.nodes.get('ownerEntryLoading').textContent='Could not load your station. Tap Station account to try again.';
+  f.dispatchWindow('radio-locals-ready');
+  assert.equal(f.nodes.get('navAdd').hidden,false);
+  assert.equal(f.document.title,'Station account — Radio Locals');
+  assert.equal(f.nodes.get('myRadio').hidden,true);
+ }
 });
 
 test('Radio/Support switching retains a ticket draft, station search and horizontal/document scroll with browser Back',async()=>{

@@ -3,7 +3,7 @@
 // remain in memory; no device codes, ticket text or credentials enter history.
 const appPagePositions=new Map(),appDisplayMode=matchMedia('(display-mode: standalone)');
 let appCurrentPage=appVisiblePage(),appRestoring=false,appNavigationGeneration=0,appPanelOrigin=null,appSupportPromise=null,appControlOrigin=null,appLastControlId=null,appGuidedRadioWifi=false;
-function appVisiblePage(){return ['myRadio','support','wifiSetup','login','register','editor','shared','admin','legal','advertise','adReview','reports','backups'].find(id=>$(id)&&!$(id).hidden)||(location.pathname==='/wifi-setup'?'wifiSetup':location.pathname==='/support'?'support':'myRadio');}
+function appVisiblePage(){return ['myRadio','support','wifiSetup','login','register','editor','ownerEntryLoading','shared','admin','legal','advertise','adReview','reports','backups'].find(id=>$(id)&&!$(id).hidden)||(location.pathname==='/wifi-setup'?'wifiSetup':location.pathname==='/support'?'support':'myRadio');}
 function appIsListenerPage(id){return ['myRadio','support','wifiSetup'].includes(id);}
 function appListenerMode(){return new URLSearchParams(location.search).get('app')==='1'||appDisplayMode.matches||navigator.standalone===true;}
 function appRememberPosition(id=appCurrentPage){
@@ -31,7 +31,7 @@ function appApplyMode(){
  appUpdatePageTitle();
 }
 function appUpdatePageTitle(){
- const names={myRadio:'Radio',support:'Support',wifiSetup:'Wi-Fi setup',login:'Sign in',register:'Create station',editor:'Station editor',shared:'Add station to radio',admin:'Administrator',legal:'Legal and contact',advertise:'Advertise',adReview:'Review ads',reports:'Reports',backups:'Backups'};
+ const names={myRadio:'Radio',support:'Support',wifiSetup:'Wi-Fi setup',login:'Sign in',register:'Create station',editor:'Station editor',ownerEntryLoading:'Station account',shared:'Add station to radio',admin:'Administrator',legal:'Legal and contact',advertise:'Advertise',adReview:'Review ads',reports:'Reports',backups:'Backups'};
  const name=window.appI18n?.t('title.'+appCurrentPage),fallback=names[appCurrentPage]||'Radio';
  document.title=(name&&name!=='title.'+appCurrentPage?name:fallback)+' — Radio Locals';
 }
@@ -83,7 +83,7 @@ window.addEventListener('support-guides-ready',appInstallGuideNavigation);window
 window.addEventListener('app-language-changed',()=>{appUpdatePageTitle();appUpdateGuideNavigation();});
 const appOriginalPage=page;
 page=function(id){
- const next=id==='library'?'myRadio':id;
+ const next=['login','register'].includes(id)&&window.ownerAccountNavigation?.active()?'editor':id==='library'?'myRadio':id;
  if(next!=='wifiSetup')appClearGuidedRadioWifi();
  if(next!==appCurrentPage){appRememberPosition();if(appCurrentPage==='support')appPauseSupportMedia();}
  appOriginalPage(id);appCurrentPage=next;appApplyMode();if(next==='support')appRestoreSupportMedia();

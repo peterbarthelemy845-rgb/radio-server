@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);let state,verificationId,stations=[],humanLoading,sitePageGeneration=0;
-function page(id){sitePageGeneration++;if(typeof cancelOwnerAccess==='function')cancelOwnerAccess();if(id==='library')id='myRadio';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
+function page(id){sitePageGeneration++;if(typeof cancelOwnerAccess==='function')cancelOwnerAccess();if(id==='library')id='myRadio';if(['login','register'].includes(id)&&window.ownerAccountNavigation?.active())id='editor';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','ownerEntryLoading','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
 function message(text){$('message').textContent=text;}
 async function api(path,body,options={}){
  const failure=(text,status,reference)=>{const safeReference=typeof reference==='string'&&/^[a-f0-9]{16,32}$/.test(reference)?reference:'';const error=new Error(text+(safeReference?' Reference: '+safeReference+'.':''));if(status!==undefined)error.status=status;if(safeReference)error.errorReference=safeReference;return error;};
@@ -97,6 +97,8 @@ window.addEventListener?.('app-language-changed',renderVerificationResend);
 function registrationMessage(text){const target=$('registerMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
 function loginMessage(text){const target=$('loginMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
 function loadOwnerSession(){if(!ownerSessionPromise){const generation=ownerSessionGeneration;ownerSessionPromise=api('/api/session').then(result=>{if(generation===ownerSessionGeneration){state=result;window.dispatchEvent(new CustomEvent('owner-session-updated',{detail:result}));}return result;}).finally(()=>{ownerSessionPromise=null;});}return ownerSessionPromise;}
+function clearOwnerSession(){ownerSessionGeneration++;if(state){state.owner_station=null;state.owner_expires=null;}window.dispatchEvent(new CustomEvent('owner-session-updated',{detail:{owner_station:null,owner_expires:null}}));}
+function ownerAccountUnavailable(){page('ownerEntryLoading');const text=$('ownerEntryText');text.dataset.i18n='owner.accountUnavailable';text.textContent=ownerText('owner.accountUnavailable','Could not load your station. Tap Station account to try again.');$('ownerEntryLogout').hidden=false;}
 async function ensureOwnerSession(){if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)await loadOwnerSession();if(!state?.csrf||!state?.agreement_version||!state?.turnstile_site_key)throw new Error('Website setup is not ready. Please refresh and try again.');}
 async function registrationRequest(data,current=()=>true){const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');if(!current())return '';if(fingerprint!==registrationRequestFingerprint){registrationRequestFingerprint=fingerprint;registrationRequestId=crypto.randomUUID().replaceAll('-','');}return registrationRequestId;}
 function ownerAccessSuccess(result){$('stationSuccessTitle').textContent=result.registration_completed?(result.stream_check_required?'Stream test required':result.review_required?'Waiting for review':'Station added'):'Signed in';$('stationSuccessText').textContent=result.registration_completed?'Station code #'+result.station_code+'.'+(result.stream_check_required?' Test your stream before saving changes.':''):'You can edit your station.';if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='';if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=true;if(!$('stationSuccess').open)$('stationSuccess').showModal();}
@@ -109,9 +111,9 @@ function applyOwnerStation(station,preserveDraft=false){
  if(!keepDraft){form.elements.name.value=station.name;form.elements.stream_url.value=station.stream_url;form.elements.bio.value=station.bio;form.elements.artwork.value='';delete form.dataset.dirty;form.dataset.revision=station.revision||'';}
  form.dataset.stationCode=String(station.code);if(!keepDraft)window.syncOwnerStreamSetup?.({accepted:true});window.syncOwnerStreamSaveGate?.(station);window.renderOwnerStreamPublication?.(station);
 }
-function applyOwnerExpiry(result){if(!Number.isInteger(result.owner_expires))return;if(state){state.owner_expires=result.owner_expires;if(Number.isInteger(result.server_time))state.server_time=result.server_time;}const event=new Event('owner-session-updated');event.detail=result;window.dispatchEvent(event);}
-async function editor(preserveDraft=false,generation=sitePageGeneration){const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft);return true;}
-$('openLogin').onclick=()=>{page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await window.loadAppFeature?.('owner');if(generation!==sitePageGeneration)return;await loadOwnerSession();if(generation!==sitePageGeneration)return;if(state?.owner_station)await editor(true,generation);else page('register');}catch(e){if(generation===sitePageGeneration)message(e.message);}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
+function applyOwnerExpiry(result){if(!Number.isInteger(result.owner_expires))return;if(state){state.owner_expires=result.owner_expires;if(Number.isInteger(result.server_time))state.server_time=result.server_time;}const event=new Event('owner-session-updated');event.detail={...result,...(state?{owner_station:state.owner_station}:{})};window.dispatchEvent(event);}
+async function editor(preserveDraft=false,generation=sitePageGeneration){const ownerGeneration=ownerSessionGeneration;try{const result=await api('/api/owner/station');if(generation!==sitePageGeneration||ownerGeneration!==ownerSessionGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft);return true;}catch(error){if(error.status===401&&generation===sitePageGeneration&&ownerGeneration===ownerSessionGeneration)clearOwnerSession();throw error;}}
+$('openLogin').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await window.loadAppFeature?.('owner');if(generation!==sitePageGeneration)return;await loadOwnerSession();if(generation!==sitePageGeneration)return;if(window.ownerAccountNavigation?.active())await editor(true,generation);else page('register');}catch(e){if(generation===sitePageGeneration){if(e.status===401)page('login');else if(window.ownerAccountNavigation?.active())ownerAccountUnavailable();message(e.message);}}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
 $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.preventDefault();});
 $('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
 $('registerForm').addEventListener('reset',()=>{registrationRequestFingerprint='';registrationRequestId='';registrationMessage('');});
@@ -131,12 +133,13 @@ if($('retryOwnerEditor'))$('retryOwnerEditor').onclick=async()=>{const button=$(
 function ownerText(key,fallback){const text=window.appI18n?.t(key);return typeof text==='string'&&text!==key?text:fallback;}
 let ownerLogoutBusy=false;
 function ownerEditFeedback(text='',reauth=false,conflict=false){
+ if(reauth)clearOwnerSession();
  const notice=$('ownerEditMessage'),action=$('ownerSignInAgain'),review=$('ownerReviewLatest');if(action)action.hidden=!reauth;if(review)review.hidden=!conflict;
  if(!notice){if(text)message(text);return;}notice.textContent=text;notice.hidden=!text;if(text)notice.focus();
 }
 if($('ownerSignInAgain'))$('ownerSignInAgain').onclick=()=>{
  const form=$('editForm');if(ownerLogoutBusy||formIsBusy(form)||$('editor').hidden)return;
- const code=String(form.dataset.stationCode||'');page('login');if(/^[0-9]{2,6}$/.test(code))$('loginForm').elements.code.value=code;
+ const code=String(form.dataset.stationCode||'');clearOwnerSession();page('login');if(/^[0-9]{2,6}$/.test(code))$('loginForm').elements.code.value=code;
  loginMessage(ownerText('owner.signInContinue','Sign in again to keep editing. Your unsaved changes are kept in this tab.'));
 };
 if($('ownerReviewLatest'))$('ownerReviewLatest').onclick=async()=>{
@@ -212,10 +215,11 @@ $('logout').onclick=async()=>{
  const view=sitePageGeneration,current=()=>view===sitePageGeneration;
  try{
   if(form.dataset.dirty||form.elements.artwork.files[0]){if(!await listenerActionDialog(ownerText('owner.discardTitle','Discard unsaved changes?'),ownerText('owner.discardText','Your unsaved station changes will be lost.'),ownerText('owner.discardLogout','Discard and log out'),true)||!current())return;}
-  busy(form,true,true);await api('/api/owner/logout',{});ownerSessionGeneration++;if(state)state.owner_station=null;form.reset();delete form.dataset.dirty;delete form.dataset.stationCode;delete form.dataset.revision;showOwnerCover('');ownerEditFeedback('');ownerRefreshFeedback(false);if(current())page('login');
- }catch(e){if(current())ownerEditFeedback(e.message);}
+  busy(form,true,true);await api('/api/owner/logout',{});clearOwnerSession();form.reset();delete form.dataset.dirty;delete form.dataset.stationCode;delete form.dataset.revision;showOwnerCover('');ownerEditFeedback('');ownerRefreshFeedback(false);if(current())page('register');
+ }catch(e){if(current()){if($('ownerEntryLoading')&&!$('ownerEntryLoading').hidden)message(e.message);else ownerEditFeedback(e.message);}}
  finally{ownerLogoutBusy=false;button.disabled=false;busy(form,false);}
 };
+if($('ownerEntryLogout'))$('ownerEntryLogout').onclick=()=>$('logout').onclick();
 function list(){}
 
 // Refresh the public directory without discarding usable cards during a failed request.
@@ -367,8 +371,8 @@ $('deleteVerifyForm').onsubmit=async event=>{
  deleteCommitBusy=true;busy(form,true,true,'deleting');$('cancelDelete').disabled=true;$('deleteVerifyMessage').dataset.i18n='delete.deleting';$('deleteVerifyMessage').textContent=ownerText('delete.deleting','Deleting station…');
  try{
   await api('/api/owner/delete',{confirm:true,verification_id:id,code});void refreshStationDirectory(true);
-  if(String(state?.owner_station||'')===targetStation){ownerSessionGeneration++;state.owner_station=null;}
-  if(currentStationDeletion(generation,id,view)){$('deleteVerification').close();page('login');message('Station removed from the directory.');}
+  if(String(state?.owner_station||'')===targetStation)clearOwnerSession();
+  if(currentStationDeletion(generation,id,view)){$('deleteVerification').close();page('register');message('Station removed from the directory.');}
  }catch(e){if(currentStationDeletion(generation,id,view)){delete $('deleteVerifyMessage').dataset.i18n;$('deleteVerifyMessage').textContent=e.status>=400&&e.status<500?e.message:ownerText('delete.uncertain','Could not confirm deletion. Check your station before trying again.');}}
  finally{deleteCommitBusy=false;$('cancelDelete').disabled=false;busy(form,false);}
 };
@@ -502,13 +506,15 @@ async function submitSharedStation(form){
 $('shareForm').onsubmit=event=>{event.preventDefault();return submitSharedStation(event.target);};
 async function initializeSite(){
  const initialShared=location.pathname.match(/^\/station\/([0-9]{2,6})$/);
- page(initialShared?'shared':location.pathname==='/create-station'?'register':location.pathname==='/wifi-setup'?'wifiSetup':location.hash==='#radio'?'myRadio':['/support','/device'].includes(location.pathname)?'support':location.pathname==='/add-station'||location.hash==='#add-station'?'register':location.pathname==='/admin'?'admin':location.pathname==='/station-edit'?'login':'library');
+ const ownerEntry=['/create-station','/add-station','/station-edit'].includes(location.pathname)||location.hash==='#add-station';
+ page(initialShared?'shared':ownerEntry?'ownerEntryLoading':location.pathname==='/wifi-setup'?'wifiSetup':location.hash==='#radio'?'myRadio':['/support','/device'].includes(location.pathname)?'support':location.pathname==='/admin'?'admin':'library');
+ const entryGeneration=sitePageGeneration;
  if(initialShared){$('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareArt').hidden=true;$('shareName').textContent='Loading station…';$('shareStationCode').textContent='';$('shareStationBio').textContent='';setSharedStatus('');}
   // The public catalogue owns its loading/error state. A slow catalogue must
   // not delay connecting a radio or opening another page's help form.
   void refreshStationDirectory().catch(()=>{});
-  const initial=await Promise.allSettled([loadOwnerSession()]);
- if(initial[0].status==='rejected'){state=undefined;message(initial[0].reason.message);}
+  const bootstrapOwnerGeneration=ownerSessionGeneration,initial=await Promise.allSettled([loadOwnerSession()]);
+ if(initial[0].status==='rejected'&&bootstrapOwnerGeneration===ownerSessionGeneration){state=undefined;if(entryGeneration===sitePageGeneration)message(initial[0].reason.message);}
  // Shared entry routes use helpers installed by later deferred scripts too.
  // Bootstrap requests and the correct loading page are already in progress.
  await siteOrderedScriptsReady;
@@ -516,11 +522,11 @@ async function initializeSite(){
   const route=location.pathname,feature=route==='/admin'?'admin':/^\/advertise\//.test(route)?'advertise':['/add-station','/create-station','/station-edit'].includes(route)||location.hash==='#add-station'?'owner':null;if(feature)await window.loadAppFeature?.(feature);
   const shared=location.pathname.match(/^\/station\/([0-9]{2,6})$/);if(shared)await openShared(shared[1]);
   if(initial[0].status==='fulfilled'){
-   if(location.pathname==='/station-edit'&&!state.owner_station)page('login');
-   if(state.owner_station&&(location.pathname==='/station-edit'||location.pathname==='/add-station'||location.hash==='#add-station'))await editor();
+   if(ownerEntry&&entryGeneration===sitePageGeneration){if(window.ownerAccountNavigation?.active())await editor(true,entryGeneration);else page(location.pathname==='/station-edit'?'login':'register');}
    if(location.pathname==='/admin'){page('admin');try{await adminList();}catch{}}
   }
- }catch(e){message(e.message);}
+ }catch(e){if(!ownerEntry||entryGeneration===sitePageGeneration){if(ownerEntry){if(e.status===401)page('login');else if(window.ownerAccountNavigation?.active())ownerAccountUnavailable();else page('register');}message(e.message);}}
+ if(ownerEntry&&entryGeneration===sitePageGeneration&&initial[0].status==='rejected'){page('register');message(initial[0].reason.message);}
  try{await initCommunity();}catch(e){message(e.message);}
  finally{await siteOrderedScriptsReady;window.dispatchEvent(new Event('radio-locals-ready'));}
 }
