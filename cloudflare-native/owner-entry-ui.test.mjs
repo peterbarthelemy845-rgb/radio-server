@@ -22,7 +22,7 @@ function fixture({sdkReady=true}={}){
  const registrationHuman=get('registrationHuman');registrationHuman.area=node('registrationHumanArea');
  const sdk={render(area,options){const widget={id:'widget-'+(widgets.length+1),area,options};widgets.push(widget);return widget.id;},remove(id){removed.push(id);}};
  const document={hidden:false,getElementById:get,createElement(tag){return node('element-'+nodes.size,tag.toUpperCase());},head:{append(script){scripts.push(script);}}};
- const window={appI18n:{t:key=>key}};if(sdkReady)window.turnstile=sdk;
+ const window={appI18n:{t:key=>key},prepareRegistrationStream:()=>true,registrationStreamSaveAllowed:()=>true};if(sdkReady)window.turnstile=sdk;
  const context=vm.createContext({document,window,$:get,state:{csrf:'fixture-csrf',agreement_version:'fixture-terms',turnstile_site_key:'fixture-site-key'},verificationId:null,humanLoading:undefined,sitePageGeneration:1,AbortController,Promise,Event:class{},TextEncoder,Uint8Array,
   setTimeout(fn,ms){const id=++clock;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},
   FormData:class{constructor(form){this.entries=Object.entries(form.elements).filter(([,field])=>typeof field.value==='string'&&!field.disabled).map(([key,field])=>[key,field.value]);}*[Symbol.iterator](){yield* this.entries;}},
@@ -46,6 +46,26 @@ function ownerNavigationFixture({owner=null,session=Promise.resolve(),feature=Pr
  vm.runInContext(between("$('navAdd').onclick=async()=>", ";$('navLibrary').onclick="),f.context);
  return {...f,navigation:events,history,open:()=>f.get('navAdd').onclick()};
 }
+
+test('registration submit fails closed without a successful current stream check even when invoked directly',async()=>{
+ for(const reason of ['missing check','missing preparation','false']){
+  const f=fixture(),guardCalls=[];f.page('register');f.get('registerForm').buttons[0].disabled=true;
+  if(reason==='missing check')delete f.context.window.registrationStreamSaveAllowed;
+  else f.context.window.registrationStreamSaveAllowed=report=>{guardCalls.push(report);return false;};
+  let prepared=0,logos=0,sessions=0;f.context.window.prepareRegistrationStream=()=>{prepared++;return true;};f.context.window.validateRegistrationLogo=async()=>{logos++;return true;};f.context.ensureOwnerSession=async()=>{sessions++;};
+  if(reason==='missing preparation')delete f.context.window.prepareRegistrationStream;
+  await f.submit('registerForm');await settle();assert.equal(f.calls.length,0,reason);assert.equal(f.widgets.length,0,reason);assert.equal(logos,0,reason);assert.equal(sessions,0,reason);assert.equal(f.busy('registerForm'),false,reason);if(reason==='false'){assert.equal(prepared,1,reason);assert.deepEqual(guardCalls,[true],reason);}
+ }
+});
+
+test('a passing stream guard allows the ordinary registration security and API flow',async()=>{
+ const f=fixture(),guards=[];f.context.window.registrationStreamSaveAllowed=report=>{guards.push(report);return true;};f.page('register');const pending=f.submit('registerForm');await settle();assert.deepEqual(guards,[true]);assert.equal(f.calls.length,0);assert.equal(f.widgets.length,1);f.widgets[0].options.callback('stream-passed-token');await pending;assert.equal(f.calls.length,1);assert.equal(f.calls[0].path,'/api/owner/register');assert.equal(f.calls[0].body.turnstile_token,'stream-passed-token');assert.equal(f.verified.length,1);
+});
+
+test('a server rejection of expired stream proof clears the gate and preserves the registration draft',async()=>{
+ const f=fixture(),form=f.get('registerForm'),failure=Object.assign(Error('Test your stream before saving.'),{status:428});let invalidated=0,allowed=true;f.context.window.registrationStreamSaveAllowed=()=>allowed;f.context.window.invalidateRegistrationStreamSaveGate=()=>{invalidated++;allowed=false;};f.answers.push(failure);f.page('register');const pending=f.submit('registerForm');await settle();f.widgets[0].options.callback('expired-proof-token');await pending;
+ assert.equal(invalidated,1);assert.equal(f.verified.length,0);assert.equal(f.busy('registerForm'),false);assert.equal(form.elements.name.value,'Test station');assert.equal(form.elements.stream_url.value,'https://example.com/live');assert.equal(form.elements.artwork.files[0].name,'logo.png');assert.equal(f.get('registerMessage').textContent,'Test your stream before saving.');await f.submit('registerForm');assert.equal(f.calls.length,1);assert.equal(f.widgets.length,1);
+});
 
 test('Add Station opens Create Station for an unowned session and Sign in remains an explicit tab',async()=>{
  const f=ownerNavigationFixture();f.page('myRadio');await f.open();assert.equal(f.get('register').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.get('myRadio').hidden,true);assert.deepEqual(f.history,['/#add-station']);assert.deepEqual(f.navigation,[['feature','owner'],['session']]);

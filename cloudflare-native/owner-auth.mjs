@@ -2,13 +2,13 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 import {HttpError,json,digest,randomHex,mac,otp,encrypt,decrypt,limit,readJson,session,browserWrite,human} from './security.mjs';
 import {screenStation} from './moderation.mjs';
 import {stationState,ownerRevision,stationStateGuard,stationName} from './station-edits.mjs';
-import {attachStreamCheck,streamPublicationAllowed,requestStreamReview,streamOwnerStatus} from './stream-verification.mjs';
+import {attachStreamCheck,streamPublicationAllowed,streamOwnerStatus,requireStreamSaveCheck,assertStreamSaveCheck} from './stream-verification.mjs';
 const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
 const emailPattern=/^[^\s@\r\n]{1,64}@[^\s@\r\n]+\.[^\s@\r\n]+$/;
 const mask=email=>email[0]+'***@'+email.split('@')[1];
 export function streamUrl(value){return publicStreamUrl(value);}
-export async function artwork(env,file,stableKey){
+export async function artwork(env,file,stableKey,beforePut){
   if(!env.IMAGES||!env.MEDIA)throw new HttpError(503,'Artwork processing is not ready.');
   if(!file||typeof file.base64!=='string'||file.base64.length>4194304||typeof file.name!=='string')
     throw new HttpError(400,'Choose a PNG, JPG or WebP image under 3 MB.');
@@ -31,6 +31,7 @@ export async function artwork(env,file,stableKey){
   if(sanitized.byteLength>3*1024*1024)throw new HttpError(400,'Processed image is too large.');
   const key=stableKey||randomHex()+'.png';
   if(!/^[a-f0-9]{64}\.png$/.test(key))throw new Error('Invalid internal artwork key.');
+  if(beforePut)await beforePut();
   await env.MEDIA.put('sanitized/'+key,sanitized,{httpMetadata:{contentType:'image/png'},customMetadata:{sanitizer_version:'1'}});
   return key;
 }
@@ -143,12 +144,10 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
     const {station,pending}=await stationState(env,current.owner_station);
     if(!station||!station.email_verified_at||['deleted','suspended','pending_email'].includes(station.status))throw new HttpError(403,'Station cannot be reviewed.');
-    if(typeof body.revision!=='string'||body.revision!==await ownerRevision(env,station,pending))throw new HttpError(409,'This station changed. Save or refresh your station before requesting review.');
-    if(await streamPublicationAllowed(env,station,pending,now))return json({status:'ok',message:'Stream check passed. Save your station to continue.',stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash)});
-    await limit(env.DB,'stream-review-station',String(station.code),3,86400,now);
-    const requested=await requestStreamReview(env,station,pending,now);
-    if(!['passed','review_requested'].includes(requested.status))throw new HttpError(409,'This station changed. Refresh the saved station before requesting review.');
-    return json({status:'ok',message:requested.status==='passed'?'Stream check passed. Save your station to continue.':'Review requested. Your saved stream remains private until approved.',stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash)});
+    if(typeof body.revision!=='string'||body.revision!==await ownerRevision(env,station,pending))throw new HttpError(409,'This station changed. Refresh your station before testing again.');
+    // Retired client flow: an owner cannot replace a required successful check
+    // with a private-save/manual-review request. Admin remediation is separate.
+    throw new HttpError(428,'Test your stream and get a pass before saving.');
   }
   if(path==='/api/owner/delete'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -192,20 +191,23 @@ export async function authRoutes(request,env,now,deps={human}){
     if(prior&&prior.payload_hash!==payloadHash)throw new HttpError(409,'Signup details changed. Please submit a new signup request.');
     if(prior?.expires<=now)throw new HttpError(409,'This signup request expired. Reload the page and start again.');
     if(prior?.state==='complete')return registrationResponse(env,current,prior,now);
+    const streamSave=await requireStreamSaveCheck(env,current.token_hash,url,now);
     await limit(env.DB,'register-ip',request.headers.get('CF-Connecting-IP')||'unknown',5,86400,now);
     await limit(env.DB,'register-global','all',100,86400,now);
     const lease=randomHex(16);
     const claimed=await env.DB.prepare(`INSERT INTO registration_requests(session_hash,request_id,payload_hash,lease_token,lease_until,created_at,expires)
-      VALUES (?,?,?,?,?,?,?) ON CONFLICT(session_hash,request_id) DO UPDATE SET lease_token=excluded.lease_token,lease_until=excluded.lease_until
+      SELECT ?,?,?,?,?,?,? WHERE ${streamSave.sql} ON CONFLICT(session_hash,request_id) DO UPDATE SET lease_token=excluded.lease_token,lease_until=excluded.lease_until
       WHERE state='pending' AND lease_until<=? AND payload_hash=excluded.payload_hash RETURNING *`)
-      .bind(current.token_hash,requestId,payloadHash,lease,now+120,now,now+86400,now).first();
-    if(!claimed)throw new HttpError(409,'This signup is still processing. Please try again shortly.');
+      .bind(current.token_hash,requestId,payloadHash,lease,now+120,now,now+86400,...streamSave.values,now).first();
+    if(!claimed){await assertStreamSaveCheck(env,streamSave);throw new HttpError(409,'This signup is still processing. Please try again shortly.');}
+    let uploadedKey;
     try{
       // A crashed attempt can safely replace this same private object on retry.
-      const key=await artwork(env,body.artwork,await mac(env,'registration-art:'+current.token_hash+':'+requestId)+'.png');
+      await assertStreamSaveCheck(env,streamSave);
+      const key=await artwork(env,body.artwork,await mac(env,'registration-art:'+current.token_hash+':'+requestId)+'.png',()=>assertStreamSaveCheck(env,streamSave));uploadedKey=key;
       const values=await verificationValues(env,now),agreementHash=await digest(RIGHTS);
-      const guard="session_hash=? AND request_id=? AND lease_token=? AND state='pending'";
-      const owner=[current.token_hash,requestId,lease];
+      const guard="session_hash=? AND request_id=? AND lease_token=? AND lease_until>MAX(?,unixepoch()) AND state='pending' AND "+streamSave.sql;
+      const owner=[current.token_hash,requestId,lease,now,...streamSave.values];
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at)
           SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)`)
@@ -222,13 +224,40 @@ export async function authRoutes(request,env,now,deps={human}){
           SELECT ?,?,'Your Radio Locals verification code',?,?,? FROM registration_requests WHERE ${guard} AND station_code IS NOT NULL`)
           .bind(values.mail,email,values.payload,now,values.expires,...owner),
         env.DB.prepare(`UPDATE registration_requests SET state='complete',verification_id=?,lease_until=0 WHERE ${guard} AND station_code IS NOT NULL`)
-          .bind(values.id,...owner)
+          .bind(values.id,...owner),
+        // D1 batches are transactional, but unixepoch() can change between
+        // statements. A guard becoming false halfway through must roll back
+        // ALL preceding writes, not commit an unlinked station or partial mail.
+        // The deliberately invalid state hits the existing table CHECK only
+        // when this exact lease did not finish every required operation.
+        env.DB.prepare(`INSERT INTO registration_requests(session_hash,request_id,payload_hash,state,lease_token,lease_until,created_at,expires)
+          SELECT ?,?,?,'registration_commit_assertion_failed',?,0,?,?
+          WHERE NOT EXISTS(SELECT 1 FROM registration_requests completed
+            JOIN stations saved ON saved.code=completed.station_code
+            JOIN email_verifications verified ON verified.id=completed.verification_id AND verified.station_code=saved.code AND verified.session_hash=completed.session_hash
+            WHERE completed.session_hash=? AND completed.request_id=? AND completed.payload_hash=? AND completed.lease_token=? AND completed.state='complete' AND completed.lease_until=0
+              AND completed.verification_id=? AND saved.name=? AND saved.stream_url=? AND saved.bio=? AND saved.location=? AND saved.contact_email=? AND saved.artwork_key=? AND saved.status='pending_email'
+              AND verified.purpose='registration' AND verified.code_hash=? AND verified.expires=? AND verified.consumed_at IS NULL
+              AND EXISTS(SELECT 1 FROM agreement_acceptances accepted WHERE accepted.station_code=saved.code AND accepted.agreement_version=? AND accepted.agreement_hash=?)
+              AND EXISTS(SELECT 1 FROM mail_outbox queued WHERE queued.id=? AND queued.recipient=? AND queued.encrypted_payload=? AND queued.due=? AND queued.expires=?)
+              AND ?>MAX(?,unixepoch()) AND ${streamSave.sql})`)
+          .bind(current.token_hash,requestId,payloadHash,lease,now,now+86400,
+            current.token_hash,requestId,payloadHash,lease,values.id,name,url,bio,location,email,key,values.codeHash,values.expires,
+            VERSION,agreementHash,values.mail,email,values.payload,now,values.expires,claimed.lease_until,now,...streamSave.values)
       ]);
       const complete=await env.DB.prepare("SELECT * FROM registration_requests WHERE session_hash=? AND request_id=? AND state='complete'").bind(current.token_hash,requestId).first();
-      if(!complete)throw new HttpError(409,'This signup is still processing. Please try again shortly.');
+      if(!complete){await assertStreamSaveCheck(env,streamSave);throw new HttpError(409,'This signup is still processing. Please try again shortly.');}
       return registrationResponse(env,current,complete,now);
     }catch(error){
       try{await env.DB.prepare("UPDATE registration_requests SET lease_until=0 WHERE session_hash=? AND request_id=? AND lease_token=? AND state='pending'").bind(current.token_hash,requestId,lease).run();}catch{}
+      // An invalidated proof or failed transaction must not retain an orphaned
+      // private upload. Never delete artwork that a completed save references.
+      if(uploadedKey)try{if(!await env.DB.prepare('SELECT 1 FROM stations WHERE artwork_key=? UNION SELECT 1 FROM station_edits WHERE artwork_key=?').bind(uploadedKey,uploadedKey).first())await env.MEDIA.delete?.('sanitized/'+uploadedKey);}catch{}
+      // A failed final assertion has already rolled the transaction back. Use
+      // the public proof error when it expired; otherwise a lost lease is a
+      // retryable signup conflict rather than an internal SQL error.
+      try{await assertStreamSaveCheck(env,streamSave);}catch(proofError){if(proofError instanceof HttpError&&proofError.status===428)throw proofError;}
+      if(String(error?.message||'').includes("state IN ('pending','complete')"))throw new HttpError(409,'This signup changed while it was processing. Please try again.');
       throw error;
     }
   }
@@ -302,7 +331,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(currentStation.station)await attachStreamCheck(env,current.token_hash,consumed.station_code,(currentStation.pending||currentStation.station).stream_url,currentStation.pending?.revision||'initial',now);
     const approved=await screenStation(env,consumed.station_code,fetch,now);
     const afterCheck=await stationState(env,consumed.station_code),streamRequired=afterCheck.station?!await streamPublicationAllowed(env,afterCheck.station,afterCheck.pending,now):true;
-    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?(streamRequired?'Email verified. Your station is saved privately. Check your stream or request review.':'Email verified. Your station is awaiting safety review.'):'Signed in.',station_code:String(consumed.station_code),owner_expires:now+1800,server_time:now,registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved,stream_check_required:streamRequired});
+    return json({status:'ok',message:approved?'Station added successfully!':consumed.purpose==='registration'?(streamRequired?'Email verified. Test your stream before saving your station.':'Email verified. Your station is awaiting safety review.'):'Signed in.',station_code:String(consumed.station_code),owner_expires:now+1800,server_time:now,registration_completed:consumed.purpose==='registration',review_required:consumed.purpose==='registration'&&!approved,stream_check_required:streamRequired});
   }
   if(path==='/api/owner/station'){
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -311,24 +340,31 @@ export async function authRoutes(request,env,now,deps={human}){
     if(typeof body.revision!=='string'||body.revision!==await ownerRevision(env,station,pending))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     const draft=pending||station,name=stationName(body.name===undefined?draft.name:body.name),url=streamUrl(body.stream_url),bio=String(body.bio||'').trim();
     if(bio.length>250)throw new HttpError(400,'Bio must be 250 characters or fewer.');
-    const key=body.artwork?await artwork(env,body.artwork):draft.artwork_key;
+    const streamSave=await requireStreamSaveCheck(env,current.token_hash,url,now,station);
+    await assertStreamSaveCheck(env,streamSave);
+    const key=body.artwork?await artwork(env,body.artwork,undefined,()=>assertStreamSaveCheck(env,streamSave)):draft.artwork_key;
     const guard=stationStateGuard(station,pending),editRevision=randomHex(16);
     if(name===draft.name&&url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key){
+      await assertStreamSaveCheck(env,streamSave);
       if(!await env.DB.prepare('SELECT 1 WHERE '+guard.sql).bind(...guard.values).first())throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
-      await attachStreamCheck(env,current.token_hash,station.code,url,pending?.revision||'initial',now);
+      await attachStreamCheck(env,current.token_hash,station.code,url,pending?.revision||'initial',now,streamSave);
+      await assertStreamSaveCheck(env,streamSave);
       const approved=station.status==='published'&&!pending?true:await screenStation(env,station.code,fetch,now,pending?.revision);
       const latest=await stationState(env,station.code);
       const sameTarget=latest.pending?.revision===pending?.revision&&(latest.pending||latest.station?.name===name&&latest.station?.stream_url===url&&latest.station?.bio===bio&&latest.station?.artwork_key===key),promoted=approved&&!latest.pending&&latest.station?.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key;
       if(!latest.station||['deleted','suspended'].includes(latest.station.status)||!sameTarget&&!promoted)throw new HttpError(409,'This station changed. Refresh and review it again.');
       const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);
-      return json({status:'ok',unchanged:station.status==='published'&&!pending||!approved,review_required:!approved,stream_check_required:streamRequired,message:station.status==='published'&&!pending?'No changes to save.':approved?'Station saved successfully.':streamRequired?'Station saved privately. Check your stream or request review.':'Station saved for safety review.'});
+      return json({status:'ok',unchanged:station.status==='published'&&!pending||!approved,review_required:!approved,stream_check_required:streamRequired,message:station.status==='published'&&!pending?'No changes to save.':approved?'Station saved successfully.':streamRequired?'Your stream check is no longer current. Test your stream again before saving.':'Station saved for safety review.'});
     }
     const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name)
-      SELECT ?,?,?,?,?,?,?,? WHERE ${guard.sql}
+      SELECT ?,?,?,?,?,?,?,? WHERE ${guard.sql} AND ${streamSave.sql}
       ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at,name=excluded.name RETURNING revision`)
-      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,...guard.values).first();
-    if(!changed)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
-    await attachStreamCheck(env,current.token_hash,station.code,url,editRevision,now);
+      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,...guard.values,...streamSave.values).first();
+    if(!changed){
+      if(body.artwork&&key!==draft.artwork_key)try{if(!await env.DB.prepare('SELECT 1 FROM stations WHERE artwork_key=? UNION SELECT 1 FROM station_edits WHERE artwork_key=?').bind(key,key).first())await env.MEDIA.delete?.('sanitized/'+key);}catch{}
+      await assertStreamSaveCheck(env,streamSave);throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
+    }
+    await attachStreamCheck(env,current.token_hash,station.code,url,editRevision,now,streamSave);
     let approved=await screenStation(env,station.code,fetch,now,editRevision);
     const latest=await stationState(env,station.code);
     if(!latest.station||['deleted','suspended'].includes(latest.station.status))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
@@ -337,7 +373,7 @@ export async function authRoutes(request,env,now,deps={human}){
       if(!approved)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     }
     const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);
-    return json({status:'ok',review_required:!approved,stream_check_required:streamRequired,message:approved?'Changes saved successfully.':streamRequired?'Changes saved privately. Check your stream or request review.':'Changes saved for safety review.'});
+    return json({status:'ok',review_required:!approved,stream_check_required:streamRequired,message:approved?'Changes saved successfully.':streamRequired?'Your stream check is no longer current. Test your stream again before saving.':'Changes saved for safety review.'});
   }
   return null;
 }

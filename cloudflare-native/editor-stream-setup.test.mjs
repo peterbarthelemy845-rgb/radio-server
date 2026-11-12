@@ -85,3 +85,7 @@ test('owner may enter the port first and retain it while completing the remainin
  f.input('ownerStreamHost','stream.example.com');f.input('ownerStreamProtocol','http');f.input('ownerStreamPath','/live');assert.equal(n.get('ownerStreamPort').value,'8000');assert.equal(f.prepare(),true);assert.equal(f.url.value,'http://stream.example.com:8000/live');
  f.input('ownerStreamPort','');assert.equal(f.prepare(),true);assert.equal(f.url.value,'http://stream.example.com/live');
 });
+
+test('a proof-blocked Save button does not freeze provider choices, server typing or Test preparation',()=>{
+ const f=fixture(''),n=f.nodes;n.get('ownerSave').disabled=true;f.select('icecast');assert.equal(f.choices.find(choice=>choice.checked).value,'icecast');assert.equal(n.get('ownerStreamHost').disabled,false);f.input('ownerStreamPort','8020');f.input('ownerStreamHost','162.244.81.219');f.input('ownerStreamProtocol','http');f.input('ownerStreamPath','/live');assert.equal(f.prepare(),true);assert.equal(f.url.value,'http://162.244.81.219:8020/live');assert.equal(n.get('ownerSave').disabled,true);
+});

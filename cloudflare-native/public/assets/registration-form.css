@@ -61,6 +61,8 @@
 :is(#register,#editor) .stream-test-row>span{font-size:10px;line-height:1.4;color:#617694}
 #register #streamTestStatus{font-size:12px;line-height:1.45;margin:8px 0 0;overflow-wrap:anywhere}
 #register #streamTestStatus:empty,#register .human:empty{margin:0}
+#register .registration-save-hint{margin:8px 0 0;font-size:12px;line-height:1.4;color:#526984}
+#register .registration-save-hint[hidden]{display:none}
 #register #streamTestStatus[data-state=success]{color:#177347}
 #register #streamTestStatus[data-state=invalid],#register #streamTestStatus[data-state=error]{color:#a22832}
 #register #streamTestStatus[data-state=unconfirmed]{color:#795215}

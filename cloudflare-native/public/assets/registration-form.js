@@ -11,10 +11,11 @@
  let registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast',registrationSource='url',registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
  let registrationManualUrl='',registrationManualSource='ip',registrationManualEdited=false,registrationDirectDraft=registrationUrl.value,registrationDirectEdited=Boolean(registrationUrl.value);
  let registrationExpanded=!registrationPanel||registrationProviderFields.some(field=>field.checked);
+ let registrationPassed=null,registrationProofTimer;
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
  const registrationIsManual=value=>['icecast','shoutcast'].includes(value);
  function registrationManualMode(){return registrationHasProviders&&registrationIsManual(registrationProvider);}
- function registrationBusy(){return ['1','true'].includes(registrationForm.dataset.busy)||registrationForm.querySelector('button[type="submit"]')?.disabled===true;}
+ function registrationBusy(){return ['1','true'].includes(registrationForm.dataset.busy)||registrationForm.getAttribute?.('aria-busy')==='true';}
  function registrationProviderHelp(){
   if(!registrationProviderHelpNode)return;
   const [key,fallback]=registrationProvider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:registrationProvider==='other'?['registration.providerOther','Paste your complete public listening URL.']:['registration.providerIcecast','Enter your public server, port and mount point. Choose HTTPS for SSL.'];
@@ -53,7 +54,25 @@
   try{displayed=window.showStreamTestResult?.({source:'registration',key,fallback,state})===true;}catch{}
   registrationNodes.streamTestStatus.hidden=displayed;
  }
- function registrationInvalidate(){registrationVersion++;registrationActiveTest=null;try{window.closeStreamTestResult?.('registration');}catch{}registrationStatus('','');}
+ function registrationClearPass(){registrationPassed=null;if(typeof clearTimeout==='function')clearTimeout(registrationProofTimer);registrationProofTimer=undefined;}
+ function registrationInvalidate(clearPass=true){registrationVersion++;registrationActiveTest=null;if(clearPass)registrationClearPass();try{window.closeStreamTestResult?.('registration');}catch{}registrationStatus('','');}
+ function registrationProofReady(){
+  if(!registrationPassed||registrationActiveTest)return false;
+  if(registrationPassed.expires<=Date.now()){registrationClearPass();return false;}
+  try{if(registrationParse(registrationUrl.value).href===registrationPassed.url)return true;}catch{}
+  registrationClearPass();return false;
+ }
+ function registrationPass(value){
+  registrationClearPass();registrationPassed={url:value,expires:Date.now()+55*60*1000};
+  if(typeof setTimeout==='function'){registrationProofTimer=setTimeout(()=>{registrationClearPass();registrationControls();},55*60*1000);registrationProofTimer?.unref?.();}
+ }
+ window.registrationStreamSaveAllowed=(report=false)=>{
+  const allowed=registrationProofReady();
+  registrationControls();
+  if(!allowed&&report){registrationStatus('registration.passRequired','Test your stream before saving.','invalid');if(!registrationNodes.testStream.disabled)registrationNodes.testStream.focus();}
+  return allowed;
+ };
+ window.invalidateRegistrationStreamSaveGate=()=>{registrationClearPass();registrationControls();};
  function registrationValidateName(report=false){
   if(!registrationName)return true;
   const name=registrationName.value.trim(),missing=!name,invalid=missing||/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96;
@@ -99,6 +118,9 @@
   if(registrationPanel){registrationUrl.disabled=inactive||submitting;registrationUrl.required=!inactive&&!registrationManualMode();}
   registrationNodes.testStream.disabled=Boolean(registrationActiveTest)||!registrationValid||submitting||inactive;
   registrationNodes.copyGeneratedStream.disabled=!registrationValid||submitting||inactive;
+  const save=registrationForm.querySelector('button[type="submit"]'),passed=registrationProofReady(),hint=document.getElementById('streamSaveHint');
+  if(save)save.disabled=submitting||inactive||!passed;
+  if(hint){hint.hidden=passed;hint.setAttribute('data-i18n','registration.passRequired');hint.textContent=registrationText('registration.passRequired','Test your stream before saving.');}
  }
  function registrationCompose(){
   const host=registrationNodes.streamHost.value.trim(),port=registrationNodes.streamPort.value.trim(),protocol=registrationNodes.streamProtocol.value,path=registrationNodes.streamPath.value.trim()||'/';
@@ -137,7 +159,7 @@
   if(!registrationExpanded){for(const field of registrationProviderFields)field.checked=field.value==='icecast';registrationSelectProvider('icecast');}
   return registrationValidate(true,true);
  };
- registrationForm.addEventListener('form-busy-changed',()=>{if(registrationBusy())registrationInvalidate();registrationControls();});
+ registrationForm.addEventListener('form-busy-changed',()=>{if(registrationBusy())registrationInvalidate(false);registrationControls();});
  registrationNodes.copyGeneratedStream.onclick=async()=>{
   if(registrationBusy()||!registrationExpanded||!registrationValidate(true,true))return;const value=registrationUrl.value,version=registrationVersion,current=()=>registrationVersion===version&&registrationUrl.value===value&&!registrationBusy()&&!document.getElementById('register').hidden&&registrationExpanded;
   try{if(!window.isSecureContext||!navigator.clipboard?.writeText)throw new Error();await navigator.clipboard.writeText(value);if(current())registrationStatus('registration.urlCopied','Stream URL copied.','copy');}
@@ -145,18 +167,18 @@
  };
  registrationNodes.testStream.onclick=async()=>{
   if(registrationBusy()||!registrationExpanded||registrationActiveTest||!registrationValidate(true,true))return;
+  registrationClearPass();
   const target=new URL(registrationUrl.value);
-  if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationTerminal('registration.playlistTestUnavailable','This playlist link cannot be checked automatically. You can still save privately and request review.','unconfirmed');return;}
+  if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationControls();registrationTerminal('registration.playlistTestUnavailable','Use a direct listening link, then test again before saving.','unconfirmed');return;}
   const version=registrationVersion,value=registrationUrl.value,attempt={};registrationActiveTest=attempt;registrationControls();
   registrationStatus('registration.checking','Checking the stream. No audio will play.','checking');
   const current=()=>registrationActiveTest===attempt&&registrationVersion===version&&registrationUrl.value===value&&!registrationBusy()&&!document.getElementById('register').hidden&&registrationExpanded;
   try{
    const turnstile_token=await human(registrationNodes.streamTestHuman,'stream-check');if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:value,turnstile_token});if(!current())return;
-   if(response.result==='audio_response'&&response.audio_response===true)registrationTerminal('registration.audioResponse','Stream check passed','success');
-   else if(response.result==='not_confirmed'&&response.audio_response===false)registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save privately and request review.','unconfirmed');
-   else registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save privately and request review.','unconfirmed');
-  }catch(error){if(current())registrationTerminal('',String(error.message||'The stream check did not complete. You can still save it.').slice(0,400),'error');}
+   if(response.result==='audio_response'&&response.audio_response===true){registrationPass(value);registrationTerminal('registration.audioResponse','Stream check passed','success');}
+   else registrationTerminal('registration.notConfirmed','Stream test failed. Check the details and try again.','unconfirmed');
+  }catch(error){if(current())registrationTerminal('',String(error.message||'The stream check did not complete. Test again before saving.').slice(0,400),'error');}
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };
  new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});

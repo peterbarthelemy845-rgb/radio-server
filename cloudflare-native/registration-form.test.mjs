@@ -6,23 +6,92 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 function registrationFixture({url='',secure=true,clipboard=true,providerControls=false,provider='icecast',inline=false}={}){
- const nodes=new Map(),observers=[],windowEvents={},humanCalls=[],apiCalls=[],copied=[];let dirty=0,clipboardResult=Promise.resolve(),humanResult=Promise.resolve('checked-token'),apiResult=Promise.resolve({result:'not_confirmed',audio_response:false,message:'Not confirmed. You can still save.'});
- const ids=['register','registerForm','stationName','streamManualSetup','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman','saveRegistration'];
- function element(id){const listeners={};const node={id,value:'',hidden:false,open:false,disabled:false,readOnly:false,required:false,dataset:{},attrs:{},validity:{badInput:false},validationMessage:'',textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},querySelector(){return id==='registerForm'?nodes.get('saveRegistration'):null;},setCustomValidity(value){this.validationMessage=value;},reportValidity(){this.reported=true;return !this.validationMessage;},focus(){document.activeElement=this;},select(){this.selected=true;},addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatchEvent(event){for(const fn of listeners[event.type]||[])fn(event);if(event.bubbles&&id!=='registerForm')nodes.get('registerForm').dispatchEvent(event);return true;}};nodes.set(id,node);return node;}
+ const nodes=new Map(),observers=[],windowEvents={},humanCalls=[],apiCalls=[],copied=[],timers=new Map();let dirty=0,now=1_800_000_000_000,timerId=0,clipboardResult=Promise.resolve(),humanResult=Promise.resolve('checked-token'),apiResult=Promise.resolve({result:'not_confirmed',audio_response:false,message:'Not confirmed.'});
+ const ids=['register','registerForm','stationName','stationEmail','stationLogo','streamManualSetup','streamAddressFields','streamHost','streamPort','streamProtocol','streamPath','streamUrlInput','copyGeneratedStream','testStream','streamTestStatus','streamTestHuman','streamSaveHint','saveRegistration'];
+ function element(id){const listeners={};const node={id,value:'',hidden:false,open:false,disabled:false,readOnly:false,required:false,dataset:{},attrs:{},validity:{badInput:false},validationMessage:'',textContent:'',getAttribute(key){return Object.hasOwn(this.attrs,key)?this.attrs[key]:null;},setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},querySelector(){return id==='registerForm'?nodes.get('saveRegistration'):null;},setCustomValidity(value){this.validationMessage=value;},reportValidity(){this.reported=true;return !this.validationMessage;},focus(){document.activeElement=this;},select(){this.selected=true;},addEventListener(type,fn){(listeners[type]??=[]).push(fn);},dispatchEvent(event){for(const fn of listeners[event.type]||[])fn(event);if(event.bubbles&&id!=='registerForm')nodes.get('registerForm').dispatchEvent(event);return true;}};nodes.set(id,node);return node;}
  ids.forEach(element);const document={activeElement:null,getElementById:id=>nodes.get(id)};nodes.get('registerForm').elements={name:nodes.get('stationName')};nodes.get('stationName').value='Test station';nodes.get('streamProtocol').value='https';nodes.get('streamUrlInput').value=url;nodes.get('registerForm').addEventListener('input',()=>{dirty++;});
  const providers=providerControls?['icecast','shoutcast','other'].map(value=>{const field=element('provider-'+value);field.name='stream_provider';field.type='radio';field.value=value;field.checked=value===provider;return field;}):[];if(providerControls){element('streamProviderHelp');element('streamUrlLabel');}nodes.get('registerForm').querySelectorAll=selector=>selector==='input[name="stream_provider"]'?providers:[];
  if(inline){element('streamSetupPanel');element('streamUrlRow');}
  const window={isSecureContext:secure,addEventListener(type,fn){windowEvents[type]=fn;}};
  const navigator={clipboard:clipboard?{async writeText(value){copied.push(value);return clipboardResult;}}:undefined};
- const context=vm.createContext({window,document,navigator,URL,Event,Promise,TextEncoder,queueMicrotask,MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(target){this.target=target;}},human:async(container,action)=>{humanCalls.push({container,action});return humanResult;},api:async(path,body)=>{apiCalls.push({path,body});return apiResult;},Audio:class{constructor(){throw Error('Registration must never play audio.');}},fetch(){throw Error('Registration may use only the authenticated stream-check API.');}});
+ const context=vm.createContext({window,document,navigator,URL,Event,Promise,TextEncoder,queueMicrotask,Date:class extends Date{static now(){return now;}},setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,at:now+ms});return id;},clearTimeout(id){timers.delete(id);},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(target){this.target=target;}},human:async(container,action)=>{humanCalls.push({container,action});return humanResult;},api:async(path,body)=>{apiCalls.push({path,body});return apiResult;},Audio:class{constructor(){throw Error('Registration must never play audio.');}},fetch(){throw Error('Registration may use only the authenticated stream-check API.');}});
  vm.runInContext(readFileSync(new URL('./public/assets/registration-form.js',import.meta.url),'utf8'),context);
+ context.$=id=>nodes.get(id);context.formIsBusy=()=>false;context.registrationMessage=()=>{};context.FormData=class{constructor(){throw Error('Blocked registration must not construct a submission payload.');}};
+ const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');vm.runInContext(site.slice(site.indexOf("$('registerForm').onsubmit=async event=>"),site.indexOf("$('loginForm').onsubmit=async event=>")),context);
  function input(id,value){nodes.get(id).value=value;nodes.get(id).dispatchEvent(new Event('input',{bubbles:true}));}
  function address(value){input('streamUrlInput',value);}
  async function flush(){await Promise.resolve();await Promise.resolve();await Promise.resolve();}
- return {nodes,window,document,input,address,flush,humanCalls,apiCalls,copied,providers,provider(value){for(const field of providers)field.checked=field.value===value;providers.find(field=>field.checked)?.dispatchEvent(new Event('change',{bubbles:true}));},providerClick(value){const field=providers.find(field=>field.value===value),changed=!field.checked;for(const choice of providers)choice.checked=choice===field;if(changed)field.dispatchEvent(new Event('change',{bubbles:true}));field.dispatchEvent(new Event('click',{bubbles:true}));},dirty:()=>dirty,prepare:()=>window.prepareRegistrationStream(),copyResult(result){clipboardResult=result;},human(result){humanResult=result;},result(result){apiResult=result;},async reset(){nodes.get('registerForm').dispatchEvent(new Event('reset'));for(const id of ['streamHost','streamPort','streamPath','streamUrlInput'])nodes.get(id).value='';nodes.get('streamProtocol').value='https';for(const field of providers)field.checked=!inline&&field.value==='icecast';await flush();},hide(){nodes.get('register').hidden=true;for(const observer of observers)if(observer.target===nodes.get('register'))observer.fn([]);},language(){windowEvents['app-language-changed']?.();}};
+ return {nodes,window,document,input,address,flush,humanCalls,apiCalls,copied,providers,timers,submit:()=>nodes.get('registerForm').onsubmit({target:nodes.get('registerForm'),preventDefault(){}}),advance(ms,{fire=true}={}){now+=ms;if(fire)for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.fn();}},busy(on){const form=nodes.get('registerForm');if(on){form.dataset.busy='1';form.setAttribute('aria-busy','true');}else{delete form.dataset.busy;form.removeAttribute('aria-busy');}form.dispatchEvent(new Event('form-busy-changed'));},allowed:(report=false)=>window.registrationStreamSaveAllowed(report),provider(value){for(const field of providers)field.checked=field.value===value;providers.find(field=>field.checked)?.dispatchEvent(new Event('change',{bubbles:true}));},providerClick(value){const field=providers.find(field=>field.value===value),changed=!field.checked;for(const choice of providers)choice.checked=choice===field;if(changed)field.dispatchEvent(new Event('change',{bubbles:true}));field.dispatchEvent(new Event('click',{bubbles:true}));},dirty:()=>dirty,prepare:()=>window.prepareRegistrationStream(),copyResult(result){clipboardResult=result;},human(result){humanResult=result;},result(result){apiResult=result;},async reset(){nodes.get('registerForm').dispatchEvent(new Event('reset'));for(const id of ['streamHost','streamPort','streamPath','streamUrlInput'])nodes.get(id).value='';nodes.get('streamProtocol').value='https';for(const field of providers)field.checked=!inline&&field.value==='icecast';await flush();},hide(){nodes.get('register').hidden=true;for(const observer of observers)if(observer.target===nodes.get('register'))observer.fn([]);},language(){windowEvents['app-language-changed']?.();}};
 }
 
 function inlineFixture(options={}){return registrationFixture({providerControls:true,provider:'',inline:true,...options});}
+
+test('a usable stream test stays enabled while Save requires a successful current check',async()=>{
+ const f=inlineFixture(),n=f.nodes;assert.equal(n.get('saveRegistration').disabled,true);assert.equal(f.allowed(),false);assert.equal(n.get('streamSaveHint').hidden,false);assert.equal(n.get('streamSaveHint').textContent,'Test your stream before saving.');
+ f.providerClick('other');f.address('HTTPS://STREAM.EXAMPLE.COM:443/Live?sid=2');assert.equal(f.prepare(),true);assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);assert.equal(n.get('testStream').disabled,false);assert.equal(n.get('streamUrlInput').disabled,false);
+ f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();assert.equal(f.apiCalls[0].body.stream_url,'https://stream.example.com/Live?sid=2');assert.equal(f.allowed(),true);assert.equal(n.get('saveRegistration').disabled,false);assert.equal(n.get('streamSaveHint').hidden,true);assert.equal(n.get('testStream').disabled,false);
+});
+
+test('Enter or a direct submit cannot register untested, failed, wrong-URL, expired or in-flight streams',async()=>{
+ for(const condition of ['untested','failed','wrong URL','expired','checking','missing hook']){
+  const f=registrationFixture({url:'https://stream.example.com/live'}),n=f.nodes;let checking,pending;
+  if(['wrong URL','expired'].includes(condition)){f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();}
+  if(condition==='failed')await n.get('testStream').onclick();
+  if(condition==='wrong URL')n.get('streamUrlInput').value='https://stream.example.com/other?sid=2';
+  if(condition==='expired')f.advance(55*60*1000,{fire:false});
+  if(condition==='checking'){pending=deferred();f.result(pending.promise);checking=n.get('testStream').onclick();await f.flush();}
+  if(condition==='missing hook')delete f.window.registrationStreamSaveAllowed;
+  const apiCount=f.apiCalls.length,humanCount=f.humanCalls.length;await f.submit();assert.equal(f.apiCalls.length,apiCount,condition);assert.equal(f.humanCalls.length,humanCount,condition);
+  if(checking){pending.resolve({result:'audio_response',audio_response:true});await checking;}
+ }
+});
+
+test('successful stream proof belongs to the exact current URL and cannot survive editing back',async()=>{
+ const url='https://stream.example.com/Live?sid=2&source=a%2Fb',f=registrationFixture({url}),n=f.nodes;f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();assert.equal(f.allowed(),true);
+ n.get('streamUrlInput').value='https://stream.example.com/live?sid=2&source=a%2Fb';assert.equal(f.allowed(),false,'a direct value change cannot borrow proof for another path');n.get('streamUrlInput').value=url;assert.equal(f.allowed(),false,'a rejected URL change invalidates the old proof');
+ await n.get('testStream').onclick();assert.equal(f.allowed(),true);f.address('https://stream.example.com/Live?sid=3&source=a%2Fb');assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);f.address(url);assert.equal(f.allowed(),false,'editing back requires another stream test');
+});
+
+test('provider changes and server detail edits require a fresh stream pass',async()=>{
+ const f=registrationFixture({providerControls:true,url:'https://stream.example.com/live'}),n=f.nodes;f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();assert.equal(f.allowed(),true);f.provider('shoutcast');assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);
+ await n.get('testStream').onclick();assert.equal(f.allowed(),true);f.input('streamPath','/next');assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);assert.equal(n.get('testStream').disabled,false);
+});
+
+test('station metadata and a failed Save preserve a still-current stream pass',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'}),n=f.nodes;f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();
+ f.input('stationName','Renamed station');f.input('stationEmail','updated@example.com');f.input('stationLogo','updated-logo.png');assert.equal(f.allowed(),true);assert.equal(n.get('saveRegistration').disabled,false);
+ f.busy(true);assert.equal(n.get('saveRegistration').disabled,true);assert.equal(n.get('testStream').disabled,true);f.busy(false);assert.equal(f.allowed(),true);assert.equal(n.get('saveRegistration').disabled,false);assert.equal(n.get('testStream').disabled,false);
+});
+
+test('aria busy alone suspends stream controls and returning to idle preserves a pass',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'}),n=f.nodes,form=n.get('registerForm');f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();form.setAttribute('aria-busy','true');form.dispatchEvent(new Event('form-busy-changed'));assert.equal(n.get('testStream').disabled,true);assert.equal(n.get('saveRegistration').disabled,true);form.removeAttribute('aria-busy');form.dispatchEvent(new Event('form-busy-changed'));assert.equal(f.allowed(),true);assert.equal(n.get('testStream').disabled,false);assert.equal(n.get('saveRegistration').disabled,false);
+});
+
+test('a server-requested retest revokes the local pass and refreshes the Save controls',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'}),n=f.nodes;f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();f.window.invalidateRegistrationStreamSaveGate();assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);assert.equal(n.get('streamSaveHint').hidden,false);assert.equal(n.get('testStream').disabled,false);
+});
+
+test('starting a new stream test revokes the old pass and failed results keep Save blocked',async()=>{
+ for(const result of [{result:'not_confirmed',audio_response:false},{result:'audio_response',audio_response:false},{result:'not_confirmed',audio_response:true},null]){
+  const f=registrationFixture({url:'https://stream.example.com/live'}),n=f.nodes;f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();assert.equal(f.allowed(),true);const pending=deferred();f.result(pending.promise);const checking=n.get('testStream').onclick();await f.flush();assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);pending.resolve(result);await checking;assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);assert.equal(n.get('testStream').disabled,false);
+ }
+ const f=registrationFixture({url:'https://stream.example.com/live'});f.result({result:'audio_response',audio_response:true});await f.nodes.get('testStream').onclick();f.result(Promise.reject(Error('Stream check unavailable.')));await f.nodes.get('testStream').onclick();assert.equal(f.allowed(),false);assert.equal(f.nodes.get('saveRegistration').disabled,true);
+});
+
+test('a successful stream check expires after 55 minutes even if its timer has not run',async()=>{
+ for(const fire of [false,true]){
+  const f=registrationFixture({url:'https://stream.example.com/live'}),n=f.nodes;f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();f.advance(55*60*1000-1,{fire});assert.equal(f.allowed(),true);assert.equal(n.get('saveRegistration').disabled,false);f.advance(1,{fire});assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);assert.equal(n.get('streamSaveHint').hidden,false);assert.equal(n.get('testStream').disabled,false);
+ }
+});
+
+test('registration reset revokes a passing check and an old completion cannot restore it',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'}),n=f.nodes;f.result({result:'audio_response',audio_response:true});await n.get('testStream').onclick();assert.equal(f.allowed(),true);await f.reset();f.address('https://stream.example.com/live');assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);
+ const pending=deferred();f.result(pending.promise);const checking=n.get('testStream').onclick();await f.flush();await f.reset();f.address('https://stream.example.com/live');pending.resolve({result:'audio_response',audio_response:true});await checking;assert.equal(f.allowed(),false);assert.equal(n.get('saveRegistration').disabled,true);
+});
+
+test('the pass-required hint translates without disabling stream setup',()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'});f.window.appI18n={t:key=>key==='registration.passRequired'?'Teste difizyon an anvan ou anrejistre.':key};f.language();assert.equal(f.nodes.get('streamSaveHint').textContent,'Teste difizyon an anvan ou anrejistre.');assert.equal(f.nodes.get('saveRegistration').disabled,true);assert.equal(f.nodes.get('testStream').disabled,false);assert.equal(f.nodes.get('streamUrlInput').disabled,false);
+});
 
 test('current stream test completion opens one result popup and translation never reopens it',async()=>{
  const f=registrationFixture({url:'https://stream.example.com/live'}),calls=[],closed=[],pending=deferred(),notice=f.nodes.get('streamTestStatus');f.window.showStreamTestResult=result=>{calls.push(result);return true;};f.window.closeStreamTestResult=source=>closed.push(source);f.result(pending.promise);const checking=f.nodes.get('testStream').onclick();await f.flush();assert.equal(calls.length,0);assert.equal(notice.dataset.state,'checking');assert.equal(notice.hidden,false);pending.resolve({result:'audio_response',audio_response:true});await checking;assert.equal(calls.length,1);assert.equal(calls[0].source,'registration');assert.equal(calls[0].key,'registration.audioResponse');assert.equal(calls[0].state,'success');assert.equal(notice.hidden,true);f.window.appI18n={t:key=>key==='registration.audioResponse'?'Sèvè a reponn.':key};f.language();assert.equal(notice.textContent,'Sèvè a reponn.');assert.equal(notice.hidden,true);assert.equal(calls.length,1);
@@ -30,7 +99,7 @@ test('current stream test completion opens one result popup and translation neve
 });
 
 test('result popup falls back to visible inline feedback if absent, declined or unavailable',async()=>{
- for(const behavior of ['missing','false','throws']){const f=registrationFixture({url:'https://stream.example.com/live'}),notice=f.nodes.get('streamTestStatus');let calls=0;if(behavior!=='missing')f.window.showStreamTestResult=()=>{calls++;if(behavior==='throws')throw Error('Popup unavailable');return false;};await f.nodes.get('testStream').onclick();assert.equal(notice.hidden,false,behavior);assert.equal(notice.dataset.state,'unconfirmed',behavior);assert.match(notice.textContent,/could not be confirmed/,behavior);assert.equal(calls,behavior==='missing'?0:1);f.language();assert.equal(notice.hidden,false);}
+ for(const behavior of ['missing','false','throws']){const f=registrationFixture({url:'https://stream.example.com/live'}),notice=f.nodes.get('streamTestStatus');let calls=0;if(behavior!=='missing')f.window.showStreamTestResult=()=>{calls++;if(behavior==='throws')throw Error('Popup unavailable');return false;};await f.nodes.get('testStream').onclick();assert.equal(notice.hidden,false,behavior);assert.equal(notice.dataset.state,'unconfirmed',behavior);assert.match(notice.textContent,/Stream test failed/,behavior);assert.equal(calls,behavior==='missing'?0:1);f.language();assert.equal(notice.hidden,false);}
 });
 
 test('playlist terminal results use the popup without any stream-check request',async()=>{
@@ -90,7 +159,7 @@ test('inline reset clears all entry drafts and collapses back to the compact uns
 });
 
 test('busy signup cannot expand unselected setup or change or re-enable an active entry mode',()=>{
- const f=inlineFixture(),n=f.nodes;n.get('saveRegistration').disabled=true;f.providerClick('other');f.language();assert.equal(n.get('streamSetupPanel').hidden,true);assert.equal(f.providers.some(field=>field.checked),false);n.get('saveRegistration').disabled=false;f.providerClick('icecast');f.input('streamHost','stream.example.com');n.get('saveRegistration').disabled=true;f.provider('other');f.language();assert.equal(f.providers.find(field=>field.checked).value,'icecast');assert.equal(n.get('streamUrlRow').hidden,true);for(const id of ['streamHost','streamPort','streamProtocol','streamPath','streamUrlInput'])assert.equal(n.get(id).disabled,true);n.get('saveRegistration').disabled=false;n.get('registerForm').dispatchEvent(new Event('form-busy-changed'));assert.equal(n.get('streamHost').disabled,false);assert.equal(n.get('streamUrlInput').disabled,false);
+ const f=inlineFixture(),n=f.nodes;f.busy(true);f.providerClick('other');f.language();assert.equal(n.get('streamSetupPanel').hidden,true);assert.equal(f.providers.some(field=>field.checked),false);f.busy(false);f.providerClick('icecast');f.input('streamHost','stream.example.com');f.busy(true);f.provider('other');f.language();assert.equal(f.providers.find(field=>field.checked).value,'icecast');assert.equal(n.get('streamUrlRow').hidden,true);for(const id of ['streamHost','streamPort','streamProtocol','streamPath','streamUrlInput'])assert.equal(n.get(id).disabled,true);f.busy(false);assert.equal(n.get('streamHost').disabled,false);assert.equal(n.get('streamUrlInput').disabled,false);
 });
 
 test('inline mode changes and navigation ignore obsolete bot checks and stream results',async()=>{
@@ -98,10 +167,10 @@ test('inline mode changes and navigation ignore obsolete bot checks and stream r
  const pending=deferred();f.human(Promise.resolve('checked-token'));f.result(pending.promise);const second=n.get('testStream').onclick();await f.flush();f.hide();pending.resolve({result:'audio_response',audio_response:true});await second;assert.notEqual(n.get('streamTestStatus').dataset.state,'success');assert.equal(f.apiCalls.length,1);
 });
 
-test('Save stays allowed during an optional test and busy start prevents its late check or status',async()=>{
- const f=inlineFixture(),n=f.nodes,bot=deferred();f.providerClick('other');f.address('https://stream.example.com/live');f.human(bot.promise);const first=n.get('testStream').onclick();await f.flush();assert.equal(n.get('saveRegistration').disabled,false);assert.equal(f.prepare(),true);
- n.get('saveRegistration').disabled=true;n.get('registerForm').dataset.busy='1';n.get('registerForm').dispatchEvent(new Event('form-busy-changed'));assert.equal(n.get('streamTestStatus').textContent,'');bot.resolve('obsolete-token');await first;assert.equal(f.apiCalls.length,0);assert.equal(n.get('streamTestStatus').textContent,'');assert.equal(n.get('testStream').disabled,true);
- n.get('saveRegistration').disabled=false;delete n.get('registerForm').dataset.busy;n.get('registerForm').dispatchEvent(new Event('form-busy-changed'));assert.equal(n.get('testStream').disabled,false);const response=deferred();f.human(Promise.resolve('checked-token'));f.result(response.promise);const second=n.get('testStream').onclick();await f.flush();assert.equal(f.apiCalls.length,1);n.get('saveRegistration').disabled=true;n.get('registerForm').dataset.busy='1';n.get('registerForm').dispatchEvent(new Event('form-busy-changed'));response.resolve({result:'audio_response',audio_response:true});await second;assert.equal(n.get('streamTestStatus').textContent,'');assert.equal(n.get('testStream').disabled,true);assert.equal(n.get('saveRegistration').disabled,true);
+test('Save stays blocked during a stream test and busy start prevents its late check or status',async()=>{
+ const f=inlineFixture(),n=f.nodes,bot=deferred();f.providerClick('other');f.address('https://stream.example.com/live');f.human(bot.promise);const first=n.get('testStream').onclick();await f.flush();assert.equal(n.get('saveRegistration').disabled,true);assert.equal(f.allowed(),false);assert.equal(f.prepare(),true);
+ f.busy(true);assert.equal(n.get('streamTestStatus').textContent,'');bot.resolve('obsolete-token');await first;assert.equal(f.apiCalls.length,0);assert.equal(n.get('streamTestStatus').textContent,'');assert.equal(n.get('testStream').disabled,true);
+ f.busy(false);assert.equal(n.get('testStream').disabled,false);const response=deferred();f.human(Promise.resolve('checked-token'));f.result(response.promise);const second=n.get('testStream').onclick();await f.flush();assert.equal(f.apiCalls.length,1);f.busy(true);response.resolve({result:'audio_response',audio_response:true});await second;assert.equal(n.get('streamTestStatus').textContent,'');assert.equal(n.get('testStream').disabled,true);assert.equal(n.get('saveRegistration').disabled,true);
 });
 
 test('late clipboard work cannot steal focus or show stale status after inline mode changes',async()=>{
@@ -126,7 +195,7 @@ test('server editing generates its URL, and switching modes preserves valid manu
  f.input('streamPath','/next-mount?sid=4');assert.equal(n.get('streamUrlInput').value,'http://stream.example.com:8443/next-mount?sid=4');
 });
 
-test('an invalid manual draft survives a direct-mode visit and hidden validation never blocks direct save',()=>{
+test('an invalid manual draft survives a direct-mode visit and hidden validation never blocks direct URL preparation',()=>{
  const f=registrationFixture({providerControls:true,url:'http://first.example.com:8000/live?sid=2'}),n=f.nodes;f.input('streamPort','99999');f.input('streamPath','//unfinished');assert.equal(f.prepare(),false);assert.equal(n.get('streamUrlInput').value,'');
  f.provider('other');assert.equal(n.get('streamUrlInput').value,'http://first.example.com:8000/live?sid=2');assert.equal(n.get('streamPort').value,'99999');assert.equal(n.get('streamPath').value,'//unfinished');assert.equal(n.get('streamPort').disabled,true);assert.equal(n.get('streamPort').validationMessage,'');assert.equal(f.prepare(),true);
  f.provider('shoutcast');assert.equal(n.get('streamPort').value,'99999');assert.equal(n.get('streamPath').value,'//unfinished');assert.equal(n.get('streamUrlInput').value,'');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,n.get('streamPort'));f.input('streamPort','9000');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,n.get('streamPath'));
@@ -148,7 +217,7 @@ test('provider switching invalidates an old stream check without extra requests 
  const f=registrationFixture({providerControls:true,url:'https://stream.example.com/live?sid=2'}),pending=deferred();f.result(pending.promise);const checking=f.nodes.get('testStream').onclick();await f.flush();f.provider('other');assert.equal(f.nodes.get('streamTestStatus').textContent,'');assert.equal(f.apiCalls.length,1);assert.deepEqual(Object.keys(f.apiCalls[0].body).sort(),['stream_url','turnstile_token']);pending.resolve({result:'audio_response',audio_response:true});await checking;assert.notEqual(f.nodes.get('streamTestStatus').dataset.state,'success');assert.equal(f.apiCalls.length,1);assert.equal(f.nodes.get('testStream').disabled,false);
 });
 
-test('both server and direct modes support copy and optional testing through the same safe endpoint',async()=>{
+test('both server and direct modes support copy and testing through the same safe endpoint',async()=>{
  const f=registrationFixture({providerControls:true,url:'http://stream.example.com:8000/;?sid=2'});for(const provider of ['icecast','shoutcast','other']){f.provider(provider);await f.nodes.get('copyGeneratedStream').onclick();assert.equal(f.copied.at(-1),'http://stream.example.com:8000/;?sid=2');await f.nodes.get('testStream').onclick();assert.equal(f.apiCalls.at(-1).body.stream_url,'http://stream.example.com:8000/;?sid=2');assert.equal(f.prepare(),true);}assert.equal(f.apiCalls.length,3);
 });
 
@@ -163,8 +232,8 @@ test('mode placeholder translation keys remain aligned after provider and langua
 });
 
 test('busy signup cannot change modes, re-enable builder fields, copy or start stream tests',async()=>{
- const f=registrationFixture({providerControls:true,url:'https://stream.example.com/live'}),n=f.nodes;n.get('saveRegistration').disabled=true;n.get('registerForm').dispatchEvent(new Event('form-busy-changed'));f.provider('other');f.language();assert.equal(f.providers.find(field=>field.checked).value,'icecast');assert.equal(n.get('streamManualSetup').hidden,false);assert.equal(n.get('streamUrlInput').readOnly,true);for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(n.get(id).disabled,true);await n.get('copyGeneratedStream').onclick();await n.get('testStream').onclick();assert.equal(f.copied.length,0);assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);
- n.get('saveRegistration').disabled=false;n.get('registerForm').dispatchEvent(new Event('form-busy-changed'));for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(n.get(id).disabled,false);f.provider('other');n.get('saveRegistration').disabled=true;f.language();n.get('saveRegistration').disabled=false;n.get('registerForm').dispatchEvent(new Event('form-busy-changed'));for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(n.get(id).disabled,true);
+ const f=registrationFixture({providerControls:true,url:'https://stream.example.com/live'}),n=f.nodes;f.busy(true);f.provider('other');f.language();assert.equal(f.providers.find(field=>field.checked).value,'icecast');assert.equal(n.get('streamManualSetup').hidden,false);assert.equal(n.get('streamUrlInput').readOnly,true);for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(n.get(id).disabled,true);await n.get('copyGeneratedStream').onclick();await n.get('testStream').onclick();assert.equal(f.copied.length,0);assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);
+ f.busy(false);for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(n.get(id).disabled,false);f.provider('other');f.busy(true);f.language();f.busy(false);for(const id of ['streamHost','streamPort','streamProtocol','streamPath'])assert.equal(n.get(id).disabled,true);
  n.get('registerForm').dataset.busy='1';f.provider('icecast');assert.equal(f.providers.find(field=>field.checked).value,'other');assert.equal(n.get('streamUrlInput').readOnly,false);
 });
 
@@ -218,10 +287,10 @@ test('direct and generated URLs fit the same 1024-character radio limit',()=>{
 test('invalid builder details clear a stale URL and focus the field that needs correcting',()=>{
  const f=registrationFixture();f.input('streamHost','STREAM.EXAMPLE.COM');assert.equal(f.nodes.get('streamUrlInput').value,'https://stream.example.com/');assert.equal(f.prepare(),true);
  f.input('streamPort','0');assert.equal(f.nodes.get('streamUrlInput').value,'');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,f.nodes.get('streamPort'));f.input('streamPort','65535');assert.equal(f.prepare(),true);f.input('streamPort','65536');assert.equal(f.prepare(),false);f.input('streamPort','');assert.equal(f.prepare(),true);
- f.input('streamPath','//elsewhere.example/live');assert.equal(f.prepare(),false);assert.equal(f.nodes.get('streamUrlInput').value,'');assert.equal(f.nodes.get('saveRegistration').disabled,false);
+ f.input('streamPath','//elsewhere.example/live');assert.equal(f.prepare(),false);assert.equal(f.nodes.get('streamUrlInput').value,'');assert.equal(f.nodes.get('saveRegistration').disabled,true);assert.equal(f.allowed(),false);
 });
 
-test('public IPv4 can be saved while private, credential, fragment, token and IPv6 URLs or details are rejected safely',()=>{
+test('public IPv4 can be prepared while private, credential, fragment, token and IPv6 URLs or details are rejected safely',()=>{
  const f=registrationFixture();for(const value of ['https://8.8.8.8:8000/live','https://stream.example.com/live?sid=2']){f.address(value);assert.equal(f.prepare(),true,value);}
  for(const host of ['127.0.0.1','192.168.1.2','10.0.0.1','169.254.2.3','224.0.0.1','stream.local','[2001:db8::1]','owner:veryprivate@stream.example.com','https://stream.example.com']){f.input('streamHost',host);assert.equal(f.prepare(),false,host);assert.equal(f.nodes.get('streamUrlInput').value,'');assert.doesNotMatch(f.nodes.get('streamTestStatus').textContent,/veryprivate/);}
  f.input('streamHost','stream.example.com');for(const path of ['/live#veryprivate','/live?token=veryprivate']){f.input('streamPath',path);assert.equal(f.prepare(),false,path);assert.equal(f.nodes.get('streamUrlInput').value,'');assert.doesNotMatch(f.nodes.get('streamTestStatus').textContent,/veryprivate/);}
@@ -234,9 +303,9 @@ test('generated URLs match server rejection of zero ports, trailing-dot hostname
  for(const value of ['https://stream.example.com:65535/live','http://8.8.8.8:8000/live']){assert.equal(publicStreamUrl(value),value);f.address(value);assert.equal(f.prepare(),true,value);}
 });
 
-test('stream checking is optional, guarded against duplicate clicks, and uses a dedicated bot check without playing audio',async()=>{
+test('stream checking blocks Save until a pass, rejects duplicate clicks, and uses a dedicated bot check without playing audio',async()=>{
  const f=registrationFixture({url:'https://stream.example.com/live'}),pending=deferred();f.result(pending.promise);
- const first=f.nodes.get('testStream').onclick(),second=f.nodes.get('testStream').onclick();await f.flush();assert.equal(f.humanCalls.length,1);assert.equal(f.humanCalls[0].container,f.nodes.get('streamTestHuman'));assert.equal(f.humanCalls[0].action,'stream-check');assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,'https://stream.example.com/live');assert.equal(f.nodes.get('saveRegistration').disabled,false);assert.equal(f.prepare(),true);
+ const first=f.nodes.get('testStream').onclick(),second=f.nodes.get('testStream').onclick();await f.flush();assert.equal(f.humanCalls.length,1);assert.equal(f.humanCalls[0].container,f.nodes.get('streamTestHuman'));assert.equal(f.humanCalls[0].action,'stream-check');assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,'https://stream.example.com/live');assert.equal(f.nodes.get('saveRegistration').disabled,true);assert.equal(f.allowed(),false);assert.equal(f.prepare(),true);
  pending.resolve({result:'audio_response',audio_response:true,message:'Anything'});await Promise.all([first,second]);assert.equal(f.nodes.get('streamTestStatus').dataset.state,'success');assert.equal(f.nodes.get('streamTestStatus').textContent,'Stream check passed');assert.equal(f.nodes.get('testStream').disabled,false);
 });
 
@@ -245,20 +314,20 @@ test('old test acknowledgements are ignored after editing the address or leaving
  const bot=deferred();f.human(bot.promise);const second=f.nodes.get('testStream').onclick();await f.flush();f.hide();bot.resolve('old-token');await second;assert.equal(f.apiCalls.length,1);assert.equal(f.nodes.get('streamTestStatus').textContent,'');
 });
 
-test('not-confirmed and malformed acknowledgements do not become playback success or prevent saving',async()=>{
- const f=registrationFixture({url:'https://stream.example.com/live'});await f.nodes.get('testStream').onclick();assert.equal(f.nodes.get('streamTestStatus').dataset.state,'unconfirmed');assert.equal(f.prepare(),true);assert.equal(f.nodes.get('saveRegistration').disabled,false);
+test('not-confirmed and malformed acknowledgements cannot enable saving',async()=>{
+ const f=registrationFixture({url:'https://stream.example.com/live'});await f.nodes.get('testStream').onclick();assert.equal(f.nodes.get('streamTestStatus').dataset.state,'unconfirmed');assert.equal(f.prepare(),true);assert.equal(f.nodes.get('saveRegistration').disabled,true);assert.equal(f.allowed(),false);
  f.result(Promise.resolve({result:'audio_response',audio_response:false,message:'Verified success'}));await f.nodes.get('testStream').onclick();assert.equal(f.nodes.get('streamTestStatus').dataset.state,'unconfirmed');assert.doesNotMatch(f.nodes.get('streamTestStatus').textContent,/Verified success/);
  assert.equal(f.apiCalls.length,2);
 });
 
-test('playlist checks explain their limits without bot checks or API calls and remain saveable',async()=>{
- for(const [url,explanation] of [['https://stream.example.com/listen.pls?sid=1',/playlist link/],['https://stream.example.com/live.m3u',/playlist link/],['https://stream.example.com/live.m3u8',/playlist link/],['https://stream.example.com/live.xspf',/playlist link/]]){
-  const f=registrationFixture({url});await f.nodes.get('testStream').onclick();assert.equal(f.nodes.get('streamTestStatus').dataset.state,'unconfirmed',url);assert.match(f.nodes.get('streamTestStatus').textContent,explanation,url);assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);assert.equal(f.prepare(),true);assert.equal(f.nodes.get('saveRegistration').disabled,false);assert.equal(f.nodes.get('testStream').disabled,false);
+test('playlist checks explain their limits without bot checks or API calls and cannot enable saving',async()=>{
+ for(const [url,explanation] of [['https://stream.example.com/listen.pls?sid=1',/direct listening link/],['https://stream.example.com/live.m3u',/direct listening link/],['https://stream.example.com/live.m3u8',/direct listening link/],['https://stream.example.com/live.xspf',/direct listening link/]]){
+  const f=registrationFixture({url});await f.nodes.get('testStream').onclick();assert.equal(f.nodes.get('streamTestStatus').dataset.state,'unconfirmed',url);assert.match(f.nodes.get('streamTestStatus').textContent,explanation,url);assert.equal(f.humanCalls.length,0);assert.equal(f.apiCalls.length,0);assert.equal(f.prepare(),true);assert.equal(f.nodes.get('saveRegistration').disabled,true);assert.equal(f.allowed(),false);assert.equal(f.nodes.get('testStream').disabled,false);
  }
 });
 
 test('a stale completed check cannot unlock a newer pending check or overwrite its status',async()=>{
- const f=registrationFixture({url:'https://first.example.com/live'}),older=deferred(),newer=deferred();f.result(older.promise);const first=f.nodes.get('testStream').onclick();await f.flush();f.address('https://second.example.com/live');f.result(newer.promise);const second=f.nodes.get('testStream').onclick();await f.flush();older.resolve({result:'audio_response',audio_response:true});await first;assert.equal(f.nodes.get('testStream').disabled,true);assert.equal(f.nodes.get('streamTestStatus').dataset.state,'checking');newer.resolve({result:'not_confirmed',audio_response:false,message:'Second check did not confirm audio.'});await second;assert.equal(f.nodes.get('streamTestStatus').textContent,'Stream could not be confirmed. You can still save privately and request review.');assert.equal(f.nodes.get('testStream').disabled,false);assert.equal(f.apiCalls.length,2);
+ const f=registrationFixture({url:'https://first.example.com/live'}),older=deferred(),newer=deferred();f.result(older.promise);const first=f.nodes.get('testStream').onclick();await f.flush();f.address('https://second.example.com/live');f.result(newer.promise);const second=f.nodes.get('testStream').onclick();await f.flush();older.resolve({result:'audio_response',audio_response:true});await first;assert.equal(f.nodes.get('testStream').disabled,true);assert.equal(f.nodes.get('streamTestStatus').dataset.state,'checking');newer.resolve({result:'not_confirmed',audio_response:false,message:'Second check did not confirm audio.'});await second;assert.equal(f.nodes.get('streamTestStatus').textContent,'Stream test failed. Check the details and try again.');assert.equal(f.nodes.get('testStream').disabled,false);assert.equal(f.apiCalls.length,2);
 });
 
 test('copy supports secure clipboard and a manual selection fallback, and status follows language changes',async()=>{

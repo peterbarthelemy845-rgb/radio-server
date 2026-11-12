@@ -21,6 +21,11 @@ test('stream setup stays inline with one URL in the station submission',()=>{
  assert.match(signup,/<button[^>]*id="copyGeneratedStream"[^>]*hidden/);
 });
 
+test('signup Save starts disabled with a visible instruction to test the stream first',()=>{
+ const save=signup.match(/<button[^>]*type="submit"[^>]*>/)[0];assert.match(save,/\sdisabled(?:\s|>)/);assert.match(save,/aria-describedby="[^"]*streamSaveHint[^"]*"/);
+ const hint=signup.match(/<[^>]+id="streamSaveHint"[^>]*>[\s\S]*?<\/[^>]+>/)[0];assert.match(hint,/data-i18n="registration.passRequired"/);assert.match(hint,/Test your stream before saving\./);assert.doesNotMatch(hint.split('>')[0],/\shidden(?:\s|$)/);
+});
+
 test('new signup shows three unselected listener setup choices with inline setup collapsed',()=>{
  const choices=[...signup.matchAll(/<input[^>]*name="stream_provider"[^>]*>/g)].map(match=>match[0]);
  assert.deepEqual(choices.map(choice=>choice.match(/value="([^"]+)"/)[1]),['icecast','shoutcast','other']);

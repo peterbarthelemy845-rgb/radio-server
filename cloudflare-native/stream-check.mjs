@@ -8,7 +8,7 @@ import {ipv4StreamResponse} from './ipv4-stream-socket.mjs';
 // Global fetch must route strictly over the public Internet. Never replace it
 // with a service/VPC binding or a local Node fetch configured for private access.
 const MAX_SAMPLE=8192,TIMEOUT_MS=6000,MAX_REDIRECTS=2;
-const negative=()=>json({result:'not_confirmed',audio_response:false,message:'Audio response could not be confirmed. You can still save the stream URL.'});
+const negative=()=>json({result:'not_confirmed',audio_response:false,message:'Stream test failed. Check the details and try again before saving.'});
 const positive=()=>json({result:'audio_response',audio_response:true,message:'Stream responded with audio data. Playback is not verified.'});
 const text=(bytes,start,length)=>String.fromCharCode(...bytes.subarray(start,start+length));
 function audioSample(bytes,type){

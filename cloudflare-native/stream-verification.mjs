@@ -1,7 +1,27 @@
 import {publicStreamUrl} from './public-stream-url.mjs';
-import {randomHex} from './security.mjs';
+import {randomHex,HttpError} from './security.mjs';
 
 export const STREAM_CHECK_LIFETIME=3600;
+const requiredCheck=()=>new HttpError(428,'Test your stream and get a pass before saving.');
+// Saving is stricter than publication review: a new registration/stream must
+// have a fresh receipt from THIS browser. Capture its server nonce so a newer
+// check (even another pass) cannot silently replace the proof during an await.
+export async function requireStreamSaveCheck(env,sessionHash,url,now,station){
+ const canonical=publicStreamUrl(url);
+ let approvedUrl;try{if(station?.status==='published')approvedUrl=publicStreamUrl(station.stream_url);}catch{}
+ if(station?.status==='published'&&approvedUrl===canonical)return {
+  sql:"EXISTS(SELECT 1 FROM stations save_live WHERE save_live.code=? AND save_live.status='published' AND save_live.stream_url=?)",values:[station.code,station.stream_url]
+ };
+ const receipt=await env.DB.prepare(`SELECT result.check_id FROM stream_check_results result JOIN sessions source_session ON source_session.token_hash=result.session_hash
+  WHERE result.session_hash=? AND result.stream_url=? AND result.checked_at>0 AND result.checked_at<=? AND result.expires>MAX(?,unixepoch()) AND source_session.expires>MAX(?,unixepoch())`)
+  .bind(sessionHash,canonical,now,now,now).first();
+ if(!receipt||!/^[a-f0-9]{32}$/.test(receipt.check_id))throw requiredCheck();
+ return {sql:`EXISTS(SELECT 1 FROM stream_check_results save_receipt JOIN sessions save_session ON save_session.token_hash=save_receipt.session_hash
+  WHERE save_receipt.session_hash=? AND save_receipt.stream_url=? AND save_receipt.check_id=? AND save_receipt.checked_at>0 AND save_receipt.checked_at<=? AND save_receipt.expires>MAX(?,unixepoch()) AND save_session.expires>MAX(?,unixepoch()))`,values:[sessionHash,canonical,receipt.check_id,now,now,now]};
+}
+export async function assertStreamSaveCheck(env,guard){
+ if(!await env.DB.prepare('SELECT 1 WHERE '+guard.sql).bind(...guard.values).first())throw requiredCheck();
+}
 const changes=result=>Number(result?.meta?.changes??result?.changes??0)>0;
 function target(station,pending){
  try{
@@ -37,22 +57,22 @@ export async function completeStreamCheck(env,sessionHash,url,id,passed,now){
  ]);
  return changes(results[1]);
 }
-export async function attachStreamCheck(env,sessionHash,stationCode,url,revision,now){
+export async function attachStreamCheck(env,sessionHash,stationCode,url,revision,now,saveGuard={sql:'1',values:[]}){
  let canonical;try{canonical=publicStreamUrl(url);}catch{return false;}
  const selected=target({code:stationCode,stream_url:canonical},revision==='initial'?null:{revision,stream_url:canonical});if(!selected)return false;
  const guard=currentTarget(selected.code,canonical,selected.revision);
  const result=await env.DB.prepare(`INSERT INTO station_stream_checks(station_code,stream_url,revision,checked_at,expires,review_requested_at,session_hash)
   SELECT ?,?,?,receipt.checked_at,receipt.expires,NULL,receipt.session_hash FROM stream_check_results receipt JOIN sessions source_session ON source_session.token_hash=receipt.session_hash
-  WHERE receipt.session_hash=? AND receipt.stream_url=? AND receipt.checked_at>0 AND receipt.checked_at<=? AND receipt.expires>MAX(?,unixepoch()) AND source_session.expires>MAX(?,unixepoch()) AND ${guard.sql}
+  WHERE receipt.session_hash=? AND receipt.stream_url=? AND receipt.checked_at>0 AND receipt.checked_at<=? AND receipt.expires>MAX(?,unixepoch()) AND source_session.expires>MAX(?,unixepoch()) AND ${guard.sql} AND ${saveGuard.sql}
   ON CONFLICT(station_code,stream_url) DO UPDATE SET revision=excluded.revision,checked_at=excluded.checked_at,expires=excluded.expires,review_requested_at=NULL,session_hash=excluded.session_hash`)
-  .bind(selected.code,canonical,selected.revision,sessionHash,canonical,now,now,now,...guard.values).run();
+  .bind(selected.code,canonical,selected.revision,sessionHash,canonical,now,now,now,...guard.values,...saveGuard.values).run();
  return changes(result);
 }
 export function streamPublicationGuard(station,pending,now){
  const selected=target(station,pending);if(!selected)return {sql:'0',values:[]};
  let approvedUrl;try{approvedUrl=publicStreamUrl(station.stream_url);}catch{}
  if(station.status==='published'&&approvedUrl===selected.url)return {
-  sql:"EXISTS(SELECT 1 FROM stations stream_live WHERE stream_live.code=? AND stream_live.status='published' AND stream_live.stream_url=?)",values:[selected.code,selected.url]
+  sql:"EXISTS(SELECT 1 FROM stations stream_live WHERE stream_live.code=? AND stream_live.status='published' AND stream_live.stream_url=?)",values:[selected.code,station.stream_url]
  };
  const guard=currentTarget(selected.code,selected.url,selected.revision);
  return {sql:`(${guard.sql} AND EXISTS(SELECT 1 FROM station_stream_checks evidence WHERE evidence.station_code=? AND evidence.stream_url=? AND evidence.revision=? AND evidence.checked_at>0 AND evidence.checked_at<=? AND evidence.expires>MAX(?,unixepoch())))`,values:[...guard.values,selected.code,selected.url,selected.revision,now,now]};

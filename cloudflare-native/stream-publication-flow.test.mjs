@@ -23,8 +23,8 @@ async function mockedCreative(run,respond=async()=>creative(true)){
 }
 async function adminState(f){return (await (await adminRoutes(f.request('/api/admin/stations'),f.env,f.now)).json()).stations.find(station=>station.code===f.station);}
 
-test('private Save without a server check stays private even with forged browser pass flags',async()=>{
- const f=await fixture();await mockedCreative(async calls=>{const result=await save(f,{audio_response:true,stream_checked:true,stream_check:{status:'passed'},verified:true});assert.equal(result.review_required,true);assert.equal(result.stream_check_required,true);assert.equal(row(f).status,'pending_review');assert.equal(calls.length,0,'creative review cannot bypass the stream gate');assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM station_stream_checks').get().n,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM mail_outbox').get().n,0);});
+test('private Save without a server check is rejected even with forged browser pass flags',async()=>{
+ const f=await fixture();await mockedCreative(async calls=>{await assert.rejects(save(f,{audio_response:true,stream_checked:true,stream_check:{status:'passed'},verified:true}),error=>error.status===428&&/Test your stream/.test(error.message));assert.equal(row(f).status,'pending_review');assert.equal(pending(f),undefined);assert.equal(calls.length,0,'creative review cannot bypass the stream gate');assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM station_stream_checks').get().n,0);assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM mail_outbox').get().n,0);});
 });
 
 test('a successful receipt lets same-data private Save publish only after creative review also passes',async()=>{
@@ -33,17 +33,17 @@ test('a successful receipt lets same-data private Save publish only after creati
 });
 
 test('expired, different-URL and different-session receipts never publish a private station',async()=>{
- for(const kind of ['expired','url','session']){const f=await fixture();if(kind==='expired')await receipt(f,original,{now:f.now-3600});else if(kind==='url')await receipt(f,changed);else{const hash='f'.repeat(64);f.sqlite.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)').run(hash,'e'.repeat(64),f.now,f.now+7200);await receipt(f,original,{hash});}await mockedCreative(async calls=>{const result=await save(f);assert.equal(result.stream_check_required,true,kind);assert.equal(row(f).status,'pending_review',kind);assert.equal(calls.length,0,kind);});}
+ for(const kind of ['expired','url','session']){const f=await fixture();if(kind==='expired')await receipt(f,original,{now:f.now-3600});else if(kind==='url')await receipt(f,changed);else{const hash='f'.repeat(64);f.sqlite.prepare('INSERT INTO sessions(token_hash,csrf_hash,created_at,expires) VALUES (?,?,?,?)').run(hash,'e'.repeat(64),f.now,f.now+7200);await receipt(f,original,{hash});}await mockedCreative(async calls=>{await assert.rejects(save(f),error=>error.status===428,kind);assert.equal(row(f).status,'pending_review',kind);assert.equal(calls.length,0,kind);});}
 });
 
-test('changing an approved station to an unchecked URL retains its old public stream and saves a private proposal',async()=>{
- const f=await fixture({published:true});await mockedCreative(async calls=>{const result=await save(f,{stream_url:changed});assert.equal(result.review_required,true);assert.equal(result.stream_check_required,true);assert.equal(row(f).status,'published');assert.equal(row(f).stream_url,original);assert.equal(pending(f).stream_url,changed);assert.equal(calls.length,0);});
+test('changing an approved station to an unchecked URL is rejected without saving a private proposal',async()=>{
+ const f=await fixture({published:true});await mockedCreative(async calls=>{await assert.rejects(save(f,{stream_url:changed}),error=>error.status===428);assert.equal(row(f).status,'published');assert.equal(row(f).stream_url,original);assert.equal(pending(f),undefined);assert.equal(calls.length,0);});
 });
 
-test('review request records the owner exact current revision without publishing and rejects stale or non-owner requests',async()=>{
- const f=await fixture();const initial=await ownerState(f);const response=await authRoutes(f.request('/api/owner/stream-review',{revision:initial.revision}),f.env,f.now),result=await response.json();assert.equal(result.stream_check.status,'review_requested');assert.equal(row(f).status,'pending_review');let proof=f.sqlite.prepare('SELECT * FROM station_stream_checks').get();assert.equal(proof.revision,'initial');assert.equal(proof.checked_at,0);assert.equal(proof.review_requested_at,f.now);
- await mockedCreative(()=>save(f,{stream_url:changed}));await assert.rejects(authRoutes(f.request('/api/owner/stream-review',{revision:initial.revision}),f.env,f.now),error=>error.status===409);const latest=await ownerState(f);await authRoutes(f.request('/api/owner/stream-review',{revision:latest.revision}),f.env,f.now);proof=f.sqlite.prepare('SELECT * FROM station_stream_checks WHERE stream_url=?').get(changed);assert.equal(proof.revision,pending(f).revision);assert.equal(proof.checked_at,0);assert.equal(row(f).stream_url,original);assert.equal(row(f).status,'pending_review');
- const outsider=await fixture({owner:false});await assert.rejects(authRoutes(outsider.request('/api/owner/stream-review',{revision:latest.revision}),outsider.env,outsider.now),error=>error.status===401);assert.equal(outsider.sqlite.prepare('SELECT COUNT(*) n FROM station_stream_checks').get().n,0);
+test('retired owner review requests cannot bypass a passing stream check or write a manual-review proposal',async()=>{
+ const f=await fixture(),initial=await ownerState(f);await assert.rejects(authRoutes(f.request('/api/owner/stream-review',{revision:initial.revision}),f.env,f.now),error=>error.status===428&&/Test your stream/.test(error.message));assert.equal(row(f).status,'pending_review');assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM station_stream_checks').get().n,0);assert.equal(pending(f),undefined);
+ await assert.rejects(authRoutes(f.request('/api/owner/stream-review',{revision:'obsolete'}),f.env,f.now),error=>error.status===409);
+ const outsider=await fixture({owner:false});await assert.rejects(authRoutes(outsider.request('/api/owner/stream-review',{revision:initial.revision}),outsider.env,outsider.now),error=>error.status===401);assert.equal(outsider.sqlite.prepare('SELECT COUNT(*) n FROM station_stream_checks').get().n,0);
 });
 
 test('a proof invalidated while creative review is awaiting response cannot publish at commit',async()=>{
@@ -51,7 +51,7 @@ test('a proof invalidated while creative review is awaiting response cannot publ
 });
 
 test('Save during a fresh pending recheck cannot use an earlier private station pass',async()=>{
- const f=await fixture();await receipt(f);await mockedCreative(()=>save(f),async()=>creative(false));assert.equal(f.sqlite.prepare('SELECT checked_at FROM station_stream_checks').get().checked_at,f.now);await beginStreamCheck(f.env,f.hash,original,f.now);await mockedCreative(async calls=>{const result=await save(f);assert.equal(result.stream_check_required,true);assert.equal(result.review_required,true);assert.equal(row(f).status,'pending_review');assert.equal(calls.length,0);});
+ const f=await fixture();await receipt(f);await mockedCreative(()=>save(f),async()=>creative(false));assert.equal(f.sqlite.prepare('SELECT checked_at FROM station_stream_checks').get().checked_at,f.now);await beginStreamCheck(f.env,f.hash,original,f.now);await mockedCreative(async calls=>{await assert.rejects(save(f),error=>error.status===428);assert.equal(row(f).status,'pending_review');assert.equal(calls.length,0);});
 });
 
 test('administrator cannot approve an unchecked stream without an explicit override and a required reason',async()=>{

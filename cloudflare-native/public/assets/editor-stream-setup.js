@@ -11,7 +11,7 @@
  const text=(key,fallback)=>{const value=window.appI18n?.t(key);return typeof value==='string'&&value!==key?value:fallback;};
  const isManual=value=>['icecast','shoutcast'].includes(value);
  const manual=()=>isManual(provider);
- const busy=()=>['1','true'].includes(form.dataset.busy)||form.getAttribute?.('aria-busy')==='true'||form.querySelector('button[type="submit"]')?.disabled===true;
+ const busy=()=>['1','true'].includes(form.dataset.busy)||form.getAttribute?.('aria-busy')==='true';
  const issue=(key,fallback,field)=>({key,message:text(key,fallback),field});
  function parse(value){
   if(typeof window.parsePublicStreamUrl!=='function')throw issue('registration.setupUnavailable','Stream address validation is unavailable. Refresh and try again.');
@@ -66,7 +66,7 @@
   if(different)provider='other';
   const value=url.value;initialized=true;station=nextStation;draft=false;source='url';manualSource='ip';manualUrl='';manualEdited=false;directDraft=value;directEdited=Boolean(value);workingUrl=value;syncBuilder(null);
   if(manual()){try{syncBuilder(parse(value));manualUrl=value;manualSource='url';directEdited=false;}catch{source='ip';}}
-  render();validate();form.dispatchEvent(new Event('owner-stream-mode-changed'));
+  render();validate();const event=new Event('owner-stream-mode-changed');event.detail={source:'sync'};form.dispatchEvent(event);
  };
  form.addEventListener('form-busy-changed',controls);
  form.addEventListener('reset',()=>queueMicrotask(()=>{initialized=false;provider='other';window.syncOwnerStreamSetup({accepted:true});}));
