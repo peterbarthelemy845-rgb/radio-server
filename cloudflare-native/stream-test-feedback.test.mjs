@@ -24,10 +24,22 @@ function fixture(){
 }
 
 test('completed results open an accessible modal, render plain text and return focus to Test stream',async()=>{
- const f=fixture();assert.equal(f.show({key:'',fallback:'<img src=x onerror=alert(1)>'}),true);
+ const f=fixture();assert.equal(f.show({state:'error',key:'',fallback:'<img src=x onerror=alert(1)>'}),true);
  const dialog=f.$('streamTestResult');assert.equal(dialog.open,true);assert.equal(dialog.attributes['aria-labelledby'],'streamTestResultTitle');assert.equal(dialog.attributes['aria-describedby'],'streamTestResultText');
  assert.equal(f.$('streamTestResultTitle').textContent,'Stream test');assert.equal(f.$('streamTestResultText').textContent,'<img src=x onerror=alert(1)>');assert.equal(f.$('closeStreamTestResult').textContent,'Done');assert.equal(f.document.activeElement,f.$('closeStreamTestResult'));
  f.$('closeStreamTestResult').onclick();await f.flush();assert.equal(dialog.open,false);assert.equal(f.document.activeElement,f.$('testStream'));assert.equal(dialog.opens,1);
+});
+
+test('a passed check shows a decorative checkmark and one short success message for signup and editor',async()=>{
+ const f=fixture();f.window.appI18n.t=key=>key==='registration.audioResponse'?'Stream check passed':key;
+ for(const source of ['registration','owner']){
+  if(source==='owner')f.$('editor').hidden=false;
+  assert.equal(f.show({source,fallback:'Stream check passed'}),true);const icon=f.$('streamTestResultIcon');
+  assert.equal(icon.textContent,'✓');assert.equal(icon.attributes['aria-hidden'],'true');assert.equal(icon.hidden,false);assert.equal(f.$('streamTestResultText').textContent,'Stream check passed');assert.equal(f.$('streamTestResultTitle').textContent,'Stream test');
+  f.$('closeStreamTestResult').onclick();await f.flush();
+ }
+ assert.equal(f.show({state:'unconfirmed',key:'',fallback:'Could not confirm this stream.'}),true);assert.equal(f.$('streamTestResultIcon').hidden,true);assert.equal(f.$('streamTestResultText').textContent,'Could not confirm this stream.');
+ f.$('closeStreamTestResult').onclick();await f.flush();assert.equal(f.show({state:'error',key:'',fallback:'Network check failed.'}),true);assert.equal(f.$('streamTestResultIcon').hidden,true);
 });
 
 test('checking, validation, hidden pages, background tabs and unknown sources cannot open a result',()=>{

@@ -2,12 +2,13 @@
  'use strict';
  const sources={registration:{page:'register',button:'testStream'},owner:{page:'editor',button:'testOwnerStream'}};
  const dialog=document.createElement('dialog');dialog.id='streamTestResult';dialog.setAttribute('aria-labelledby','streamTestResultTitle');dialog.setAttribute('aria-describedby','streamTestResultText');
+ const icon=document.createElement('span');icon.id='streamTestResultIcon';icon.setAttribute('aria-hidden','true');icon.textContent='✓';icon.hidden=true;
  const title=document.createElement('h2');title.id='streamTestResultTitle';
  const message=document.createElement('p');message.id='streamTestResultText';
- const done=document.createElement('button');done.type='button';done.id='closeStreamTestResult';dialog.append(title,message,done);document.body.append(dialog);
+ const done=document.createElement('button');done.type='button';done.id='closeStreamTestResult';dialog.append(icon,title,message,done);document.body.append(dialog);
  let pending=null;
  const text=(key,fallback)=>{const value=window.appI18n?.t(key);return typeof value==='string'&&value!==key?value:fallback;};
- function render(){if(!pending)return;title.textContent=text('registration.testResult','Stream test');message.textContent=pending.key?text(pending.key,pending.fallback):pending.fallback;done.textContent=text('done','Done');}
+ function render(){if(!pending)return;icon.hidden=dialog.dataset.state!=='success';title.textContent=text('registration.testResult','Stream test');message.textContent=pending.key?text(pending.key,pending.fallback):pending.fallback;done.textContent=text('done','Done');}
  done.onclick=()=>dialog.close();
  dialog.addEventListener('close',()=>{
   const previous=pending;pending=null;if(!previous)return;

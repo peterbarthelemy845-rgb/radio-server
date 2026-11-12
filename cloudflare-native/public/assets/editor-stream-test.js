@@ -28,7 +28,7 @@
   try{
    const turnstile_token=await human(area,'stream-check',attempt.controller.signal);if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:attempt.value,turnstile_token});if(!current())return;
-   if(response.result==='audio_response'&&response.audio_response===true)result('registration.audioResponse','Stream check passed. Save your station to continue. Playback is not verified.','success');
+   if(response.result==='audio_response'&&response.audio_response===true)result('registration.audioResponse','Stream check passed','success');
    else result('registration.notConfirmed','Stream could not be confirmed. You can still save privately and request review.','unconfirmed');
   }catch(error){if(current())result('',String(error.message||'The stream check did not complete. You can still save it.').slice(0,400),'error');}
   finally{if(active===attempt){active=null;attempt.restoreLabel();controls();}}

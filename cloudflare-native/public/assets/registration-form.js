@@ -17,7 +17,7 @@
  function registrationBusy(){return ['1','true'].includes(registrationForm.dataset.busy)||registrationForm.querySelector('button[type="submit"]')?.disabled===true;}
  function registrationProviderHelp(){
   if(!registrationProviderHelpNode)return;
-  const [key,fallback]=registrationProvider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:registrationProvider==='radiomast'?['registration.providerRadioMast','Paste the public listening URL from Radio Mast, not the encoder server.']:registrationProvider==='other'?['registration.providerOther','Paste your complete public listening URL.']:['registration.providerIcecast','Enter your public server, port and mount point. Choose HTTPS for SSL.'];
+  const [key,fallback]=registrationProvider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:registrationProvider==='other'?['registration.providerOther','Paste your complete public listening URL.']:['registration.providerIcecast','Enter your public server, port and mount point. Choose HTTPS for SSL.'];
   registrationProviderHelpNode.setAttribute('data-i18n',key);registrationProviderHelpNode.textContent=registrationText(key,fallback);
  }
  function registrationRenderMode(){
@@ -153,7 +153,7 @@
   try{
    const turnstile_token=await human(registrationNodes.streamTestHuman,'stream-check');if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:value,turnstile_token});if(!current())return;
-   if(response.result==='audio_response'&&response.audio_response===true)registrationTerminal('registration.audioResponse','Stream check passed. Save your station to continue. Playback is not verified.','success');
+   if(response.result==='audio_response'&&response.audio_response===true)registrationTerminal('registration.audioResponse','Stream check passed','success');
    else if(response.result==='not_confirmed'&&response.audio_response===false)registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save privately and request review.','unconfirmed');
    else registrationTerminal('registration.notConfirmed','Stream could not be confirmed. You can still save privately and request review.','unconfirmed');
   }catch(error){if(current())registrationTerminal('',String(error.message||'The stream check did not complete. You can still save it.').slice(0,400),'error');}

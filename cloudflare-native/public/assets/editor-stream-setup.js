@@ -31,7 +31,7 @@
  }
  function render(){
   nodes.ownerStreamSetupPanel.hidden=false;nodes.ownerStreamAddressFields.hidden=!manual();nodes.ownerStreamUrlRow.hidden=manual();
-  const [key,fallback]=provider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:provider==='icecast'?['registration.providerIcecast','Enter your public server, port and mount point. Choose HTTPS for SSL.']:provider==='radiomast'?['registration.providerRadioMast','Paste the public listening URL from Radio Mast, not the encoder server.']:['registration.providerOther','Paste your complete public listening URL.'];
+  const [key,fallback]=provider==='shoutcast'?['registration.providerShoutcast','Enter your public server, port and listening path.']:provider==='icecast'?['registration.providerIcecast','Enter your public server, port and mount point. Choose HTTPS for SSL.']:['registration.providerOther','Paste your complete public listening URL.'];
   nodes.ownerStreamProviderHelp.dataset.i18n=key;nodes.ownerStreamProviderHelp.textContent=text(key,fallback);
   for(const choice of choices)choice.checked=choice.value===provider;controls();
  }

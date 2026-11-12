@@ -102,7 +102,7 @@ test('ordinary verification success still requires a completed security token an
 });
 test('provider choices stay out of signup fingerprints and API payloads while exact listening URLs remain unchanged',async()=>{
  const stream='http://stream.example.com:8000/;Stream/2?sid=2&client=radio%2Fone';
- for(const provider of ['icecast','shoutcast','radiomast','other']){
+ for(const provider of ['icecast','shoutcast','other']){
   const f=fixture(),form=f.get('registerForm'),choice=f.get('selectedProvider');choice.type='radio';choice.name='stream_provider';choice.value=provider;choice.checked=true;form.elements.stream_provider=choice;form.fields.push(choice);form.elements.stream_url.value=stream;let fingerprint;
   f.context.registrationRequest=async(data,current)=>{assert.equal(current(),true);fingerprint={...data};return 'provider-independent-request';};
   f.page('register');const pending=f.submit('registerForm');await settle();assert.ok(fingerprint,provider);assert.equal(Object.hasOwn(fingerprint,'stream_provider'),false,provider);assert.equal(fingerprint.stream_url,stream,provider);assert.equal(f.calls.length,0);

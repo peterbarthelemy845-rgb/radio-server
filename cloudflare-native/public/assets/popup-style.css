@@ -57,3 +57,8 @@ dialog:is(#appActionPrompt,#streamTestResult,#stationAddPopup,#listenerActionDia
 #streamTestResult[data-state="success"] h2{color:#176238}
 #streamTestResult[data-state="error"] h2{color:#922338}
 #streamTestResult p{margin:0 0 20px}
+#streamTestResultIcon{display:flex;align-items:center;justify-content:center;width:64px;height:64px;margin:0 auto 16px;border-radius:50%;background:#e6f7ed;color:#16834a;font-size:42px;font-weight:700;line-height:1}
+#streamTestResultIcon[hidden]{display:none}
+#streamTestResult[data-state="success"]{text-align:center}
+#streamTestResult[data-state="success"] #streamTestResultTitle{display:none}
+#streamTestResult[data-state="success"] #streamTestResultText{font-size:22px;font-weight:700;color:#176238;line-height:1.3}
