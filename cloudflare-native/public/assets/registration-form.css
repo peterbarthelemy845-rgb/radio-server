@@ -1,6 +1,5 @@
 /* Compact owner registration, using the same white card and radio branding. */
 #register.station-register{padding:16px;border-radius:15px;position:relative;overflow:hidden}
-#register.station-register::before{content:'';position:absolute;inset:0 0 auto;height:5px;background:linear-gradient(100deg,#17c5f3,#0566e5,#2746cf)}
 #register .registration-heading{text-align:center;padding:0 0 10px;margin-bottom:8px;border-bottom:1px solid #e2eaf6}
 #register .register-brand-logo{display:block;width:80px;height:80px;object-fit:contain;margin:0 auto 8px;padding:10px;border:5px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 6px 14px #1675e725}
 #register .registration-heading h1{font-size:22px;margin:0 0 5px;line-height:1.2}
