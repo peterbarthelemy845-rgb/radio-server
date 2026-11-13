@@ -7,10 +7,14 @@ export const metadataOptions=Object.freeze({
  categories:freeze([['christian','Christian'],['news_talk','News & talk'],['music','Music'],['culture','Culture'],['other','Other']])
 });
 export function metadataValue(field,value){
+ if(field==='zip_code'){
+  if(typeof value!=='string'||value!==''&&(value.length!==5||!/^[0-9]{5}$/.test(value)))throw new HttpError(400,'Enter a five-digit ZIP code or leave it blank.');
+  return value;
+ }
  const choices=field==='language'?metadataOptions.languages:field==='category'?metadataOptions.categories:null;
  if(!choices||typeof value!=='string'||value!==''&&!choices.some(item=>item.value===value))throw new HttpError(400,'Choose a valid station '+field+'.');
  return value;
 }
 export function stationMetadata(input,fallback={}){
- return Object.fromEntries(['language','category'].map(field=>[field,metadataValue(field,Object.hasOwn(input,field)?input[field]:fallback[field]??'')]));
+ return Object.fromEntries(['language','category','zip_code'].map(field=>[field,metadataValue(field,Object.hasOwn(input,field)?input[field]:fallback[field]??'')]));
 }

@@ -1,60 +1,73 @@
 (()=>{
  'use strict';
+ const text=(key,fallback)=>{const value=window.appI18n?.t(key);return typeof value==='string'&&value!==key?value:fallback;};
+ const zipValid=value=>value===''||/^[0-9]{5}$/.test(value);
+ function validateZip(control,details,report=false){
+  if(!control)return true;control.setCustomValidity('');
+  if(zipValid(control.value))return true;
+  control.setCustomValidity(text('metadata.invalidZip','Enter a 5-digit ZIP code or leave it blank.'));
+  if(report){if(details)details.open=true;control.focus();control.reportValidity();}return false;
+ }
+ const signupZip=document.getElementById('registrationStationZip'),signupDetails=document.getElementById('registrationStationDetails');
+ window.prepareRegistrationStationMetadata=()=>validateZip(signupZip,signupDetails,true);
+ if(signupZip){signupZip.addEventListener('input',()=>validateZip(signupZip,signupDetails));signupZip.addEventListener('invalid',()=>{if(signupDetails)signupDetails.open=true;});signupZip.form?.addEventListener('reset',()=>signupZip.setCustomValidity(''));}
  const form=document.getElementById('editForm'),bio=form?.elements.bio;
  if(!form||!bio)return;
- const definitions=[{name:'language',catalog:'languages',id:'ownerStationLanguage',key:'metadata.language',label:'Language'},{name:'category',catalog:'categories',id:'ownerStationCategory',key:'metadata.category',label:'Category'}];
- const text=(key,fallback)=>{const value=window.appI18n?.t(key);return typeof value==='string'&&value!==key?value:fallback;};
+ const definitions=[{name:'zip_code',id:'ownerStationZip',key:'metadata.zip',label:'ZIP code'},{name:'category',id:'ownerStationCategory',key:'metadata.category',label:'Category'}];
  const details=document.createElement('details');details.id='ownerStationDetails';
  const summary=document.createElement('summary');summary.dataset.i18n='metadata.details';summary.textContent='Station details (optional)';
  const grid=document.createElement('div');grid.className='owner-metadata-fields';
  const controls=new Map(),captions=new Map();
- for(const definition of definitions){const label=document.createElement('label'),caption=document.createElement('span'),select=document.createElement('select');caption.dataset.i18n=definition.key;caption.textContent=definition.label;select.id=definition.id;select.name=definition.name;select.disabled=true;label.htmlFor=select.id;label.append(caption,select);grid.append(label);controls.set(definition.name,select);captions.set(definition.name,caption);}
+ for(const definition of definitions){const label=document.createElement('label'),caption=document.createElement('span'),control=document.createElement(definition.name==='zip_code'?'input':'select');caption.dataset.i18n=definition.key;caption.textContent=definition.label;control.id=definition.id;control.name=definition.name;control.disabled=true;if(definition.name==='zip_code'){control.type='text';control.setAttribute('inputmode','numeric');control.setAttribute('maxlength','5');control.setAttribute('pattern','[0-9]{5}');control.setAttribute('autocomplete','postal-code');}label.htmlFor=control.id;label.append(caption,control);grid.append(label);controls.set(definition.name,control);captions.set(definition.name,caption);}
  const notice=document.createElement('p');notice.id='ownerStationMetadataMessage';notice.setAttribute('role','status');notice.hidden=true;
  details.append(summary,grid,notice);const anchor=bio.closest('label')||bio;anchor.before(details);
- let stationCode='',catalog=null,accepted={language:'',category:''};
+ let stationCode='',catalog=null,accepted={zip_code:'',category:''};
  const busy=()=>form.dataset.busy==='1'||form.getAttribute('aria-busy')==='true';
  const bound=()=>!!stationCode&&String(form.dataset.stationCode||'')===stationCode;
- const ready=()=>bound()&&catalog!==null;
+ const categoryReady=()=>bound()&&catalog!==null;
  function catalogFrom(value){
   if(!value||typeof value!=='object')return null;
-  const result={};
-  for(const definition of definitions){const entries=value[definition.catalog];if(!Array.isArray(entries)||!entries.length||entries.length>30)return null;const seen=new Set();result[definition.name]=[];for(const entry of entries){if(!entry||typeof entry.value!=='string'||!/^[a-z][a-z0-9_]{0,31}$/.test(entry.value)||seen.has(entry.value)||typeof entry.label!=='string'||!entry.label.trim()||entry.label.length>100)return null;seen.add(entry.value);result[definition.name].push({value:entry.value,label:entry.label.trim()});}}
+  const result=[],entries=value.categories;if(!Array.isArray(entries)||!entries.length||entries.length>30)return null;const seen=new Set();for(const entry of entries){if(!entry||typeof entry.value!=='string'||!/^[a-z][a-z0-9_]{0,31}$/.test(entry.value)||seen.has(entry.value)||typeof entry.label!=='string'||!entry.label.trim()||entry.label.length>100)return null;seen.add(entry.value);result.push({value:entry.value,label:entry.label.trim()});}
   return result;
  }
- function allowed(name,value){return value===''||catalog?.[name].some(option=>option.value===value);}
+ function categoryAllowed(value){return value===''||catalog?.some(option=>option.value===value);}
  function valuesFrom(record,previous){const next={...previous};for(const definition of definitions)if(Object.hasOwn(record||{},definition.name)&&typeof record[definition.name]==='string')next[definition.name]=record[definition.name];return next;}
  function populate(values){
-  for(const definition of definitions){const control=controls.get(definition.name);control.replaceChildren();const empty=document.createElement('option');empty.value='';empty.dataset.i18n='metadata.notSet';empty.textContent=text('metadata.notSet','Not set');control.append(empty);for(const entry of catalog?.[definition.name]||[]){const option=document.createElement('option');option.value=entry.value;option.dataset.i18n=definition.key+'.'+entry.value;option.textContent=text(option.dataset.i18n,entry.label);control.append(option);}const current=String(values[definition.name]||'');if(current&&!(catalog?.[definition.name]||[]).some(entry=>entry.value===current)){const retained=document.createElement('option');retained.value=current;retained.textContent=text('metadata.savedValue','Saved value');control.append(retained);}control.value=current;control.setCustomValidity('');}
+  controls.get('zip_code').value=String(values.zip_code||'');validateZip(controls.get('zip_code'),details);
+  const control=controls.get('category');control.replaceChildren();const empty=document.createElement('option');empty.value='';empty.dataset.i18n='metadata.notSet';empty.textContent=text('metadata.notSet','Not set');control.append(empty);for(const entry of catalog||[]){const option=document.createElement('option');option.value=entry.value;option.dataset.i18n='metadata.category.'+entry.value;option.textContent=text(option.dataset.i18n,entry.label);control.append(option);}const current=String(values.category||'');if(current&&!(catalog||[]).some(entry=>entry.value===current)){const retained=document.createElement('option');retained.value=current;retained.textContent=text('metadata.savedValue','Saved value');control.append(retained);}control.value=current;control.setCustomValidity('');
  }
  function render(){
-  const available=ready();form.dataset.ownerMetadataReady=available?'true':'false';
+  const available=categoryReady();form.dataset.ownerMetadataReady=available?'true':'false';form.dataset.ownerZipReady=bound()?'true':'false';
   summary.textContent=text('metadata.details','Station details (optional)');
   for(const definition of definitions)captions.get(definition.name).textContent=text(definition.key,definition.label);
-  for(const control of controls.values())control.disabled=!available||busy();
-  notice.hidden=available||!stationCode;notice.dataset.i18n='metadata.unavailable';notice.textContent=notice.hidden?'':text('metadata.unavailable','Station details are unavailable. You can still edit your other details.');
+  controls.get('zip_code').disabled=!bound()||busy();controls.get('category').disabled=!available||busy();
+  notice.hidden=available||!stationCode;notice.dataset.i18n='metadata.categoryUnavailable';notice.textContent=notice.hidden?'':text('metadata.categoryUnavailable','Category is unavailable. You can still edit ZIP code and your other details.');
  }
  window.syncOwnerStationMetadata=(record,{preserveDraft=false,metadataOptions}={})=>{
   const code=record&&typeof record==='object'?String(record.code||''):'',same=!!code&&code===stationCode;
-  if(!code){stationCode='';catalog=null;accepted={language:'',category:''};details.open=false;populate(accepted);render();return;}
+  if(!code){stationCode='';catalog=null;accepted={zip_code:'',category:''};details.open=false;populate(accepted);render();return;}
   const previousValues=Object.fromEntries(definitions.map(definition=>[definition.name,controls.get(definition.name).value]));
-  if(!same){accepted={language:'',category:''};catalog=null;details.open=false;}
+  if(!same){accepted={zip_code:'',category:''};catalog=null;details.open=false;}
   accepted=valuesFrom(record,accepted);stationCode=code;
   if(metadataOptions!==undefined)catalog=catalogFrom(metadataOptions);
   populate(preserveDraft&&same?previousValues:accepted);render();form.dispatchEvent(new Event('owner-metadata-state-changed',{bubbles:true}));
  };
  window.metadataSaveValues=()=>{
-  if(!ready())return {};
-  const result={};for(const definition of definitions){const value=controls.get(definition.name).value;if(!allowed(definition.name,value))return {};result[definition.name]=value;}return result;
+  if(!bound())return {};
+  const zip=controls.get('zip_code').value;if(!zipValid(zip))return {};
+  const result={zip_code:zip};if(categoryReady()){const category=controls.get('category').value;if(!categoryAllowed(category))return {};result.category=category;}return result;
  };
  window.prepareOwnerStationMetadata=()=>{
-  if(!ready())return true;
-  for(const definition of definitions){const control=controls.get(definition.name);control.setCustomValidity('');if(!allowed(definition.name,control.value)){details.open=true;control.setCustomValidity(text('metadata.chooseValid','Choose an available station detail.'));control.focus();control.reportValidity();return false;}}
+  if(!bound())return true;
+  if(!validateZip(controls.get('zip_code'),details,true))return false;
+  if(categoryReady()){const control=controls.get('category');control.setCustomValidity('');if(!categoryAllowed(control.value)){details.open=true;control.setCustomValidity(text('metadata.chooseValid','Choose an available station detail.'));control.focus();control.reportValidity();return false;}}
   return true;
  };
- for(const control of controls.values())control.addEventListener('change',()=>{control.setCustomValidity('');form.dataset.dirty='1';form.dispatchEvent(new Event('input',{bubbles:true}));});
+ for(const definition of definitions){const control=controls.get(definition.name);control.addEventListener(definition.name==='zip_code'?'input':'change',()=>{if(definition.name==='zip_code')validateZip(control,details);else control.setCustomValidity('');form.dataset.dirty='1';if(definition.name!=='zip_code')form.dispatchEvent(new Event('input',{bubbles:true}));});}
+ controls.get('zip_code').addEventListener('invalid',()=>{details.open=true;});
  form.addEventListener('form-busy-changed',render);
- form.addEventListener('reset',()=>{stationCode='';catalog=null;accepted={language:'',category:''};details.open=false;queueMicrotask(()=>{populate(accepted);render();});});
- window.addEventListener('app-language-changed',()=>{const values=Object.fromEntries(definitions.map(definition=>[definition.name,controls.get(definition.name).value]));populate(values);render();});
+ form.addEventListener('reset',()=>{stationCode='';catalog=null;accepted={zip_code:'',category:''};details.open=false;queueMicrotask(()=>{populate(accepted);render();});});
+ window.addEventListener('app-language-changed',()=>{const values=Object.fromEntries(definitions.map(definition=>[definition.name,controls.get(definition.name).value]));populate(values);render();validateZip(signupZip,signupDetails);});
  new MutationObserver(render).observe(form,{attributes:true,attributeFilter:['data-station-code','data-busy','aria-busy']});
  populate(accepted);render();
 })();

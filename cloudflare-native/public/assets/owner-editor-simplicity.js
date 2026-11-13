@@ -6,10 +6,10 @@
  let baseline=null,approvedUrl='',repair=false;
  const text=(key,fallback)=>{const value=window.appI18n?.t(key);return value&&value!==key?value:fallback;};
  const canonical=value=>{try{return window.parsePublicStreamUrl(value).href;}catch{return String(value||'').trim();}};
- const optionalKeys=['language','category'];
+ const optionalKeys=['zip_code','category'];
  const values=record=>{const result={name:String(record.name||'').trim(),stream_url:canonical(record.stream_url),bio:String(record.bio||'').trim()};for(const key of optionalKeys)if(Object.hasOwn(record,key))result[key]=String(record[key]||'');return result;};
  const optionalValues=record=>Object.fromEntries(optionalKeys.filter(key=>Object.hasOwn(record||{},key)).map(key=>[key,record[key]]));
- function current(){const record={name:form.elements.name.value,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value};if(form.dataset.ownerMetadataReady!=='false')for(const key of optionalKeys)if(form.elements[key])record[key]=form.elements[key].value;return values(record);}
+ function current(){const record={name:form.elements.name.value,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value};for(const key of optionalKeys)if(form.elements[key]&&(key==='zip_code'?form.dataset.ownerZipReady!=='false':form.dataset.ownerMetadataReady!=='false'))record[key]=form.elements[key].value;return values(record);}
  function bound(){return !!baseline&&String(form.dataset.stationCode||'')===baseline.code&&String(form.dataset.revision||'')===baseline.revision;}
  function changed(){
   if(!bound())return false;

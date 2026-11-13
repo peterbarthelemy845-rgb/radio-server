@@ -14,21 +14,21 @@ function fixture(record=original){
   addEventListener(type,fn){const group=handlers.get(type)||[];group.push(fn);handlers.set(type,group);},dispatchEvent(event){event.target??=this;for(const fn of handlers.get(event.type)||[])fn(event);if(event.bubbles)this.parent?.dispatchEvent(event);},
   getAttribute(name){return this.attrs[name]??null;},setAttribute(name,value){this.attrs[name]=value;},removeAttribute(name){delete this.attrs[name];},focus(){},querySelector(selector){return selector==='button[type="submit"]'?nodes.get('ownerSave'):null;}
  };nodes.set(id,element);return element;}
- for(const id of ['editor','editForm','ownerSave','ownerSaveState','ownerStreamSettings','ownerAccountOptions','testOwnerStream','ownerStreamTestHuman','ownerStreamTestStatus','name','stream_url','bio','artwork','language','category'])node(id);
- const form=nodes.get('editForm');for(const key of ['name','stream_url','bio','artwork','language','category']){form.elements[key]=nodes.get(key);nodes.get(key).parent=form;}
+ for(const id of ['editor','editForm','ownerSave','ownerSaveState','ownerStreamSettings','ownerAccountOptions','testOwnerStream','ownerStreamTestHuman','ownerStreamTestStatus','name','stream_url','bio','artwork','zip_code','category'])node(id);
+ const form=nodes.get('editForm');for(const key of ['name','stream_url','bio','artwork','zip_code','category']){form.elements[key]=nodes.get(key);nodes.get(key).parent=form;}
  const window={appI18n:{t:key=>key},parsePublicStreamUrl:value=>new URL(value),addEventListener(type,fn){const group=events.get(type)||[];group.push(fn);events.set(type,group);},dispatchEvent(event){for(const fn of events.get(event.type)||[])fn(event);}};
  const context=vm.createContext({window,document:{getElementById:id=>nodes.get(id)},Event:UiEvent,URL,AbortController,Date:{now:()=>clock},queueMicrotask,
   setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,at:clock+delay});return id;},clearTimeout:id=>timers.delete(id),MutationObserver:class{constructor(fn){this.fn=fn;}observe(target,options){observers.push({target,options,fn:this.fn});}},
   human:async()=> 'checked-token',api:async(path,body)=>{calls.push({path,body});if(result instanceof Error)throw result;return result;},setBusyButtonLabel:button=>{const old=button.textContent;return ()=>{button.textContent=old;};}
  });
  vm.runInContext(streamGate,context);vm.runInContext(simplicity,context);
- function sync(next,options={}){if(!options.preserveDraft){const same=form.dataset.stationCode===String(next.code);form.dataset.stationCode=String(next.code);form.dataset.revision=next.revision||'';for(const key of ['name','stream_url','bio'])form.elements[key].value=next[key]||'';for(const key of ['language','category'])if(!same||Object.hasOwn(next,key))form.elements[key].value=next[key]||'';form.elements.artwork.files=[];}window.syncOwnerStreamSaveGate(next);window.syncOwnerEditorState(next,options);}
+ function sync(next,options={}){if(!options.preserveDraft){const same=form.dataset.stationCode===String(next.code);form.dataset.stationCode=String(next.code);form.dataset.revision=next.revision||'';for(const key of ['name','stream_url','bio'])form.elements[key].value=next[key]||'';for(const key of ['zip_code','category'])if(!same||Object.hasOwn(next,key))form.elements[key].value=next[key]||'';form.elements.artwork.files=[];}window.syncOwnerStreamSaveGate(next);window.syncOwnerEditorState(next,options);}
  sync(record);
  return {nodes,form,window,calls,sync,save:nodes.get('ownerSave'),status:nodes.get('ownerSaveState'),stream:nodes.get('ownerStreamSettings'),options:nodes.get('ownerAccountOptions'),
   input(key,value){form.elements[key].value=value;form.elements[key].dispatchEvent(new UiEvent('input',{bubbles:true}));},
   file(file){form.elements.artwork.files=file?[file]:[];form.elements.artwork.dispatchEvent(new UiEvent('change',{bubbles:true}));},
   testStream:()=>nodes.get('testOwnerStream').onclick(),result(value){result=value;},
-  saved(outcome={}){form.elements.artwork.files=[];window.ownerEditorSaved({...Object.fromEntries(['name','stream_url','bio','language','category'].map(key=>[key,form.elements[key].value])),code:form.dataset.stationCode,revision:form.dataset.revision},outcome);},
+  saved(outcome={}){form.elements.artwork.files=[];window.ownerEditorSaved({...Object.fromEntries(['name','stream_url','bio','zip_code','category'].map(key=>[key,form.elements[key].value])),code:form.dataset.stationCode,revision:form.dataset.revision},outcome);},
   busy(on){if(on)form.dataset.busy='1';else delete form.dataset.busy;form.dispatchEvent(new UiEvent('form-busy-changed'));},
   advance(ms){clock+=ms;for(const [id,timer] of [...timers])if(timer.at<=clock){timers.delete(id);timer.fn();}},
   notify(target,attribute){for(const observer of observers)if(observer.target===target&&observer.options.attributeFilter.includes(attribute))observer.fn();},
@@ -70,26 +70,26 @@ test('metadata editing on the unchanged approved URL needs no extra stream test'
  const f=fixture();f.input('bio','Updated programme');assert.equal(f.save.disabled,false);assert.equal(f.stream.open,false);assert.equal(f.calls.length,0);assert.equal(f.window.ownerEditorSaveAllowed(),true);
 });
 
-test('optional station language and category edits enable Save without retesting the approved stream',()=>{
- const f=fixture({...original,language:'ht',category:'christian'});assert.equal(f.save.disabled,true);
- f.input('language','en');assert.equal(f.save.disabled,false);assert.equal(f.window.ownerEditorNeedsSave(),true);assert.equal(f.stream.open,false);assert.equal(f.calls.length,0);
- f.input('language','ht');assert.equal(f.save.disabled,true);f.input('category','news_talk');assert.equal(f.save.disabled,false);f.input('category','christian');assert.equal(f.save.disabled,true);
+test('optional station ZIP and category edits enable Save without retesting the approved stream',()=>{
+ const f=fixture({...original,zip_code:'01234',category:'christian'});assert.equal(f.save.disabled,true);
+ f.input('zip_code','04567');assert.equal(f.save.disabled,false);assert.equal(f.window.ownerEditorNeedsSave(),true);assert.equal(f.stream.open,false);assert.equal(f.calls.length,0);
+ f.input('zip_code','01234');assert.equal(f.save.disabled,true);f.input('category','news_talk');assert.equal(f.save.disabled,false);f.input('category','christian');assert.equal(f.save.disabled,true);
 });
 
 test('optional saved metadata is retained when a legacy read or ordinary edit omits its fields',()=>{
- const f=fixture({...original,language:'ht',category:'christian'});f.sync(original);assert.equal(f.save.disabled,true);
+ const f=fixture({...original,zip_code:'01234',category:'christian'});f.sync(original);assert.equal(f.save.disabled,true);
  f.input('bio','Updated bio');f.window.ownerEditorSaved({...original,bio:'Updated bio'});assert.equal(f.save.disabled,true);
- f.input('language','en');assert.equal(f.save.disabled,false);f.input('language','ht');assert.equal(f.save.disabled,true);
+ f.input('zip_code','04567');assert.equal(f.save.disabled,false);f.input('zip_code','01234');assert.equal(f.save.disabled,true);
 });
 
 test('an accepted metadata write is clean and a preserved conflicting refresh does not erase a draft',()=>{
- const f=fixture({...original,language:'ht',category:''});f.input('category','news_talk');f.sync({...original,language:'ht',category:'news_talk',revision:'new-revision'},{preserveDraft:true});assert.equal(f.save.disabled,false);assert.equal(f.form.dataset.revision,'revision-one');
+ const f=fixture({...original,zip_code:'01234',category:''});f.input('category','news_talk');f.sync({...original,zip_code:'01234',category:'news_talk',revision:'new-revision'},{preserveDraft:true});assert.equal(f.save.disabled,false);assert.equal(f.form.dataset.revision,'revision-one');
  f.saved();assert.equal(f.save.disabled,true);f.input('category','');assert.equal(f.save.disabled,false);f.input('category','news_talk');assert.equal(f.save.disabled,true);
 });
 
-test('an unavailable metadata catalog does not block a normal Bio edit or mark disabled metadata as changed',()=>{
- const f=fixture({...original,language:'ht',category:'christian'});f.form.dataset.ownerMetadataReady='false';f.input('language','');assert.equal(f.save.disabled,true);
- f.input('bio','Still editable');assert.equal(f.save.disabled,false);assert.equal(f.window.ownerEditorSaveAllowed(),true);assert.equal(f.calls.length,0);
+test('an unavailable Category catalog does not block ZIP or Bio edits and ignores disabled Category changes',()=>{
+ const f=fixture({...original,zip_code:'01234',category:'christian'});f.form.dataset.ownerMetadataReady='false';f.form.dataset.ownerZipReady='true';f.input('category','');assert.equal(f.save.disabled,true);
+ f.input('zip_code','04567');assert.equal(f.save.disabled,false);f.input('zip_code','01234');assert.equal(f.save.disabled,true);f.input('bio','Still editable');assert.equal(f.save.disabled,false);assert.equal(f.window.ownerEditorSaveAllowed(),true);assert.equal(f.calls.length,0);
 });
 
 test('a preserved draft stays compared with its original accepted revision, including conflicting refreshes',()=>{

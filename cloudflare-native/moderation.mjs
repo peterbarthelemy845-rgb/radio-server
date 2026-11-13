@@ -41,13 +41,13 @@ export async function screenStation(env,code,fetcher=fetch,now=Math.floor(Date.n
       return await commitOwnerNotification(env,now,publishStationEdit(env,live,proposal,now),notice,[{sql:'DELETE FROM station_edits WHERE station_code=? AND revision=? AND OWNER_NOTIFICATION_APPLIED',values:[live.code,proposal.revision]}]);
     }catch{return false;}
   }
-  const station=await env.DB.prepare("SELECT code,name,bio,stream_url,contact_email,artwork_key,email_verified_at,updated_at,language,category FROM stations WHERE code=? AND status='pending_review' AND email_verified_at IS NOT NULL").bind(code).first();
+  const station=await env.DB.prepare("SELECT code,name,bio,stream_url,contact_email,artwork_key,email_verified_at,updated_at,language,category,zip_code FROM stations WHERE code=? AND status='pending_review' AND email_verified_at IS NOT NULL").bind(code).first();
   if(!station||!await scanCreative(env,station.name+'\n'+station.bio,station.artwork_key,fetcher))return false;
   try{
     const notice=await ownerNotification(env,{kind:'station-approved',stationCode:station.code,recipient:station.contact_email,event:station});
     const stream=streamPublicationGuard(station,null,now);
     return await commitOwnerNotification(env,now,env.DB.prepare(`UPDATE stations SET status='published',updated_at=? WHERE code=? AND status='pending_review'
-      AND email_verified_at IS ? AND name=? AND bio=? AND stream_url=? AND contact_email=? AND artwork_key IS ? AND updated_at=? AND language=? AND category=? AND NOT EXISTS(SELECT 1 FROM station_edits WHERE station_code=stations.code) AND ${stream.sql}`)
-      .bind(Math.max(now,station.updated_at+1),code,station.email_verified_at,station.name,station.bio,station.stream_url,station.contact_email,station.artwork_key,station.updated_at,station.language,station.category,...stream.values),notice);
+      AND email_verified_at IS ? AND name=? AND bio=? AND stream_url=? AND contact_email=? AND artwork_key IS ? AND updated_at=? AND language=? AND category=? AND zip_code=? AND NOT EXISTS(SELECT 1 FROM station_edits WHERE station_code=stations.code) AND ${stream.sql}`)
+      .bind(Math.max(now,station.updated_at+1),code,station.email_verified_at,station.name,station.bio,station.stream_url,station.contact_email,station.artwork_key,station.updated_at,station.language,station.category,station.zip_code,...stream.values),notice);
   }catch{return false;}
 }

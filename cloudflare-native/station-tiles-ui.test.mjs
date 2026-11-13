@@ -104,16 +104,16 @@ test('saved rows keep cached station names and thumbnails after the available se
  assert.deepEqual(f.names('savedStations'),['Local Radio']);const image=f.$('savedStations').children[0].children[0].children[0];assert.equal(image.src,'/artwork/local.png?size=192');assert.equal(f.$('savedStationsSection').hidden,false);
 });
 
-test('language and category filter only available stations while unclassified saved stations remain accessible',()=>{
- const directory={query:'',loadedQuery:'',language:'ht',loadedLanguage:'ht',category:'music',loadedCategory:'music',loading:false,hasMore:false},f=searchFixture({directory,stations:[{name:'Saved Radio',listener_code:'13'},{name:'Kreyòl Music',listener_code:'14',language:'ht',category:'music'},{name:'French Music',listener_code:'15',language:'fr',category:'music'},{name:'Kreyòl News',listener_code:'16',language:'ht',category:'news_talk'},{name:'Unclassified',listener_code:'17'}]});
- f.search('');assert.deepEqual(f.names('savedStations'),['Saved Radio']);assert.deepEqual(f.names('stations'),['Kreyòl Music']);
+test('ZIP and category filter only available stations while unclassified saved stations remain accessible',()=>{
+ const directory={query:'',loadedQuery:'',zip_code:'10960',loadedZipCode:'10960',category:'music',loadedCategory:'music',loading:false,hasMore:false},f=searchFixture({directory,stations:[{name:'Saved Radio',listener_code:'13'},{name:'Nyack Music',listener_code:'14',zip_code:'10960',category:'music'},{name:'Nearby Music',listener_code:'15',zip_code:'10989',category:'music'},{name:'Local News',listener_code:'16',zip_code:'10960',category:'news_talk'},{name:'Unclassified',listener_code:'17'}]});
+ f.search('');assert.deepEqual(f.names('savedStations'),['Saved Radio']);assert.deepEqual(f.names('stations'),['Nyack Music','Nearby Music'],'server-returned nearby ZIP results stay visible');
  f.search('saved');assert.deepEqual(f.names('savedStations'),['Saved Radio']);assert.deepEqual(f.names('stations'),[]);assert.equal(f.$('savedStationsSection').hidden,false);
 });
 
 test('changing filters hides stale available results while keeping saved items and accurate loading feedback',()=>{
- const directory={query:'',loadedQuery:'',language:'fr',loadedLanguage:'ht',category:'',loadedCategory:'',loading:true,hasMore:false},f=searchFixture({directory,stations:[{name:'Saved Radio',listener_code:'13'},{name:'Old filtered radio',listener_code:'14',language:'ht'}]});
+ const directory={query:'',loadedQuery:'',zip_code:'00501',loadedZipCode:'10960',category:'',loadedCategory:'',loading:true,hasMore:false},f=searchFixture({directory,stations:[{name:'Saved Radio',listener_code:'13'},{name:'Old filtered radio',listener_code:'14',zip_code:'10960'}]});
  f.search('');assert.deepEqual(f.names('savedStations'),['Saved Radio']);assert.deepEqual(f.names('stations'),[]);assert.equal(f.$('stations').children[0].textContent,'Loading stations…');
- directory.loading=false;directory.loadedLanguage='fr';f.search('');assert.equal(f.$('stations').children[0].textContent,'No stations match these filters.');assert.deepEqual(f.openings,[]);
+ directory.loading=false;directory.loadedZipCode='00501';f.search('');assert.deepEqual(f.names('stations'),['Old filtered radio'],'a response bound to the new ZIP is trusted even when result postal codes differ');assert.deepEqual(f.openings,[]);
 });
 
 function popupShareFixture({load=async()=>{},afterMetadata=async()=>{}}={}){

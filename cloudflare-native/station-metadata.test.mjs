@@ -18,7 +18,7 @@ const update=(station,extra={})=>({revision:station.revision,name:station.name,s
 
 test('metadata catalog validates exact optional values and legacy payloads preserve classifications',()=>{
  assert.deepEqual(metadataOptions.languages.map(item=>item.value),['en','ht','fr','es','pt','other']);assert.deepEqual(metadataOptions.categories.map(item=>item.value),['christian','news_talk','music','culture','other']);
- assert.deepEqual(stationMetadata({}),{language:'',category:''});assert.deepEqual(stationMetadata({}, {language:'ht',category:'christian'}),{language:'ht',category:'christian'});assert.deepEqual(stationMetadata({language:''},{language:'ht',category:'culture'}),{language:'',category:'culture'});
+ assert.deepEqual(stationMetadata({}),{language:'',category:'',zip_code:''});assert.deepEqual(stationMetadata({}, {language:'ht',category:'christian'}),{language:'ht',category:'christian',zip_code:''});assert.deepEqual(stationMetadata({language:''},{language:'ht',category:'culture'}),{language:'',category:'culture',zip_code:''});
  for(const body of [{language:'HT'},{language:null},{language:[]},{language:'ht\u0000'},{category:'news'},{category:123},{category:'music OR 1=1'}])assert.throws(()=>stationMetadata(body),error=>error.status===400);
 });
 

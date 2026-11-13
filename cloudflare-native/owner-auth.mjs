@@ -126,7 +126,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!station)return json({message:'Station not found.'},404);
     if(['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     const draft=pending||station,revision=await ownerRevision(env,station,pending);
-    return json({owner_expires:current.owner_expires,server_time:now,metadata_options:metadataOptions,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,language:draft.language,category:draft.category,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash),approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,language:station.language,category:station.category,status:station.status}}});
+    return json({owner_expires:current.owner_expires,server_time:now,metadata_options:metadataOptions,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,language:draft.language,category:draft.category,zip_code:draft.zip_code,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash),approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,language:station.language,category:station.category,zip_code:station.zip_code,status:station.status}}});
   }
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now);
@@ -184,7 +184,7 @@ export async function authRoutes(request,env,now,deps={human}){
     let requestId=body.request_id;
     if(requestId!==undefined&&(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)))throw new HttpError(400,'Refresh the signup page and try again.');
     const url=streamUrl(body.stream_url),location=String(body.location||'').slice(0,80);
-    const payloadHash=await digest(JSON.stringify([name,url,bio,email,location,VERSION,body.artwork?.name,body.artwork?.base64,...(metadata.language||metadata.category?[metadata.language,metadata.category]:[])]));
+    const payloadHash=await digest(JSON.stringify([name,url,bio,email,location,VERSION,body.artwork?.name,body.artwork?.base64,...(metadata.language||metadata.category?[metadata.language,metadata.category]:[]),...(metadata.zip_code?['zip_code',metadata.zip_code]:[])]));
     // Older open forms have no retry ID. Keep their in-progress signup safe
     // without forcing a reload or storing any private draft in the browser.
     if(requestId===undefined)requestId=(await mac(env,'legacy-registration:'+current.token_hash+':'+payloadHash)).slice(0,32);
@@ -210,9 +210,9 @@ export async function authRoutes(request,env,now,deps={human}){
       const guard="session_hash=? AND request_id=? AND lease_token=? AND lease_until>MAX(?,unixepoch()) AND state='pending' AND "+streamSave.sql;
       const owner=[current.token_hash,requestId,lease,now,...streamSave.values];
       await env.DB.batch([
-        env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at,language,category)
-          SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)`)
-          .bind(name,url,bio,location,email,key,now,now,metadata.language,metadata.category,...owner),
+        env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at,language,category,zip_code)
+          SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)`)
+          .bind(name,url,bio,location,email,key,now,now,metadata.language,metadata.category,metadata.zip_code,...owner),
         env.DB.prepare(`UPDATE registration_requests SET station_code=last_insert_rowid() WHERE ${guard} AND station_code IS NULL AND changes()>0`).bind(...owner),
         env.DB.prepare(`INSERT INTO agreement_acceptances(station_code,agreement_version,agreement_hash,accepted_at)
           SELECT station_code,?,?,? FROM registration_requests WHERE ${guard} AND station_code IS NOT NULL`).bind(VERSION,agreementHash,now,...owner),
@@ -237,13 +237,13 @@ export async function authRoutes(request,env,now,deps={human}){
             JOIN stations saved ON saved.code=completed.station_code
             JOIN email_verifications verified ON verified.id=completed.verification_id AND verified.station_code=saved.code AND verified.session_hash=completed.session_hash
             WHERE completed.session_hash=? AND completed.request_id=? AND completed.payload_hash=? AND completed.lease_token=? AND completed.state='complete' AND completed.lease_until=0
-              AND completed.verification_id=? AND saved.name=? AND saved.stream_url=? AND saved.bio=? AND saved.location=? AND saved.contact_email=? AND saved.artwork_key=? AND saved.status='pending_email'
+              AND completed.verification_id=? AND saved.name=? AND saved.stream_url=? AND saved.bio=? AND saved.location=? AND saved.contact_email=? AND saved.artwork_key=? AND saved.language=? AND saved.category=? AND saved.zip_code=? AND saved.status='pending_email'
               AND verified.purpose='registration' AND verified.code_hash=? AND verified.expires=? AND verified.consumed_at IS NULL
               AND EXISTS(SELECT 1 FROM agreement_acceptances accepted WHERE accepted.station_code=saved.code AND accepted.agreement_version=? AND accepted.agreement_hash=?)
               AND EXISTS(SELECT 1 FROM mail_outbox queued WHERE queued.id=? AND queued.recipient=? AND queued.encrypted_payload=? AND queued.due=? AND queued.expires=?)
               AND ?>MAX(?,unixepoch()) AND ${streamSave.sql})`)
           .bind(current.token_hash,requestId,payloadHash,lease,now,now+86400,
-            current.token_hash,requestId,payloadHash,lease,values.id,name,url,bio,location,email,key,values.codeHash,values.expires,
+            current.token_hash,requestId,payloadHash,lease,values.id,name,url,bio,location,email,key,metadata.language,metadata.category,metadata.zip_code,values.codeHash,values.expires,
             VERSION,agreementHash,values.mail,email,values.payload,now,values.expires,claimed.lease_until,now,...streamSave.values)
       ]);
       const complete=await env.DB.prepare("SELECT * FROM registration_requests WHERE session_hash=? AND request_id=? AND state='complete'").bind(current.token_hash,requestId).first();
@@ -345,22 +345,22 @@ export async function authRoutes(request,env,now,deps={human}){
     await assertStreamSaveCheck(env,streamSave);
     const key=body.artwork?await artwork(env,body.artwork,undefined,()=>assertStreamSaveCheck(env,streamSave)):draft.artwork_key;
     const guard=stationStateGuard(station,pending),editRevision=randomHex(16);
-    if(name===draft.name&&url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key&&metadata.language===draft.language&&metadata.category===draft.category){
+    if(name===draft.name&&url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key&&metadata.language===draft.language&&metadata.category===draft.category&&metadata.zip_code===draft.zip_code){
       await assertStreamSaveCheck(env,streamSave);
       if(!await env.DB.prepare('SELECT 1 WHERE '+guard.sql).bind(...guard.values).first())throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
       await attachStreamCheck(env,current.token_hash,station.code,url,pending?.revision||'initial',now,streamSave);
       await assertStreamSaveCheck(env,streamSave);
       const approved=station.status==='published'&&!pending?true:await screenStation(env,station.code,fetch,now,pending?.revision);
       const latest=await stationState(env,station.code);
-      const sameTarget=latest.pending?.revision===pending?.revision&&(latest.pending||latest.station?.name===name&&latest.station?.stream_url===url&&latest.station?.bio===bio&&latest.station?.artwork_key===key&&latest.station?.language===metadata.language&&latest.station?.category===metadata.category),promoted=approved&&!latest.pending&&latest.station?.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key&&latest.station.language===metadata.language&&latest.station.category===metadata.category;
+      const sameTarget=latest.pending?.revision===pending?.revision&&(latest.pending||latest.station?.name===name&&latest.station?.stream_url===url&&latest.station?.bio===bio&&latest.station?.artwork_key===key&&latest.station?.language===metadata.language&&latest.station?.category===metadata.category&&latest.station?.zip_code===metadata.zip_code),promoted=approved&&!latest.pending&&latest.station?.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key&&latest.station.language===metadata.language&&latest.station.category===metadata.category&&latest.station.zip_code===metadata.zip_code;
       if(!latest.station||['deleted','suspended'].includes(latest.station.status)||!sameTarget&&!promoted)throw new HttpError(409,'This station changed. Refresh and review it again.');
       const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);
       return json({status:'ok',unchanged:station.status==='published'&&!pending||!approved,review_required:!approved,stream_check_required:streamRequired,message:station.status==='published'&&!pending?'No changes to save.':approved?'Station saved successfully.':streamRequired?'Your stream check is no longer current. Test your stream again before saving.':'Station saved for safety review.'});
     }
-    const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name,language,category)
-      SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${guard.sql} AND ${streamSave.sql}
-      ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at,name=excluded.name,language=excluded.language,category=excluded.category RETURNING revision`)
-      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,metadata.language,metadata.category,...guard.values,...streamSave.values).first();
+    const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name,language,category,zip_code)
+      SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE ${guard.sql} AND ${streamSave.sql}
+      ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at,name=excluded.name,language=excluded.language,category=excluded.category,zip_code=excluded.zip_code RETURNING revision`)
+      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,metadata.language,metadata.category,metadata.zip_code,...guard.values,...streamSave.values).first();
     if(!changed){
       if(body.artwork&&key!==draft.artwork_key)try{if(!await env.DB.prepare('SELECT 1 FROM stations WHERE artwork_key=? UNION SELECT 1 FROM station_edits WHERE artwork_key=?').bind(key,key).first())await env.MEDIA.delete?.('sanitized/'+key);}catch{}
       await assertStreamSaveCheck(env,streamSave);throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
@@ -370,7 +370,7 @@ export async function authRoutes(request,env,now,deps={human}){
     const latest=await stationState(env,station.code);
     if(!latest.station||['deleted','suspended'].includes(latest.station.status))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     if(latest.pending?.revision!==editRevision){
-      approved=!latest.pending&&latest.station.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key&&latest.station.language===metadata.language&&latest.station.category===metadata.category;
+      approved=!latest.pending&&latest.station.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key&&latest.station.language===metadata.language&&latest.station.category===metadata.category&&latest.station.zip_code===metadata.zip_code;
       if(!approved)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     }
     const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);

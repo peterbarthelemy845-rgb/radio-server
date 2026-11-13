@@ -118,7 +118,7 @@ $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.pr
 $('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
 $('registerForm').addEventListener('reset',()=>{registrationRequestFingerprint='';registrationRequestId='';registrationMessage('');});
 $('registerForm').onsubmit=async event=>{
- event.preventDefault();const form=event.target;if(formIsBusy(form))return;if(typeof window.prepareRegistrationStream!=='function'||typeof window.registrationStreamSaveAllowed!=='function'){registrationMessage('Stream checking is not ready. Refresh and try again.');return;}if(!window.prepareRegistrationStream()||!window.registrationStreamSaveAllowed(true))return;registrationMessage('');const data=Object.fromEntries(new FormData(form)),artworkFile=form.elements.artwork.files[0];delete data.stream_provider;data.rights_confirmed=form.elements.rights_confirmed.checked;const attempt=beginOwnerAccess(form),current=()=>currentOwnerAccess(attempt);
+ event.preventDefault();const form=event.target;if(formIsBusy(form))return;if(window.prepareRegistrationStationMetadata&&!window.prepareRegistrationStationMetadata())return;if(typeof window.prepareRegistrationStream!=='function'||typeof window.registrationStreamSaveAllowed!=='function'){registrationMessage('Stream checking is not ready. Refresh and try again.');return;}if(!window.prepareRegistrationStream()||!window.registrationStreamSaveAllowed(true))return;registrationMessage('');const data=Object.fromEntries(new FormData(form)),artworkFile=form.elements.artwork.files[0];delete data.stream_provider;data.rights_confirmed=form.elements.rights_confirmed.checked;const attempt=beginOwnerAccess(form),current=()=>currentOwnerAccess(attempt);
  try{if(window.validateRegistrationLogo&&!await window.validateRegistrationLogo(artworkFile))throw new Error(form.elements.artwork.validationMessage||'Choose a valid station logo.');if(!current())return;await ensureOwnerSession();if(!current())return;data.agreement_version=state.agreement_version;data.artwork=await fileData(artworkFile);if(!current())return;data.request_id=await registrationRequest(data,current);if(!current())return;data.turnstile_token=await human($('registrationHuman'),'station-submit',attempt.controller.signal);if(!current())return;const result=await api('/api/owner/register',data);if(current())verify(result);}
  catch(e){if(current()){if(e.status===428)window.invalidateRegistrationStreamSaveGate?.();registrationMessage(e.message);}}finally{finishOwnerAccess(attempt);}
 };
@@ -227,14 +227,15 @@ function list(){}
 
 // Refresh the public directory without discarding usable cards during a failed request.
 let stationDirectoryRequest=null,stationDirectoryGeneration=0,stationDirectoryLastAttempt=0,stationDirectoryStarted=false,stationDirectoryTimer=null;
-const stationDirectoryMetadata=new Map(),stationDirectoryState={query:'',language:'',category:'',loadedQuery:'',loadedLanguage:'',loadedCategory:'',loading:false,hasMore:false,cursor:null,expanded:false,failed:false};
+const stationDirectoryMetadata=new Map(),stationDirectoryState={query:'',zip_code:'',category:'',loadedQuery:'',loadedZipCode:'',loadedCategory:'',loading:false,hasMore:false,cursor:null,expanded:false,failed:false};
 let stationDirectoryCatalog=null;
 function normalizeStationDirectoryQuery(value){return String(value||'').slice(0,96).trim().replace(/^#\s*(?=\d)/,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function readStationDirectoryState(){return {...stationDirectoryState};}
 function readStationDirectoryCatalog(){return stationDirectoryCatalog;}
-function stationDirectorySelectionLoaded(){return stationDirectoryState.loadedQuery===stationDirectoryState.query&&stationDirectoryState.loadedLanguage===stationDirectoryState.language&&stationDirectoryState.loadedCategory===stationDirectoryState.category;}
+function stationDirectorySelectionLoaded(){return stationDirectoryState.loadedQuery===stationDirectoryState.query&&stationDirectoryState.loadedZipCode===stationDirectoryState.zip_code&&stationDirectoryState.loadedCategory===stationDirectoryState.category;}
 function getStationDirectoryStation(code){return stationDirectoryMetadata.get(String(code));}
 function stationDirectoryControls(){
+ window.stationDirectoryFilters?.syncStatus?.();
  const button=$('loadMoreStations');if(!button)return;
  button.hidden=!stationDirectoryState.hasMore;button.disabled=stationDirectoryState.loading;
  const key=stationDirectoryState.loading?'directory.loading':'directory.more',fallback=stationDirectoryState.loading?'Loading stations…':'More stations',translated=window.appI18n?.t(key);
@@ -244,7 +245,7 @@ function stationDirectoryNotice(text){const host=$('stationDirectoryStatus'),not
 function requestStationDirectory(append=false){
  if(stationDirectoryTimer!==null){clearTimeout(stationDirectoryTimer);stationDirectoryTimer=null;}
  stationDirectoryRequest?.controller.abort();
- const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,language=stationDirectoryState.language,category=stationDirectoryState.category,controller=new AbortController(),previous=stations,moreFocused=append&&document.activeElement===$('loadMoreStations');let receivedCodes=[],catalog=null;
+ const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,zip_code=stationDirectoryState.zip_code,category=stationDirectoryState.category,controller=new AbortController(),previous=stations,moreFocused=append&&document.activeElement===$('loadMoreStations');let receivedCodes=[],catalog=null;
  stationDirectoryStarted=true;stationDirectoryLastAttempt=Date.now();stationDirectoryState.loading=true;stationDirectoryState.failed=false;stationDirectoryControls();
  if(append||!stationDirectorySelectionLoaded())list();
  const promise=(async()=>{
@@ -254,22 +255,22 @@ function requestStationDirectory(append=false){
    // visitor to repeatedly press More. Never scan an unbounded directory.
    for(let page=0;page<5;page++){
     if(cursor)seenCursors.add(cursor);
-    const path='/api/stations?limit=50&q='+encodeURIComponent(query)+(language?'&language='+encodeURIComponent(language):'')+(category?'&category='+encodeURIComponent(category):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),result=await api(path,undefined,{cache:'no-store',signal:controller.signal});
+    const path='/api/stations?limit=50&q='+encodeURIComponent(query)+(zip_code?'&zip_code='+encodeURIComponent(zip_code):'')+(category?'&category='+encodeURIComponent(category):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),result=await api(path,undefined,{cache:'no-store',signal:controller.signal});
     if(generation!==stationDirectoryGeneration||controller.signal.aborted)return stations;
     if(!Array.isArray(result.stations)||result.stations.length>50)throw new Error('Station list unavailable.');
-    collected.push(...result.stations);hasMore=result.has_more===true;if(result.metadata_options&&result.facets)catalog={metadata_options:result.metadata_options,facets:result.facets};
+    collected.push(...result.stations);hasMore=result.has_more===true;if(result.metadata_options&&result.facets)catalog={metadata_options:result.metadata_options,facets:result.facets,zip_code:result.zip_code,zip_location_known:result.zip_location_known,zip_radius_miles:result.zip_radius_miles};
     const next=hasMore?result.next_cursor:null;
     if(hasMore&&(typeof next!=='string'||!next||next.length>4096||seenCursors.has(next)))throw new Error('Station list unavailable.');
     cursor=next;if(result.stations.length||!hasMore)break;
    }
    const unique=new Map();for(const station of [...(append?previous:[]),...collected]){const code=String(station.listener_code??station.code??'');if(!code)continue;unique.set(code,station);stationDirectoryMetadata.set(code,station);}
    receivedCodes=collected.map(station=>String(station.listener_code??station.code??'')).filter(code=>!previous.some(station=>String(station.listener_code??station.code??'')===code));
-   stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.loadedLanguage=language;stationDirectoryState.loadedCategory=category;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append;
+   stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.loadedZipCode=zip_code;stationDirectoryState.loadedCategory=category;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append;
    if(catalog){stationDirectoryCatalog=catalog;window.stationDirectoryFilters?.updateCatalog(catalog);}
    stationDirectoryNotice('');return stations;
   }
   catch(e){if(generation===stationDirectoryGeneration&&!controller.signal.aborted){stationDirectoryState.failed=true;stationDirectoryNotice(previous.length&&stationDirectorySelectionLoaded()?'Could not update stations. Showing the last loaded list. Check your connection and try again.':'Stations could not load. Check your connection and try again.');}return stations;}
-  finally{if(generation===stationDirectoryGeneration){stationDirectoryState.loading=false;stationDirectoryControls();list();window.onStationDirectoryComplete?.({query,language,category,append,moreFocused,receivedCodes,failed:stationDirectoryState.failed,hasMore:stationDirectoryState.hasMore});}if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
+  finally{if(generation===stationDirectoryGeneration){stationDirectoryState.loading=false;stationDirectoryControls();list();window.onStationDirectoryComplete?.({query,zip_code,category,append,moreFocused,receivedCodes,failed:stationDirectoryState.failed,hasMore:stationDirectoryState.hasMore});}if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
  })();
  stationDirectoryRequest={generation,promise,controller};return promise;
 }
@@ -288,11 +289,13 @@ function searchStationDirectory(value){
  stationDirectoryTimer=setTimeout(()=>{stationDirectoryTimer=null;void requestStationDirectory();},250);
 }
 function applyStationDirectoryFilters(filters={}){
- const language=['en','ht','fr','es','pt','other'].includes(filters.language)?filters.language:'',category=['christian','news_talk','music','culture','other'].includes(filters.category)?filters.category:'';
- if(language===stationDirectoryState.language&&category===stationDirectoryState.category)return Promise.resolve(stations);
+ if(filters.zip_code!=null&&typeof filters.zip_code!=='string')return Promise.resolve(stations);
+ const zip_code=typeof filters.zip_code==='string'?filters.zip_code.trim():'',category=['christian','news_talk','music','culture','other'].includes(filters.category)?filters.category:'';
+ if(zip_code&&!/^[0-9]{5}$/.test(zip_code))return Promise.resolve(stations);
+ if(zip_code===stationDirectoryState.zip_code&&category===stationDirectoryState.category)return Promise.resolve(stations);
  // A filter change supersedes any pending search/page and never reuses its cursor.
  if(stationDirectoryTimer!==null){clearTimeout(stationDirectoryTimer);stationDirectoryTimer=null;}
- stationDirectoryState.language=language;stationDirectoryState.category=category;stationDirectoryState.hasMore=false;stationDirectoryState.cursor=null;stationDirectoryState.expanded=false;stationDirectoryState.failed=false;
+ stationDirectoryState.zip_code=zip_code;stationDirectoryState.category=category;stationDirectoryState.hasMore=false;stationDirectoryState.cursor=null;stationDirectoryState.expanded=false;stationDirectoryState.failed=false;
  stationDirectoryNotice('');return requestStationDirectory();
 }
 function loadMoreStationDirectory(){

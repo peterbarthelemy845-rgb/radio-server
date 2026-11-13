@@ -1,0 +1,11 @@
+{
+  "source": "GeoNames US postal code dataset",
+  "url": "https://download.geonames.org/export/zip/US.zip",
+  "license": "CC BY 4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "retrieved": "2026-11-13",
+  "source_last_modified": "Fri, 13 Nov 2026 02:50:41 GMT",
+  "source_sha256": "5682ac3f098db487880198d5a0817ffc3fa23679dbfaf62f74bed32b6293b7a0",
+  "zip_count": 41488,
+  "transformation": "US five-digit ZIP, latitude and longitude rounded to four decimal places; highest-accuracy row retained for duplicate ZIPs; sorted by ZIP. Approximate locations only."
+}

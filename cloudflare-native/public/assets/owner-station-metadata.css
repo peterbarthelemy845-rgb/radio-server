@@ -4,13 +4,13 @@
 :is(#ownerStationDetails,#registrationStationDetails)[open]>summary{border-bottom:1px solid #dbe5f3}
 :is(#editor,#register) .owner-metadata-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}
 :is(#editor,#register) .owner-metadata-fields label{min-width:0;margin:0;font-size:14px;line-height:1.4}
-:is(#editor,#register) .owner-metadata-fields select{box-sizing:border-box;width:100%;min-height:46px;margin:5px 0 0;padding:9px 10px;border:1px solid #cad9ec;border-radius:9px;background:#fff;color:#172b4d;font:inherit;font-size:16px}
-:is(#editor,#register) .owner-metadata-fields select:disabled{color:#5c6e87;background:#edf2f9;opacity:1}
+:is(#editor,#register) .owner-metadata-fields :is(select,input){box-sizing:border-box;width:100%;min-height:46px;margin:5px 0 0;padding:9px 10px;border:1px solid #cad9ec;border-radius:9px;background:#fff;color:#172b4d;font:inherit;font-size:16px}
+:is(#editor,#register) .owner-metadata-fields :is(select,input):disabled{color:#5c6e87;background:#edf2f9;opacity:1}
 #editor #ownerStationMetadataMessage{margin:0;padding:0 12px 12px;font-size:13px;line-height:1.5;color:#5c6e87}
 #register #registrationStationDetails{margin:10px 0}
 #register #registrationStationDetails>summary{min-height:36px;padding:8px 10px;font-size:13px}
 #register .owner-metadata-fields{gap:8px;padding:8px 10px 10px}
 #register .owner-metadata-fields label{font-size:13px}
-#register .owner-metadata-fields select{min-height:44px;margin-top:4px;padding:8px 9px}
+#register .owner-metadata-fields :is(select,input){min-height:44px;margin-top:4px;padding:8px 9px}
 @media(max-width:360px){:is(#editor,#register) .owner-metadata-fields{grid-template-columns:minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){:is(#ownerStationDetails,#registrationStationDetails){scroll-behavior:auto}}

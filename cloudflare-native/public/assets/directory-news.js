@@ -56,10 +56,12 @@ list=function(){
  if(radioId&&typeof loadRadioInventory==='function')loadRadioInventory(radioId);
  const directory=typeof readStationDirectoryState==='function'?readStationDirectoryState():null,savedCodes=known?inventory.codes:new Set(),matches=s=>fold(s.name+' '+s.listener_code).includes(query);
  const saved=known?[...savedCodes].map(code=>(typeof getSavedStationMetadata==='function'?getSavedStationMetadata(code):null)||stations.find(s=>String(s.listener_code)===code)||(typeof getStationDirectoryStation==='function'?getStationDirectoryStation(code):null)||{listener_code:code,name:'Station '+code,logo_url:''}).filter(matches):[];
- const language=directory?.language||'',category=directory?.category||'',filtered=!!(language||category),current=!directory||directory.loadedQuery===query&&(directory.loadedLanguage||'')===language&&(directory.loadedCategory||'')===category,available=current?stations.filter(s=>!savedCodes.has(String(s.listener_code))&&matches(s)&&(!language||s.language===language)&&(!category||s.category===category)):[];
+ // The server expands the entered ZIP to nearby stations; do not discard a
+ // nearby result merely because its own postal code differs from the search.
+ const zip_code=directory?.zip_code||'',category=directory?.category||'',filtered=!!(zip_code||category),current=!directory||directory.loadedQuery===query&&(directory.loadedZipCode||'')===zip_code&&(directory.loadedCategory||'')===category,available=current?stations.filter(s=>!savedCodes.has(String(s.listener_code))&&matches(s)&&(!category||s.category===category)):[];
  const hint=!radioId?'':inventory?.stale?'Saved stations not checked. Showing the last known list.':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
  const waiting=directory?.loading?'Loading stations…':directory?.hasMore?'More stations may match. Load more to continue.':directory?.failed?'Stations could not load. Try again.':'';
- const snapshot=JSON.stringify([radioId,known,query,language,category,hint,saved,available,available.length?'':waiting]);if(snapshot===stationListSnapshot)return;stationListSnapshot=snapshot;
+ const snapshot=JSON.stringify([radioId,known,query,zip_code,category,hint,saved,available,available.length?'':waiting]);if(snapshot===stationListSnapshot)return;stationListSnapshot=snapshot;
  $('stationCount').textContent='';$('savedStationsSection').hidden=!known||saved.length===0;$('stationInventoryHelp').textContent=hint;$('stationInventoryHelp').hidden=!hint;
  $('clearStationSearch').hidden=!query||saved.length+available.length>0||!!directory?.loading||!!directory?.hasMore;
  renderStationSlider($('savedStations'),saved,query?'No matching saved stations.':'No saved stations reported.',true);
@@ -77,7 +79,7 @@ let stationResultAnnouncementSignature='';
 window.onStationDirectoryComplete=function(detail={}){
  if(detail.failed||document.hidden||$('myRadio').hidden)return;
  const tracks=[$('savedStations'),$('stations')],items=tracks.flatMap(track=>[...track.children].filter(item=>item.className==='station-slider-item'));
- const signature=JSON.stringify([detail.query||'',detail.language||'',detail.category||'',items.map(item=>item.getAttribute('data-station-code')),!!detail.hasMore]);
+ const signature=JSON.stringify([detail.query||'',detail.zip_code||'',detail.category||'',items.map(item=>item.getAttribute('data-station-code')),!!detail.hasMore]);
  if(signature!==stationResultAnnouncementSignature){stationResultAnnouncementSignature=signature;const key=detail.hasMore?'directory.resultsMore':'directory.results',fallback=items.length+' stations shown.'+(detail.hasMore?' More available.':''),translated=window.appI18n?.t(key,{count:items.length});stationResultAnnouncement.textContent=translated&&translated!==key?translated:fallback;}
  if(!detail.append||!detail.moreFocused||document.querySelector('dialog[open]'))return;
  const more=$('loadMoreStations'),active=document.activeElement;if(active!==more&&active!==document.body)return;
