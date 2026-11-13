@@ -103,16 +103,16 @@ async function ensureOwnerSession(){if(!state?.csrf||!state?.agreement_version||
 async function registrationRequest(data,current=()=>true){const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(data))))).map(byte=>byte.toString(16).padStart(2,'0')).join('');if(!current())return '';if(fingerprint!==registrationRequestFingerprint){registrationRequestFingerprint=fingerprint;registrationRequestId=crypto.randomUUID().replaceAll('-','');}return registrationRequestId;}
 function ownerAccessSuccess(result){$('stationSuccessTitle').textContent=result.registration_completed?(result.stream_check_required?'Stream test required':result.review_required?'Waiting for review':'Station added'):'Signed in';$('stationSuccessText').textContent=result.registration_completed?'Station code #'+result.station_code+'.'+(result.stream_check_required?' Test your stream before saving changes.':''):'You can edit your station.';if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='';if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=true;if(!$('stationSuccess').open)$('stationSuccess').showModal();}
 function ownerEditorUnavailable(result,error){ownerAccessSuccess(result);if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Your verification succeeded. Please try opening the editor again.';else message(error.message);if($('retryOwnerEditor'))$('retryOwnerEditor').hidden=false;}
-function applyOwnerStation(station,preserveDraft=false){
+function applyOwnerStation(station,preserveDraft=false,metadataOptions){
  state.owner_station=station.code;page('editor');const form=$('editForm'),sameStation=form.dataset.stationCode===String(station.code),keepDraft=preserveDraft&&sameStation&&!!(form.dataset.dirty||form.elements.artwork.files[0]),stale=keepDraft&&station.revision&&form.dataset.revision&&station.revision!==form.dataset.revision;
  ownerEditFeedback(stale?ownerText('owner.conflict','This station changed elsewhere. Your edits are kept. Review the latest saved version before saving again.'):'',false,stale);
  $('ownerName').textContent=station.name;if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(station.artwork_url);
  $('ownerStatus').textContent='Station code #'+station.code+' · '+station.status.replaceAll('_',' ')+(station.review_pending?' · '+(station.status==='published'?ownerText('owner.pendingEdit','Changes waiting for review. Your last approved station stays live.'):ownerText('owner.pendingEditPrivate','Changes waiting for review. Your station is not published yet.')):'');
  if(!keepDraft){form.elements.name.value=station.name;form.elements.stream_url.value=station.stream_url;form.elements.bio.value=station.bio;form.elements.artwork.value='';delete form.dataset.dirty;form.dataset.revision=station.revision||'';}
- form.dataset.stationCode=String(station.code);if(!keepDraft)window.syncOwnerStreamSetup?.({accepted:true});window.syncOwnerStreamSaveGate?.(station);window.renderOwnerStreamPublication?.(station);window.syncOwnerEditorState?.(station,{preserveDraft:keepDraft});
+ form.dataset.stationCode=String(station.code);window.syncOwnerStationMetadata?.(station,{preserveDraft:keepDraft,metadataOptions});if(!keepDraft)window.syncOwnerStreamSetup?.({accepted:true});window.syncOwnerStreamSaveGate?.(station);window.renderOwnerStreamPublication?.(station);window.syncOwnerEditorState?.(station,{preserveDraft:keepDraft});
 }
 function applyOwnerExpiry(result){if(!Number.isInteger(result.owner_expires))return;if(state){state.owner_expires=result.owner_expires;if(Number.isInteger(result.server_time))state.server_time=result.server_time;}const event=new Event('owner-session-updated');event.detail={...result,...(state?{owner_station:state.owner_station}:{})};window.dispatchEvent(event);}
-async function editor(preserveDraft=false,generation=sitePageGeneration){const ownerGeneration=ownerSessionGeneration;try{const result=await api('/api/owner/station');if(generation!==sitePageGeneration||ownerGeneration!==ownerSessionGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft);return true;}catch(error){if(error.status===401&&generation===sitePageGeneration&&ownerGeneration===ownerSessionGeneration)clearOwnerSession();throw error;}}
+async function editor(preserveDraft=false,generation=sitePageGeneration){const ownerGeneration=ownerSessionGeneration;try{const result=await api('/api/owner/station');if(generation!==sitePageGeneration||ownerGeneration!==ownerSessionGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft,result.metadata_options);return true;}catch(error){if(error.status===401&&generation===sitePageGeneration&&ownerGeneration===ownerSessionGeneration)clearOwnerSession();throw error;}}
 $('openLogin').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await window.loadAppFeature?.('owner');if(generation!==sitePageGeneration)return;await loadOwnerSession();if(generation!==sitePageGeneration)return;if(window.ownerAccountNavigation?.active())await editor(true,generation);else page('register');}catch(e){if(generation===sitePageGeneration){if(e.status===401)page('login');else if(window.ownerAccountNavigation?.active())ownerAccountUnavailable();message(e.message);}}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
 $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.preventDefault();});
 $('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
@@ -147,7 +147,7 @@ if($('ownerReviewLatest'))$('ownerReviewLatest').onclick=async()=>{
  try{
   const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return;
   const station=result.station,summary=ownerText('owner.latestName','Latest station name:')+'\n'+station.name+'\n\n'+ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
-  if(await listenerActionDialog(ownerText('owner.reviewLatest','Review latest version'),summary,ownerText('owner.useLatest','Use latest version'),true)&&generation===sitePageGeneration)applyOwnerStation(station,false);
+  if(await listenerActionDialog(ownerText('owner.reviewLatest','Review latest version'),summary,ownerText('owner.useLatest','Use latest version'),true)&&generation===sitePageGeneration)applyOwnerStation(station,false,result.metadata_options);
  }catch(error){if(generation===sitePageGeneration)ownerEditFeedback(error.message,false,true);}
  finally{button.disabled=false;busy(form,false);}
 };
@@ -196,10 +196,11 @@ window.addEventListener?.('pagehide',()=>{ownerCoverGeneration++;clearOwnerCover
 $('editForm').onsubmit=async event=>{
  event.preventDefault();const form=event.target;if(formIsBusy(form)||ownerLogoutBusy)return;
  if(window.prepareOwnerStreamSetup&&!window.prepareOwnerStreamSetup())return;
+ if(window.prepareOwnerStationMetadata&&!window.prepareOwnerStationMetadata())return;
  if(typeof window.ownerStreamSaveAllowed!=='function'){ownerEditFeedback('Stream checking is not ready. Refresh and try again.');return;}if(!window.ownerStreamSaveAllowed(true))return;
  if(window.ownerEditorSaveAllowed&&!window.ownerEditorSaveAllowed())return;
  const name=form.elements.name.value.trim();if(!name||/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96){ownerEditFeedback(!name?ownerText('owner.nameRequired','Enter a station name.'):ownerText('owner.nameTooLong','Shorten the station name so it fits on the radio.'));form.elements.name.focus();return;}form.elements.name.value=name;
- const generation=sitePageGeneration,data={revision:form.dataset.revision,name,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
+ const generation=sitePageGeneration,data={revision:form.dataset.revision,name,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value,...window.metadataSaveValues?.()},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
  try{
   if(artwork&&!await validateOwnerArtwork(artwork,{focus:true}))return;
   if(generation!==sitePageGeneration)return;
@@ -226,9 +227,12 @@ function list(){}
 
 // Refresh the public directory without discarding usable cards during a failed request.
 let stationDirectoryRequest=null,stationDirectoryGeneration=0,stationDirectoryLastAttempt=0,stationDirectoryStarted=false,stationDirectoryTimer=null;
-const stationDirectoryMetadata=new Map(),stationDirectoryState={query:'',loadedQuery:'',loading:false,hasMore:false,cursor:null,expanded:false,failed:false};
+const stationDirectoryMetadata=new Map(),stationDirectoryState={query:'',language:'',category:'',loadedQuery:'',loadedLanguage:'',loadedCategory:'',loading:false,hasMore:false,cursor:null,expanded:false,failed:false};
+let stationDirectoryCatalog=null;
 function normalizeStationDirectoryQuery(value){return String(value||'').slice(0,96).trim().replace(/^#\s*(?=\d)/,'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
 function readStationDirectoryState(){return {...stationDirectoryState};}
+function readStationDirectoryCatalog(){return stationDirectoryCatalog;}
+function stationDirectorySelectionLoaded(){return stationDirectoryState.loadedQuery===stationDirectoryState.query&&stationDirectoryState.loadedLanguage===stationDirectoryState.language&&stationDirectoryState.loadedCategory===stationDirectoryState.category;}
 function getStationDirectoryStation(code){return stationDirectoryMetadata.get(String(code));}
 function stationDirectoryControls(){
  const button=$('loadMoreStations');if(!button)return;
@@ -240,9 +244,9 @@ function stationDirectoryNotice(text){const host=$('stationDirectoryStatus'),not
 function requestStationDirectory(append=false){
  if(stationDirectoryTimer!==null){clearTimeout(stationDirectoryTimer);stationDirectoryTimer=null;}
  stationDirectoryRequest?.controller.abort();
- const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,controller=new AbortController(),previous=stations,moreFocused=append&&document.activeElement===$('loadMoreStations');let receivedCodes=[];
+ const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,language=stationDirectoryState.language,category=stationDirectoryState.category,controller=new AbortController(),previous=stations,moreFocused=append&&document.activeElement===$('loadMoreStations');let receivedCodes=[],catalog=null;
  stationDirectoryStarted=true;stationDirectoryLastAttempt=Date.now();stationDirectoryState.loading=true;stationDirectoryState.failed=false;stationDirectoryControls();
- if(append||stationDirectoryState.loadedQuery!==query)list();
+ if(append||!stationDirectorySelectionLoaded())list();
  const promise=(async()=>{
   try{
    const collected=[],seenCursors=new Set();let cursor=append?stationDirectoryState.cursor:null,hasMore=false;
@@ -250,21 +254,22 @@ function requestStationDirectory(append=false){
    // visitor to repeatedly press More. Never scan an unbounded directory.
    for(let page=0;page<5;page++){
     if(cursor)seenCursors.add(cursor);
-    const path='/api/stations?limit=50&q='+encodeURIComponent(query)+(cursor?'&cursor='+encodeURIComponent(cursor):''),result=await api(path,undefined,{cache:'no-store',signal:controller.signal});
+    const path='/api/stations?limit=50&q='+encodeURIComponent(query)+(language?'&language='+encodeURIComponent(language):'')+(category?'&category='+encodeURIComponent(category):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),result=await api(path,undefined,{cache:'no-store',signal:controller.signal});
     if(generation!==stationDirectoryGeneration||controller.signal.aborted)return stations;
     if(!Array.isArray(result.stations)||result.stations.length>50)throw new Error('Station list unavailable.');
-    collected.push(...result.stations);hasMore=result.has_more===true;
+    collected.push(...result.stations);hasMore=result.has_more===true;if(result.metadata_options&&result.facets)catalog={metadata_options:result.metadata_options,facets:result.facets};
     const next=hasMore?result.next_cursor:null;
     if(hasMore&&(typeof next!=='string'||!next||next.length>4096||seenCursors.has(next)))throw new Error('Station list unavailable.');
     cursor=next;if(result.stations.length||!hasMore)break;
    }
    const unique=new Map();for(const station of [...(append?previous:[]),...collected]){const code=String(station.listener_code??station.code??'');if(!code)continue;unique.set(code,station);stationDirectoryMetadata.set(code,station);}
    receivedCodes=collected.map(station=>String(station.listener_code??station.code??'')).filter(code=>!previous.some(station=>String(station.listener_code??station.code??'')===code));
-   stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append;
+   stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.loadedLanguage=language;stationDirectoryState.loadedCategory=category;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append;
+   if(catalog){stationDirectoryCatalog=catalog;window.stationDirectoryFilters?.updateCatalog(catalog);}
    stationDirectoryNotice('');return stations;
   }
-  catch(e){if(generation===stationDirectoryGeneration&&!controller.signal.aborted){stationDirectoryState.failed=true;stationDirectoryNotice(previous.length&&stationDirectoryState.loadedQuery===query?'Could not update stations. Showing the last loaded list. Check your connection and try again.':'Stations could not load. Check your connection and try again.');}return stations;}
-  finally{if(generation===stationDirectoryGeneration){stationDirectoryState.loading=false;stationDirectoryControls();list();window.onStationDirectoryComplete?.({query,append,moreFocused,receivedCodes,failed:stationDirectoryState.failed,hasMore:stationDirectoryState.hasMore});}if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
+  catch(e){if(generation===stationDirectoryGeneration&&!controller.signal.aborted){stationDirectoryState.failed=true;stationDirectoryNotice(previous.length&&stationDirectorySelectionLoaded()?'Could not update stations. Showing the last loaded list. Check your connection and try again.':'Stations could not load. Check your connection and try again.');}return stations;}
+  finally{if(generation===stationDirectoryGeneration){stationDirectoryState.loading=false;stationDirectoryControls();list();window.onStationDirectoryComplete?.({query,language,category,append,moreFocused,receivedCodes,failed:stationDirectoryState.failed,hasMore:stationDirectoryState.hasMore});}if(stationDirectoryRequest?.generation===generation)stationDirectoryRequest=null;}
  })();
  stationDirectoryRequest={generation,promise,controller};return promise;
 }
@@ -281,6 +286,14 @@ function searchStationDirectory(value){
  stationDirectoryState.query=query;stationDirectoryState.loading=true;stationDirectoryState.hasMore=false;stationDirectoryState.cursor=null;stationDirectoryState.expanded=false;stationDirectoryState.failed=false;
  stationDirectoryNotice('');stationDirectoryControls();list();
  stationDirectoryTimer=setTimeout(()=>{stationDirectoryTimer=null;void requestStationDirectory();},250);
+}
+function applyStationDirectoryFilters(filters={}){
+ const language=['en','ht','fr','es','pt','other'].includes(filters.language)?filters.language:'',category=['christian','news_talk','music','culture','other'].includes(filters.category)?filters.category:'';
+ if(language===stationDirectoryState.language&&category===stationDirectoryState.category)return Promise.resolve(stations);
+ // A filter change supersedes any pending search/page and never reuses its cursor.
+ if(stationDirectoryTimer!==null){clearTimeout(stationDirectoryTimer);stationDirectoryTimer=null;}
+ stationDirectoryState.language=language;stationDirectoryState.category=category;stationDirectoryState.hasMore=false;stationDirectoryState.cursor=null;stationDirectoryState.expanded=false;stationDirectoryState.failed=false;
+ stationDirectoryNotice('');return requestStationDirectory();
 }
 function loadMoreStationDirectory(){
  if(stationDirectoryRequest)return stationDirectoryRequest.promise;

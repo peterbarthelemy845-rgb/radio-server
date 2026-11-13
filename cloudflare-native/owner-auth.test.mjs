@@ -8,7 +8,7 @@ import {beginStreamCheck,completeStreamCheck} from './stream-verification.mjs';
 const now=1800000000,host='https://radio-locals-native.example';
 const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=','base64'));
 async function fixture(){
-  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql','0021_station_edits.sql','0023_station_edit_names.sql','0024_stream_verification.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
+  const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys = ON');for(const name of ['0001_core.sql','0005_community.sql','0014_registration_requests.sql','0018_notification_operations.sql','0021_station_edits.sql','0023_station_edit_names.sql','0024_stream_verification.sql','0025_station_metadata.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+name,import.meta.url),'utf8'));
   let batchLock=Promise.resolve(),imageReads=0;
   const DB={sqlite,failBatchAfter:null,prepare(sql){let args=[];const statement=sqlite.prepare(sql);const q={bind(...values){args=values;return q;},async first(){return statement.get(...args)||null;},async all(){return {results:statement.all(...args)};},async run(){return statement.run(...args);},async execute(){return statement.columns().length?{results:statement.all(...args)}:statement.run(...args);}};return q;},
     async batch(queries){const task=async()=>{sqlite.exec('BEGIN');try{const results=[];let completed=0;for(const q of queries){results.push(await q.execute());if(++completed===DB.failBatchAfter)throw new Error('Simulated database write failure');}sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}};const result=batchLock.then(task);batchLock=result.catch(()=>{});return result;}};
@@ -30,6 +30,12 @@ async function fixture(){
 }
 async function registered(){const f=await fixture();const response=await f.post('/api/owner/register',f.registration);f.result=await response.json();
   const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get();f.code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];return f;}
+
+test('optional signup metadata is validated, bound to registration retries and retained after email verification',async()=>{
+ const f=await fixture();for(const metadata of [{language:'unknown'},{category:null}])await assert.rejects(f.post('/api/owner/register',{...f.registration,...metadata}),error=>error.status===400);assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM stations').get().n,0);
+ const body={...f.registration,language:'ht',category:'christian'};await assert.rejects(f.post('/api/owner/register',{...body,rights_confirmed:false}),error=>error.status===400);const result=await(await f.post('/api/owner/register',body)).json();assert.deepEqual({...f.sqlite.prepare('SELECT language,category FROM stations').get()},{language:'ht',category:'christian'});
+ await assert.rejects(f.post('/api/owner/register',{...body,category:'culture'}),error=>error.status===409);const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get(),code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];await f.post('/api/owner/verify',{verification_id:result.verification_id,code});const station=await f.owner();assert.equal(station.language,'ht');assert.equal(station.category,'christian');
+});
 async function ownerLoginChallenge(f,headers={}){const result=await(await f.post('/api/owner/login',{email:f.registration.email,code:'10'},headers)).json(),job=f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get();return {...result,code:JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1]};}
 function pauseOwnerBatch(f){const batch=f.env.DB.batch;let release,arrived,paused=false;const reached=new Promise(resolve=>{arrived=resolve;}),waiting=new Promise(resolve=>{release=resolve;});f.env.DB.batch=async queries=>{if(!paused){paused=true;arrived();await waiting;}return batch(queries);};return {reached,release};}
 test('fresh session uses secure host-only cookie; absent server key fails closed',async()=>{

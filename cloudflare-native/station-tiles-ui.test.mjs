@@ -104,6 +104,18 @@ test('saved rows keep cached station names and thumbnails after the available se
  assert.deepEqual(f.names('savedStations'),['Local Radio']);const image=f.$('savedStations').children[0].children[0].children[0];assert.equal(image.src,'/artwork/local.png?size=192');assert.equal(f.$('savedStationsSection').hidden,false);
 });
 
+test('language and category filter only available stations while unclassified saved stations remain accessible',()=>{
+ const directory={query:'',loadedQuery:'',language:'ht',loadedLanguage:'ht',category:'music',loadedCategory:'music',loading:false,hasMore:false},f=searchFixture({directory,stations:[{name:'Saved Radio',listener_code:'13'},{name:'Kreyòl Music',listener_code:'14',language:'ht',category:'music'},{name:'French Music',listener_code:'15',language:'fr',category:'music'},{name:'Kreyòl News',listener_code:'16',language:'ht',category:'news_talk'},{name:'Unclassified',listener_code:'17'}]});
+ f.search('');assert.deepEqual(f.names('savedStations'),['Saved Radio']);assert.deepEqual(f.names('stations'),['Kreyòl Music']);
+ f.search('saved');assert.deepEqual(f.names('savedStations'),['Saved Radio']);assert.deepEqual(f.names('stations'),[]);assert.equal(f.$('savedStationsSection').hidden,false);
+});
+
+test('changing filters hides stale available results while keeping saved items and accurate loading feedback',()=>{
+ const directory={query:'',loadedQuery:'',language:'fr',loadedLanguage:'ht',category:'',loadedCategory:'',loading:true,hasMore:false},f=searchFixture({directory,stations:[{name:'Saved Radio',listener_code:'13'},{name:'Old filtered radio',listener_code:'14',language:'ht'}]});
+ f.search('');assert.deepEqual(f.names('savedStations'),['Saved Radio']);assert.deepEqual(f.names('stations'),[]);assert.equal(f.$('stations').children[0].textContent,'Loading stations…');
+ directory.loading=false;directory.loadedLanguage='fr';f.search('');assert.equal(f.$('stations').children[0].textContent,'No stations match these filters.');assert.deepEqual(f.openings,[]);
+});
+
 function popupShareFixture({load=async()=>{},afterMetadata=async()=>{}}={}){
  const ids=new Map(),shares=[],opened=[],statuses=[],popup={children:[],open:false,append(node){this.children.push(node);},querySelector(selector){return this.children.find(node=>selector==='.station-popup-share'&&node.className?.includes('station-popup-share'))||null;},showModal(){this.open=true;}};
  const $=id=>{if(!ids.has(id))ids.set(id,{dataset:{},hidden:false,textContent:''});return ids.get(id);};

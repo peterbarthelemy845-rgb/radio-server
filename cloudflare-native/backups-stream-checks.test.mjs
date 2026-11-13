@@ -20,7 +20,7 @@ test('backups include current station evidence with no session provenance or eph
  f.sqlite.prepare('INSERT INTO stream_check_results VALUES (?,?,?,?,?)').run(f.session,'https://ephemeral.example.com/live','a'.repeat(32),f.now,f.now+STREAM_CHECK_LIFETIME);
  f.evidence.run(f.station,'https://old.example.com/live','b'.repeat(32),f.now,f.now+STREAM_CHECK_LIFETIME,null,f.session);
  const revision='c'.repeat(32);
- f.sqlite.prepare('INSERT INTO station_edits VALUES (?,?,?,?,?,?,?,?)').run(f.station,revision,f.now,'https://next.example.com/live','Pending bio',null,f.now,'Pending name');
+ f.sqlite.prepare('INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name) VALUES (?,?,?,?,?,?,?,?)').run(f.station,revision,f.now,'https://next.example.com/live','Pending bio',null,f.now,'Pending name');
  f.evidence.run(f.station,'https://next.example.com/live',revision,0,0,f.now,f.session);
  const backup=await createBackup(f.env,f.now),snapshot=JSON.parse(await decrypt(f.env,await(await f.env.MEDIA.get('backups/'+backup.id+'/manifest.enc')).text()));
  assert.ok(BACKUP_TABLES.includes('station_stream_checks'));assert.equal(BACKUP_TABLES.includes('stream_check_results'),false);
@@ -35,7 +35,7 @@ test('backups include current station evidence with no session provenance or eph
 
 test('trusted current snapshots restore published data and exact proposal evidence while revoking receipts',async()=>{
  const f=await fixture(),revision='c'.repeat(32);
- f.sqlite.prepare('INSERT INTO station_edits VALUES (?,?,?,?,?,?,?,?)').run(f.station,revision,f.now,'https://next.example.com/live','Pending bio',null,f.now,'Pending name');
+ f.sqlite.prepare('INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name) VALUES (?,?,?,?,?,?,?,?)').run(f.station,revision,f.now,'https://next.example.com/live','Pending bio',null,f.now,'Pending name');
  f.evidence.run(f.station,'https://next.example.com/live',revision,0,0,f.now,f.session);
  const backup=await createBackup(f.env,f.now);
  f.sqlite.prepare('INSERT INTO stream_check_results VALUES (?,?,?,?,?)').run(f.session,'https://ephemeral.example.com/live','a'.repeat(32),f.now,f.now+STREAM_CHECK_LIFETIME);

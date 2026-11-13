@@ -95,7 +95,7 @@ export async function adminRoutes(request,env,now,deps={human}){
  }
  if(path==='/api/admin/stations'&&request.method==='GET'){
   const rows=await env.DB.prepare('SELECT '+stationColumns+" FROM stations WHERE status!='deleted' ORDER BY code LIMIT 1000").all();
-  const edits=(await env.DB.prepare('SELECT station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name FROM station_edits').all()).results,byCode=new Map(edits.map(edit=>[edit.station_code,edit]));
+  const edits=(await env.DB.prepare('SELECT station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name,language,category FROM station_edits').all()).results,byCode=new Map(edits.map(edit=>[edit.station_code,edit]));
   return json({stations:await Promise.all(rows.results.map(async row=>{const reviewed={...row,pending_edit:byCode.get(row.code)||null};return {...reviewed,revision:await revision(env,reviewed),stream_check:await streamOwnerStatus(env,row,reviewed.pending_edit,now)};}))});
  }
  if(path==='/api/admin/logout'&&request.method==='POST'){

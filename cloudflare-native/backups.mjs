@@ -1,6 +1,7 @@
 import {json,encrypt,decrypt,randomHex,readJson,limit,HttpError} from './security.mjs';import {administrator} from './access.mjs';
 import {publicStreamUrl} from './public-stream-url.mjs';
 import {stationName} from './station-edits.mjs';
+import {stationMetadata} from './station-metadata.mjs';
 import {STREAM_CHECK_LIFETIME} from './stream-verification.mjs';
 export const BACKUP_TABLES=['stations','station_edits','station_stream_checks','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies'];
 const MAX_RECORDS=50000,MAX_MEDIA=250,MAX_MANIFEST_BYTES=8*1024*1024,MAX_MEDIA_BYTES=50*1024*1024;
@@ -80,6 +81,9 @@ export async function createBackup(env,now,kind='manual'){
 export async function restoreBackup(env,id,now,actor=null){
  const run=await env.DB.prepare("SELECT 1 FROM backup_runs WHERE id=? AND state='ready'").bind(id).first();if(!run)throw new HttpError(404,'Backup not found.');const object=await env.MEDIA.get('backups/'+id+'/manifest.enc');if(!object||object.size>MAX_ENCRYPTED_MANIFEST_BYTES)throw new HttpError(400,'Backup manifest unavailable.');let snapshot;try{const plain=await decrypt(env,await object.text());if(new TextEncoder().encode(plain).length>MAX_MANIFEST_BYTES)throw Error('manifest capacity');snapshot=JSON.parse(plain);}catch{throw new HttpError(400,'Backup could not be authenticated.');}
  if(snapshot.version!==1||!snapshot.tables||!Array.isArray(snapshot.media)||snapshot.media.length>MAX_MEDIA||Object.keys(snapshot.tables).some(t=>!BACKUP_TABLES.includes(t)))throw new HttpError(400,'Unsupported backup.');
+ // Old snapshots contain no classifications. Restore blank optional values,
+ // never guess from artwork/names or inherit a newer live station's metadata.
+ for(const table of ['stations','station_edits'])if(Array.isArray(snapshot.tables[table]))snapshot.tables[table]=snapshot.tables[table].map(row=>row&&typeof row==='object'&&!Array.isArray(row)?{...row,...stationMetadata(row)}:row);
  const legacyStreamChecks=!Object.hasOwn(snapshot.tables,'station_stream_checks');
  // A legacy snapshot did not record this publication gate. Preserve proposal
  // bases while keeping its restored stations private until they are reviewed.

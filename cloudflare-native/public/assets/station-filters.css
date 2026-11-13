@@ -1,0 +1,26 @@
+/* Keep discovery compact; detailed choices appear only in the filter sheet. */
+#library.radio-library .station-search-controls{display:flex;align-items:center;gap:8px;margin:0 0 8px;min-width:0}
+#library.radio-library .station-search-controls #search{flex:1 1 0;min-width:0;width:0;margin:0}
+#library.radio-library #openStationFilters{flex:0 0 auto;display:flex;align-items:center;gap:6px;margin:0;min-height:44px;padding:9px 11px;border:1px solid #d6e2f2;background:#eef4fc;color:#154b84;border-radius:11px;font-size:14px;font-weight:700}
+#openStationFilters::before{content:'';display:block;width:16px;height:16px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 5h18v2H3zm4 6h10v2H7zm4 6h2v2h-2z'/%3E%3C/svg%3E") center/contain no-repeat}
+#library.radio-library #openStationFilters[data-active="1"]{background:#e1efff;border-color:#2076df;color:#1051a1}
+#library.radio-library .station-applied-filters{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+#library.radio-library .station-applied-filters[hidden]{display:none}
+#library.radio-library .station-filter-chip,#library.radio-library .station-filter-clear{margin:0;min-height:40px;padding:7px 10px;font-size:13px;font-weight:600;border-radius:10px;white-space:normal}
+#library.radio-library .station-filter-chip{color:#154979;background:#e8f2ff;border:1px solid #c6ddfa}
+#library.radio-library .station-filter-clear{background:transparent;color:#365879}
+#stationFiltersDialog{box-sizing:border-box;width:min(420px,calc(100vw - 24px));max-height:calc(100dvh - 36px);overflow:auto;padding:22px;border:1px solid #dce6f5;border-radius:20px;background:#fff;color:#142b50;box-shadow:0 24px 80px #0005}
+#stationFiltersDialog::backdrop{background:#071329aa;backdrop-filter:blur(3px)}
+#stationFiltersDialog h2{font-size:24px;line-height:1.25;margin:0 0 8px}
+#stationFiltersDialog p{font-size:15px;line-height:1.45;margin:0 0 18px;color:#536782}
+#stationFiltersDialog .station-filter-field{margin:0 0 16px}
+#stationFiltersDialog .station-filter-field[hidden],#stationFiltersDialog p[hidden]{display:none}
+#stationFiltersDialog label{display:block;margin:0 0 6px;font-size:15px;font-weight:700}
+#stationFiltersDialog select{box-sizing:border-box;display:block;width:100%;margin:0;min-height:48px;padding:10px 12px;border:1px solid #b9cbe4;border-radius:11px;background:#f6f9fd;color:#142b50;font-size:16px}
+#stationFiltersDialog .station-filter-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+#stationFiltersDialog button{margin:0;min-height:46px;padding:10px 12px;font-size:16px;border-radius:11px}
+#stationFiltersDialog #applyStationFilters{grid-column:1/-1;background:linear-gradient(110deg,#08b7e9,#0758e4);color:#fff}
+#stationFiltersDialog :is(button,select):focus-visible,#library.radio-library :is(#openStationFilters,.station-filter-chip,.station-filter-clear):focus-visible{outline:3px solid #2076df;outline-offset:3px}
+@media(max-width:600px){#stationFiltersDialog{width:100%;max-width:100%;max-height:calc(100dvh - 20px);margin:auto 0 0;padding:24px 18px calc(18px + env(safe-area-inset-bottom));border-radius:22px 22px 0 0;border-bottom:0}#stationFiltersDialog::before{content:'';display:block;width:38px;height:4px;background:#cfdaeb;border-radius:4px;margin:-12px auto 16px}}
+body.app-large-text #stationFiltersDialog :is(p,label,button,select){font-size:18px}
+@media(forced-colors:active){#stationFiltersDialog,#stationFiltersDialog button,#library.radio-library #openStationFilters,#library.radio-library .station-filter-chip{border:1px solid ButtonText}}

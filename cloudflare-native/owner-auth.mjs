@@ -2,6 +2,7 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 import {HttpError,json,digest,randomHex,mac,otp,encrypt,decrypt,limit,readJson,session,browserWrite,human} from './security.mjs';
 import {screenStation} from './moderation.mjs';
 import {stationState,ownerRevision,stationStateGuard,stationName} from './station-edits.mjs';
+import {metadataOptions,stationMetadata} from './station-metadata.mjs';
 import {attachStreamCheck,streamPublicationAllowed,streamOwnerStatus,requireStreamSaveCheck,assertStreamSaveCheck} from './stream-verification.mjs';
 const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
@@ -125,7 +126,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!station)return json({message:'Station not found.'},404);
     if(['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     const draft=pending||station,revision=await ownerRevision(env,station,pending);
-    return json({owner_expires:current.owner_expires,server_time:now,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash),approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,status:station.status}}});
+    return json({owner_expires:current.owner_expires,server_time:now,metadata_options:metadataOptions,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,language:draft.language,category:draft.category,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash),approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,language:station.language,category:station.category,status:station.status}}});
   }
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now);
@@ -177,13 +178,13 @@ export async function authRoutes(request,env,now,deps={human}){
   }
   if(path==='/api/owner/register'){
     await deps.human(request,env,body.turnstile_token,'station-submit',now);
-    const name=stationName(body.name),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase();
+    const name=stationName(body.name),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase(),metadata=stationMetadata(body);
     if(bio.length>250||email.length>254||!emailPattern.test(email))throw new HttpError(400,'Check the station bio and email.');
     if(body.rights_confirmed!==true||body.agreement_version!==VERSION)throw new HttpError(400,'Confirm station rights and the current terms.');
     let requestId=body.request_id;
     if(requestId!==undefined&&(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)))throw new HttpError(400,'Refresh the signup page and try again.');
     const url=streamUrl(body.stream_url),location=String(body.location||'').slice(0,80);
-    const payloadHash=await digest(JSON.stringify([name,url,bio,email,location,VERSION,body.artwork?.name,body.artwork?.base64]));
+    const payloadHash=await digest(JSON.stringify([name,url,bio,email,location,VERSION,body.artwork?.name,body.artwork?.base64,...(metadata.language||metadata.category?[metadata.language,metadata.category]:[])]));
     // Older open forms have no retry ID. Keep their in-progress signup safe
     // without forcing a reload or storing any private draft in the browser.
     if(requestId===undefined)requestId=(await mac(env,'legacy-registration:'+current.token_hash+':'+payloadHash)).slice(0,32);
@@ -209,9 +210,9 @@ export async function authRoutes(request,env,now,deps={human}){
       const guard="session_hash=? AND request_id=? AND lease_token=? AND lease_until>MAX(?,unixepoch()) AND state='pending' AND "+streamSave.sql;
       const owner=[current.token_hash,requestId,lease,now,...streamSave.values];
       await env.DB.batch([
-        env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at)
-          SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)`)
-          .bind(name,url,bio,location,email,key,now,now,...owner),
+        env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at,language,category)
+          SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)`)
+          .bind(name,url,bio,location,email,key,now,now,metadata.language,metadata.category,...owner),
         env.DB.prepare(`UPDATE registration_requests SET station_code=last_insert_rowid() WHERE ${guard} AND station_code IS NULL AND changes()>0`).bind(...owner),
         env.DB.prepare(`INSERT INTO agreement_acceptances(station_code,agreement_version,agreement_hash,accepted_at)
           SELECT station_code,?,?,? FROM registration_requests WHERE ${guard} AND station_code IS NOT NULL`).bind(VERSION,agreementHash,now,...owner),
@@ -338,28 +339,28 @@ export async function authRoutes(request,env,now,deps={human}){
     const {station,pending}=await stationState(env,current.owner_station);
     if(!station||['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     if(typeof body.revision!=='string'||body.revision!==await ownerRevision(env,station,pending))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
-    const draft=pending||station,name=stationName(body.name===undefined?draft.name:body.name),url=streamUrl(body.stream_url),bio=String(body.bio||'').trim();
+    const draft=pending||station,name=stationName(body.name===undefined?draft.name:body.name),url=streamUrl(body.stream_url),bio=String(body.bio||'').trim(),metadata=stationMetadata(body,draft);
     if(bio.length>250)throw new HttpError(400,'Bio must be 250 characters or fewer.');
     const streamSave=await requireStreamSaveCheck(env,current.token_hash,url,now,station);
     await assertStreamSaveCheck(env,streamSave);
     const key=body.artwork?await artwork(env,body.artwork,undefined,()=>assertStreamSaveCheck(env,streamSave)):draft.artwork_key;
     const guard=stationStateGuard(station,pending),editRevision=randomHex(16);
-    if(name===draft.name&&url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key){
+    if(name===draft.name&&url===draft.stream_url&&bio===draft.bio&&key===draft.artwork_key&&metadata.language===draft.language&&metadata.category===draft.category){
       await assertStreamSaveCheck(env,streamSave);
       if(!await env.DB.prepare('SELECT 1 WHERE '+guard.sql).bind(...guard.values).first())throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
       await attachStreamCheck(env,current.token_hash,station.code,url,pending?.revision||'initial',now,streamSave);
       await assertStreamSaveCheck(env,streamSave);
       const approved=station.status==='published'&&!pending?true:await screenStation(env,station.code,fetch,now,pending?.revision);
       const latest=await stationState(env,station.code);
-      const sameTarget=latest.pending?.revision===pending?.revision&&(latest.pending||latest.station?.name===name&&latest.station?.stream_url===url&&latest.station?.bio===bio&&latest.station?.artwork_key===key),promoted=approved&&!latest.pending&&latest.station?.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key;
+      const sameTarget=latest.pending?.revision===pending?.revision&&(latest.pending||latest.station?.name===name&&latest.station?.stream_url===url&&latest.station?.bio===bio&&latest.station?.artwork_key===key&&latest.station?.language===metadata.language&&latest.station?.category===metadata.category),promoted=approved&&!latest.pending&&latest.station?.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key&&latest.station.language===metadata.language&&latest.station.category===metadata.category;
       if(!latest.station||['deleted','suspended'].includes(latest.station.status)||!sameTarget&&!promoted)throw new HttpError(409,'This station changed. Refresh and review it again.');
       const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);
       return json({status:'ok',unchanged:station.status==='published'&&!pending||!approved,review_required:!approved,stream_check_required:streamRequired,message:station.status==='published'&&!pending?'No changes to save.':approved?'Station saved successfully.':streamRequired?'Your stream check is no longer current. Test your stream again before saving.':'Station saved for safety review.'});
     }
-    const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name)
-      SELECT ?,?,?,?,?,?,?,? WHERE ${guard.sql} AND ${streamSave.sql}
-      ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at,name=excluded.name RETURNING revision`)
-      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,...guard.values,...streamSave.values).first();
+    const changed=await env.DB.prepare(`INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name,language,category)
+      SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${guard.sql} AND ${streamSave.sql}
+      ON CONFLICT(station_code) DO UPDATE SET revision=excluded.revision,base_updated_at=excluded.base_updated_at,stream_url=excluded.stream_url,bio=excluded.bio,artwork_key=excluded.artwork_key,created_at=excluded.created_at,name=excluded.name,language=excluded.language,category=excluded.category RETURNING revision`)
+      .bind(station.code,editRevision,station.updated_at,url,bio,key,now,name,metadata.language,metadata.category,...guard.values,...streamSave.values).first();
     if(!changed){
       if(body.artwork&&key!==draft.artwork_key)try{if(!await env.DB.prepare('SELECT 1 FROM stations WHERE artwork_key=? UNION SELECT 1 FROM station_edits WHERE artwork_key=?').bind(key,key).first())await env.MEDIA.delete?.('sanitized/'+key);}catch{}
       await assertStreamSaveCheck(env,streamSave);throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
@@ -369,7 +370,7 @@ export async function authRoutes(request,env,now,deps={human}){
     const latest=await stationState(env,station.code);
     if(!latest.station||['deleted','suspended'].includes(latest.station.status))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     if(latest.pending?.revision!==editRevision){
-      approved=!latest.pending&&latest.station.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key;
+      approved=!latest.pending&&latest.station.status==='published'&&latest.station.name===name&&latest.station.stream_url===url&&latest.station.bio===bio&&latest.station.artwork_key===key&&latest.station.language===metadata.language&&latest.station.category===metadata.category;
       if(!approved)throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
     }
     const streamRequired=!await streamPublicationAllowed(env,latest.station,latest.pending,now);

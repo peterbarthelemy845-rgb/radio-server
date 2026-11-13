@@ -3,7 +3,7 @@ import {encrypt,decrypt} from './security.mjs';
 import {supportRoutes} from './admin-support.mjs';
 import {authRoutes} from './owner-auth.mjs';
 
-async function proposedBackupFixture(){const f=await operationsFixture(),key='c'.repeat(64)+'.png';f.sqlite.prepare('UPDATE stations SET email_verified_at=? WHERE code=?').run(f.now,f.station);f.sqlite.prepare('INSERT INTO station_edits VALUES (?,?,?,?,?,?,?,?)').run(f.station,'a'.repeat(32),f.now,'https://stream.example.com/proposed','Proposed bio',key,f.now,'Proposed station name');await f.env.MEDIA.put('sanitized/'+key,new Uint8Array([4,5]),{customMetadata:{sanitizer_version:'1'}});return {...f,pendingKey:key};}
+async function proposedBackupFixture(){const f=await operationsFixture(),key='c'.repeat(64)+'.png';f.sqlite.prepare('UPDATE stations SET email_verified_at=? WHERE code=?').run(f.now,f.station);f.sqlite.prepare('INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name) VALUES (?,?,?,?,?,?,?,?)').run(f.station,'a'.repeat(32),f.now,'https://stream.example.com/proposed','Proposed bio',key,f.now,'Proposed station name');await f.env.MEDIA.put('sanitized/'+key,new Uint8Array([4,5]),{customMetadata:{sanitizer_version:'1'}});return {...f,pendingKey:key};}
 
 test('station proposals and their private artwork restore beside unchanged approved content',async()=>{
  const f=await proposedBackupFixture(),backup=await createBackup(f.env,f.now),path='backups/'+backup.id+'/manifest.enc',snapshot=JSON.parse(await decrypt(f.env,await(await f.env.MEDIA.get(path)).text()));
@@ -17,7 +17,7 @@ test('legacy proposed-edit backups recover their name only from the matching app
 
 test('legacy restore clears proposals only for restored stations and keeps newer unrelated stations',async()=>{
  const f=await proposedBackupFixture(),backup=await createBackup(f.env,f.now),path='backups/'+backup.id+'/manifest.enc',snapshot=JSON.parse(await decrypt(f.env,await(await f.env.MEDIA.get(path)).text()));delete snapshot.tables.station_edits;await f.env.MEDIA.put(path,await encrypt(f.env,JSON.stringify(snapshot)));
- const later=f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,email_verified_at,created_at,updated_at) VALUES ('Later station','https://example.com/live','later@example.com','published',?,?,?) RETURNING code").get(f.now,f.now,f.now).code;f.sqlite.prepare('INSERT INTO station_edits VALUES (?,?,?,?,?,?,?,?)').run(later,'b'.repeat(32),f.now,'https://example.com/new','Keep this proposal',null,f.now,'Later proposed name');await restoreBackup(f.env,backup.id,f.now+1);
+ const later=f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,email_verified_at,created_at,updated_at) VALUES ('Later station','https://example.com/live','later@example.com','published',?,?,?) RETURNING code").get(f.now,f.now,f.now).code;f.sqlite.prepare('INSERT INTO station_edits(station_code,revision,base_updated_at,stream_url,bio,artwork_key,created_at,name) VALUES (?,?,?,?,?,?,?,?)').run(later,'b'.repeat(32),f.now,'https://example.com/new','Keep this proposal',null,f.now,'Later proposed name');await restoreBackup(f.env,backup.id,f.now+1);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM station_edits WHERE station_code=?').get(f.station).n,0);assert.equal(f.sqlite.prepare('SELECT bio FROM station_edits WHERE station_code=?').get(later).bio,'Keep this proposal');
 });
 

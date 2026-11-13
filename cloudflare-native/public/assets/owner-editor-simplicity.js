@@ -6,13 +6,15 @@
  let baseline=null,approvedUrl='',repair=false;
  const text=(key,fallback)=>{const value=window.appI18n?.t(key);return value&&value!==key?value:fallback;};
  const canonical=value=>{try{return window.parsePublicStreamUrl(value).href;}catch{return String(value||'').trim();}};
- const values=record=>({name:String(record.name||'').trim(),stream_url:canonical(record.stream_url),bio:String(record.bio||'').trim()});
- function current(){return values({name:form.elements.name.value,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value});}
+ const optionalKeys=['language','category'];
+ const values=record=>{const result={name:String(record.name||'').trim(),stream_url:canonical(record.stream_url),bio:String(record.bio||'').trim()};for(const key of optionalKeys)if(Object.hasOwn(record,key))result[key]=String(record[key]||'');return result;};
+ const optionalValues=record=>Object.fromEntries(optionalKeys.filter(key=>Object.hasOwn(record||{},key)).map(key=>[key,record[key]]));
+ function current(){const record={name:form.elements.name.value,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value};if(form.dataset.ownerMetadataReady!=='false')for(const key of optionalKeys)if(form.elements[key])record[key]=form.elements[key].value;return values(record);}
  function bound(){return !!baseline&&String(form.dataset.stationCode||'')===baseline.code&&String(form.dataset.revision||'')===baseline.revision;}
  function changed(){
   if(!bound())return false;
   if(form.elements.artwork.files[0])return true;
-  const next=current();return ['name','stream_url','bio'].some(key=>next[key]!==baseline[key]);
+  const next=current();return ['name','stream_url','bio'].some(key=>next[key]!==baseline[key])||optionalKeys.some(key=>Object.hasOwn(next,key)&&next[key]!==String(baseline[key]||''));
  }
  function needsSave(){return bound()&&(changed()||repair);}
  const busy=()=>form.dataset.busy==='1'||form.getAttribute?.('aria-busy')==='true';
@@ -41,7 +43,7 @@
   // A preserved draft remains compared with the version it was based on.
   // In particular a newer background read must not make that draft look saved.
   if(!same||!preserveDraft){
-   baseline={...values(record),code,revision:String(record.revision||'')};
+   baseline={...(same?optionalValues(baseline):{}),...values(record),code,revision:String(record.revision||'')};
    const approved=record.approved?.status==='published'&&canonical(record.approved.stream_url)===canonical(record.stream_url);
    repair=!approved&&(record.stream_check?.status!=='passed'||form.dataset.streamSaveAllowed!=='true');
   }
@@ -52,10 +54,10 @@
  };
  window.ownerEditorSaved=(captured,result={})=>{
   if(!bound()||String(captured?.code||'')!==baseline.code)return;
-  baseline={...values(captured),code:baseline.code,revision:String(captured.revision||baseline.revision)};
+  baseline={...optionalValues(baseline),...values(captured),code:baseline.code,revision:String(captured.revision||baseline.revision)};
   repair=result.stream_check_required===true;render();
  };
- for(const type of ['input','change','owner-stream-mode-changed','form-busy-changed'])form.addEventListener(type,render);
+ for(const type of ['input','change','owner-stream-mode-changed','owner-metadata-state-changed','form-busy-changed'])form.addEventListener(type,render);
  form.addEventListener('reset',()=>{baseline=null;approvedUrl='';repair=false;if(stream)stream.open=false;if(options)options.open=false;queueMicrotask(render);});
  window.addEventListener('owner-stream-save-state-changed',render);
  window.addEventListener('app-language-changed',render);

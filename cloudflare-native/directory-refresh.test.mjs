@@ -88,3 +88,29 @@ test('a repeated cursor stops scanning safely and keeps the last usable page',as
  const f=fixture();f.answers.push({stations:[{listener_code:'13',name:'Local'}],has_more:true,next_cursor:'repeat'});await f.refresh();f.answers.push({stations:[],has_more:true,next_cursor:'repeat'});await f.more();
  assert.equal(f.calls.length,2);assert.equal(f.get('stations[0].name'),'Local');assert.equal(f.get('stationDirectoryState.cursor'),'repeat');assert.equal(f.get('stationDirectoryState.failed'),true);assert.equal(f.ids.get('loadMoreStations').disabled,false);
 });
+
+test('applying filters cancels a pending search debounce, retains its query, and binds More to the selection',async()=>{
+ const f=fixture();f.answers.push({stations:[{listener_code:'13',name:'Local'}],has_more:true,next_cursor:'old-page'});await f.refresh();f.search('NEWS');assert.equal(f.timers.size,1);
+ f.answers.push({stations:[{listener_code:'14',name:'News',language:'ht',category:'news_talk'}],has_more:true,next_cursor:'filtered-page'});
+ await f.get('applyStationDirectoryFilters')({language:'ht',category:'news_talk'});assert.equal(f.timers.size,0);assert.equal(f.calls[1].path,'/api/stations?limit=50&q=news&language=ht&category=news_talk');assert.equal(f.get('stationDirectoryState.loadedLanguage'),'ht');assert.equal(f.get('stationDirectoryState.loadedCategory'),'news_talk');
+ f.answers.push({stations:[{listener_code:'15',name:'More News',language:'ht',category:'news_talk'}],has_more:false});await f.more();assert.equal(f.calls[2].path,'/api/stations?limit=50&q=news&language=ht&category=news_talk&cursor=filtered-page');assert.deepEqual(Array.from(f.get('stations'),station=>station.listener_code),['14','15']);
+});
+
+test('a filter change supersedes an in-flight page and stale metadata cannot replace its catalog',async()=>{
+ const f=fixture(),old=deferred(),catalogs=[];f.ctx.window.stationDirectoryFilters={updateCatalog:result=>catalogs.push(result)};
+ f.answers.push(old.promise);const prior=f.refresh();f.answers.push({stations:[{listener_code:'14',language:'ht'}],metadata_options:{languages:['current']},facets:{languages:['current']}});await f.get('applyStationDirectoryFilters')({language:'ht'});
+ assert.equal(f.calls[0].options.signal.aborted,true);old.resolve({stations:[{listener_code:'13'}],metadata_options:{languages:['stale']},facets:{languages:['stale']}});await prior;
+ assert.equal(f.get('stations[0].listener_code'),'14');assert.equal(catalogs.length,1);assert.deepEqual(catalogs[0].metadata_options.languages,['current']);assert.deepEqual(f.get('readStationDirectoryCatalog().facets.languages'),['current']);
+});
+
+test('clearing filters discards a filtered cursor and can restore the unfiltered list immediately',async()=>{
+ const f=fixture();f.answers.push({stations:[{listener_code:'14',language:'ht'}],has_more:true,next_cursor:'ht-page'});await f.get('applyStationDirectoryFilters')({language:'ht'});
+ f.answers.push({stations:[{listener_code:'13'}],has_more:false});await f.get('applyStationDirectoryFilters')({language:'',category:''});assert.equal(f.calls[1].path,'/api/stations?limit=50&q=');assert.equal(f.get('stationDirectoryState.cursor'),null);assert.equal(f.get('stations[0].listener_code'),'13');assert.equal(f.get('stationDirectoryState.loadedLanguage'),'');
+ const count=f.calls.length;await f.get('applyStationDirectoryFilters')({language:'unknown&admin=true',category:'bad'});assert.equal(f.calls.length,count,'unsupported values do not enter requests');
+});
+
+test('a failed filtered request never treats the previously loaded unfiltered page as a matching selection',async()=>{
+ const f=fixture();f.answers.push({stations:[{listener_code:'13'}]});await f.refresh();f.answers.push(Promise.reject(Error('Offline')));await f.get('applyStationDirectoryFilters')({category:'music'});
+ assert.equal(f.get('stationDirectorySelectionLoaded()'),false);assert.equal(f.get('stationDirectoryState.failed'),true);assert.doesNotMatch(f.ids.get('stationDirectoryMessage').textContent,/Showing the last loaded list/);assert.equal(f.get('getStationDirectoryStation("13").listener_code'),'13','saved station metadata is retained');
+ f.answers.push({stations:[{listener_code:'14',category:'music'}]});await f.ids.get('retryStationDirectory').onclick();assert.equal(f.calls.at(-1).path,'/api/stations?limit=50&q=&category=music');assert.equal(f.get('stationDirectorySelectionLoaded()'),true);
+});
