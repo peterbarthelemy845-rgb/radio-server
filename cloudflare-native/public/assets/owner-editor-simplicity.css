@@ -1,0 +1,11 @@
+#editor #ownerStreamSettings,#editor #ownerAccountOptions{margin:12px 0;border:1px solid #dbe5f3;border-radius:12px;background:#f7faff;overflow:clip}
+#editor #ownerStreamSettings>summary,#editor #ownerAccountOptions>summary{min-height:46px;box-sizing:border-box;display:list-item;align-content:center;padding:12px 14px;font-size:14px;font-weight:650;color:#173c71;cursor:pointer;touch-action:manipulation}
+#editor #ownerStreamSettings>summary:focus-visible,#editor #ownerAccountOptions>summary:focus-visible{outline:3px solid #169df7;outline-offset:-3px;border-radius:10px}
+#editor #ownerStreamSettings[open]>summary,#editor #ownerAccountOptions[open]>summary{border-bottom:1px solid #dbe5f3}
+#editor #ownerStreamSettings>fieldset{margin:0;padding:12px;border:0}
+#editor #ownerAccountOptions>button,#editor #ownerAccountOptions>.owner-account-actions{margin:10px 12px}
+#editor #ownerSaveState{margin:8px 0;font-size:13px;line-height:1.4;color:#64748b;min-height:18px}
+#editor #ownerSaveState[data-state="ready"]{color:#12613f}
+#editor #ownerSaveState[data-state="needs-check"]{color:#8b4a12}
+#editor #ownerSave:disabled,#editor button[type="submit"]:disabled{cursor:default;opacity:.55;box-shadow:none}
+@media(prefers-reduced-motion:reduce){#editor #ownerStreamSettings,#editor #ownerAccountOptions{scroll-behavior:auto}}

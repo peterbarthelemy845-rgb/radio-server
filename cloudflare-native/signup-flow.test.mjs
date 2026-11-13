@@ -287,8 +287,8 @@ test('owner conflicts retain the original revision and draft until the latest ve
  f.context.listenerActionDialog=async()=>true;f.answers.push({station:saved});await f.nodes.get('ownerReviewLatest').onclick();assert.equal(form.elements.bio.value,'Latest saved bio');assert.equal(form.dataset.revision,latest);assert.equal(form.elements.artwork.files.length,0);assert.equal(form.dataset.dirty,undefined);assert.equal(f.nodes.get('ownerReviewLatest').hidden,true);assert.equal(f.calls.filter(call=>call.path==='/api/owner/station'&&call.body).length,1);assert.equal(prompts,1);
 });
 
-test('unchanged owner saves use a neutral no-changes confirmation and send their loaded revision',async()=>{
- const f=fixture(),form=f.nodes.get('editForm');vm.runInContext("page('editor')",f.context);form.dataset.revision='c'.repeat(64);form.dataset.dirty='1';f.answers.push({status:'ok',unchanged:true,message:'No changes to save.'});await f.submit(form);assert.equal(f.calls[0].body.revision,'c'.repeat(64));assert.equal(f.nodes.get('ownerSaveSuccessTitle').textContent,'No changes to save.');assert.equal(f.nodes.get('ownerSaveSuccessTitle').dataset.i18n,'owner.unchanged');assert.equal(form.dataset.dirty,undefined);
+test('a server no-op save keeps its revision contract without opening a no-changes popup',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm');vm.runInContext("page('editor')",f.context);form.dataset.revision='c'.repeat(64);form.dataset.dirty='1';f.answers.push({status:'ok',unchanged:true,message:'No changes to save.'});await f.submit(form);assert.equal(f.calls[0].body.revision,'c'.repeat(64));assert.equal(f.nodes.get('ownerSaveSuccess').open,false);assert.equal(f.nodes.get('message').textContent,'');assert.equal(form.dataset.dirty,undefined);
 });
 
 
@@ -334,4 +334,18 @@ test('account recovery logout uses the existing unsaved-change confirmation and 
 test('failed logout from account recovery keeps auth and shows its error on the visible page',async()=>{
  const f=fixture();vm.runInContext("state.owner_station='13';state.owner_expires=1700001800;state.server_time=1700000000;window.ownerAccountNavigation.accept(state);ownerAccountUnavailable()",f.context);f.answers.push(Error('Logout connection interrupted'));
  await f.document.getElementById('ownerEntryLogout').onclick();assert.equal(f.nodes.get('ownerEntryLoading').hidden,false);assert.equal(f.nodes.get('register').hidden,true);assert.equal(f.context.window.ownerAccountNavigation.active(),true);assert.equal(f.nodes.get('message').textContent,'Logout connection interrupted');assert.equal(f.document.getElementById('ownerEntryLogout').hidden,false);assert.equal(f.nodes.get('logout').disabled,false);
+});
+test('actual-content gating blocks direct no-op Save without checking artwork or making a write',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm');vm.runInContext("page('editor')",f.context);form.dataset.dirty='1';let guarded=0;f.context.window.ownerEditorSaveAllowed=()=>{guarded++;return false;};await f.submit(form);assert.equal(guarded,1);assert.equal(f.files.length,0);assert.equal(f.ownerLogoFiles.length,0);assert.equal(f.calls.length,0);assert.equal(f.nodes.get('ownerSaveSuccess').open,false);assert.equal(form.dataset.busy,undefined);
+});
+
+test('editor baseline hooks receive the server revision and whether the existing same-station draft was kept',()=>{
+ const f=fixture(),form=f.nodes.get('editForm'),received=[];f.context.window.syncOwnerEditorState=(station,options)=>received.push({station,options});
+ const first={code:'13',name:'Saved station',stream_url:'https://saved.example/live',bio:'Saved bio',status:'published',revision:'revision-one'};f.context.first=first;vm.runInContext('applyOwnerStation(first,false)',f.context);assert.equal(received[0].station,first);assert.equal(received[0].options.preserveDraft,false);assert.equal(form.dataset.revision,'revision-one');
+ form.dataset.dirty='1';form.elements.bio.value='Keep my draft';const second={...first,bio:'New server bio',revision:'revision-two'};f.context.second=second;vm.runInContext('applyOwnerStation(second,true)',f.context);assert.equal(received[1].station,second);assert.equal(received[1].options.preserveDraft,true);assert.equal(form.elements.bio.value,'Keep my draft');assert.equal(form.dataset.revision,'revision-one');
+});
+
+test('an accepted Save marks its captured baseline clean before a failed follow-up read',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm'),received=[];vm.runInContext("page('editor')",f.context);form.dataset.stationCode='13';form.dataset.revision='revision-one';form.dataset.dirty='1';form.elements.bio.value='Committed bio';form.elements.stream_url.value='https://saved.example/live';f.context.window.ownerEditorSaved=(captured,result)=>received.push({captured,result});f.answers.push({message:'Changes saved successfully.',stream_check_required:false});f.editor(Error('Follow-up read unavailable'));
+ await f.submit(form);assert.equal(received.length,1);assert.equal(received[0].captured.code,'13');assert.equal(received[0].captured.bio,'Committed bio');assert.equal(received[0].captured.revision,'revision-one');assert.equal(received[0].result.stream_check_required,false);assert.equal(form.dataset.dirty,undefined);assert.equal(f.nodes.get('ownerSaveSuccess').open,true);assert.equal(f.nodes.get('ownerSaveRefreshRetry').hidden,false);
 });

@@ -109,7 +109,7 @@ function applyOwnerStation(station,preserveDraft=false){
  $('ownerName').textContent=station.name;if(!keepDraft||!form.elements.artwork.files[0])showOwnerCover(station.artwork_url);
  $('ownerStatus').textContent='Station code #'+station.code+' · '+station.status.replaceAll('_',' ')+(station.review_pending?' · '+(station.status==='published'?ownerText('owner.pendingEdit','Changes waiting for review. Your last approved station stays live.'):ownerText('owner.pendingEditPrivate','Changes waiting for review. Your station is not published yet.')):'');
  if(!keepDraft){form.elements.name.value=station.name;form.elements.stream_url.value=station.stream_url;form.elements.bio.value=station.bio;form.elements.artwork.value='';delete form.dataset.dirty;form.dataset.revision=station.revision||'';}
- form.dataset.stationCode=String(station.code);if(!keepDraft)window.syncOwnerStreamSetup?.({accepted:true});window.syncOwnerStreamSaveGate?.(station);window.renderOwnerStreamPublication?.(station);
+ form.dataset.stationCode=String(station.code);if(!keepDraft)window.syncOwnerStreamSetup?.({accepted:true});window.syncOwnerStreamSaveGate?.(station);window.renderOwnerStreamPublication?.(station);window.syncOwnerEditorState?.(station,{preserveDraft:keepDraft});
 }
 function applyOwnerExpiry(result){if(!Number.isInteger(result.owner_expires))return;if(state){state.owner_expires=result.owner_expires;if(Number.isInteger(result.server_time))state.server_time=result.server_time;}const event=new Event('owner-session-updated');event.detail={...result,...(state?{owner_station:state.owner_station}:{})};window.dispatchEvent(event);}
 async function editor(preserveDraft=false,generation=sitePageGeneration){const ownerGeneration=ownerSessionGeneration;try{const result=await api('/api/owner/station');if(generation!==sitePageGeneration||ownerGeneration!==ownerSessionGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft);return true;}catch(error){if(error.status===401&&generation===sitePageGeneration&&ownerGeneration===ownerSessionGeneration)clearOwnerSession();throw error;}}
@@ -157,9 +157,10 @@ function ownerRefreshFeedback(failed,text=''){
  if(retry)retry.hidden=!failed;
 }
 function ownerChangesSaved(text,refreshFailed=false){
+ if(text==='No changes to save.'){window.renderOwnerEditorState?.();message('');return;}
  const saved=text==='Changes saved for safety review.'?ownerText('owner.review',text):text==='Changes saved successfully.'?ownerText('owner.saved',text):text||ownerText('owner.saved','Changes saved successfully.'),feedback=refreshFailed?ownerText('owner.savedRefreshFailed','Your changes were saved. The editor could not refresh. Try Refresh editor.'):'',dialog=$('ownerSaveSuccess');
  if(!dialog||document.hidden||$('editor').hidden||document.querySelector?.('dialog[open]')){message(saved+(feedback?' '+feedback:''));return;}
- if($('ownerSaveSuccessTitle')){$('ownerSaveSuccessTitle').dataset.i18n=text==='No changes to save.'?'owner.unchanged':'owner.savedTitle';$('ownerSaveSuccessTitle').textContent=text==='No changes to save.'?ownerText('owner.unchanged',text):ownerText('owner.savedTitle','Changes saved');}
+ if($('ownerSaveSuccessTitle')){$('ownerSaveSuccessTitle').dataset.i18n='owner.savedTitle';$('ownerSaveSuccessTitle').textContent=ownerText('owner.savedTitle','Changes saved');}
  $('ownerSaveSuccessText').textContent=saved+(feedback?' '+feedback:'');message('');dialog.showModal();$('ownerSaveSuccessDone').focus({preventScroll:true});
 }
 if($('ownerSaveSuccessDone'))$('ownerSaveSuccessDone').onclick=()=>$('ownerSaveSuccess').close();
@@ -182,7 +183,7 @@ async function validateOwnerArtwork(file,{preview=false,focus=false}={}){
  let result;try{if(typeof window.inspectStationLogo!=='function')throw Error('Artwork inspection unavailable');result=await window.inspectStationLogo(file);}
  catch{result={valid:false,key:'owner.artworkCheckUnavailable',message:'Cover art could not be checked. Please refresh and try again.'};}
  if(generation!==ownerCoverGeneration||input.files[0]!==file)return false;
- if(!result.valid){input.value='';input.setCustomValidity?.('');clearOwnerCoverUrl();renderOwnerSavedCover();const text=ownerText(result.key,result.message);ownerArtworkNotice(text,result.key);if(focus)$('ownerArtworkMessage')?.focus();return false;}
+ if(!result.valid){input.value='';input.setCustomValidity?.('');clearOwnerCoverUrl();renderOwnerSavedCover();const text=ownerText(result.key,result.message);ownerArtworkNotice(text,result.key);window.renderOwnerEditorState?.();if(focus)$('ownerArtworkMessage')?.focus();return false;}
  input.setCustomValidity?.('');ownerArtworkNotice();
  if(preview&&ownerCoverPreviewFile!==file){clearOwnerCoverUrl();ownerCoverObjectUrl=URL.createObjectURL(file);ownerCoverPreviewFile=file;$('ownerCover').src=ownerCoverObjectUrl;$('ownerCover').hidden=false;$('ownerCoverEmpty').hidden=true;}
  return true;
@@ -196,13 +197,14 @@ $('editForm').onsubmit=async event=>{
  event.preventDefault();const form=event.target;if(formIsBusy(form)||ownerLogoutBusy)return;
  if(window.prepareOwnerStreamSetup&&!window.prepareOwnerStreamSetup())return;
  if(typeof window.ownerStreamSaveAllowed!=='function'){ownerEditFeedback('Stream checking is not ready. Refresh and try again.');return;}if(!window.ownerStreamSaveAllowed(true))return;
+ if(window.ownerEditorSaveAllowed&&!window.ownerEditorSaveAllowed())return;
  const name=form.elements.name.value.trim();if(!name||/[\x00-\x1f\x7f]/.test(name)||new TextEncoder().encode(name).length>96){ownerEditFeedback(!name?ownerText('owner.nameRequired','Enter a station name.'):ownerText('owner.nameTooLong','Shorten the station name so it fits on the radio.'));form.elements.name.focus();return;}form.elements.name.value=name;
  const generation=sitePageGeneration,data={revision:form.dataset.revision,name,stream_url:form.elements.stream_url.value,bio:form.elements.bio.value},artwork=form.elements.artwork.files[0];ownerEditFeedback('');busy(form,true,true);const retry=$('ownerSaveRefreshRetry');if(retry)retry.disabled=true;
  try{
   if(artwork&&!await validateOwnerArtwork(artwork,{focus:true}))return;
   if(generation!==sitePageGeneration)return;
   data.artwork=await fileData(artwork);if(generation!==sitePageGeneration)return;const result=await api('/api/owner/station',data);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);if(generation!==sitePageGeneration)return;
-  delete form.dataset.dirty;form.elements.artwork.value='';ownerRefreshFeedback(false);
+  delete form.dataset.dirty;form.elements.artwork.value='';window.ownerEditorSaved?.({...data,code:form.dataset.stationCode},result);ownerRefreshFeedback(false);
   // The write has completed. A failed read afterwards must not turn it into a
   // failed save or make the owner repeat a committed update.
   try{if(await editor(false,generation)!==false)ownerChangesSaved(result.message);}

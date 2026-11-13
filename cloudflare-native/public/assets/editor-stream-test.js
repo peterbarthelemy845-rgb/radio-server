@@ -24,7 +24,7 @@
  }
  function controls(){
   button.disabled=!!active||saving()||editor.hidden||!field.value.trim();
-  const permit=allowed();if(save){save.disabled=saving()||editor.hidden||!permit;if(permit)save.removeAttribute?.('aria-describedby');else save.setAttribute?.('aria-describedby','ownerStreamPublicationHelp');}
+  const permit=allowed(),changedContent=typeof window.ownerEditorNeedsSave!=='function'||window.ownerEditorNeedsSave();if(save){save.disabled=saving()||editor.hidden||!permit||!changedContent;if(permit)save.removeAttribute?.('aria-describedby');else save.setAttribute?.('aria-describedby','ownerStreamPublicationHelp');}
   const next=permit?'true':'false',changed=form.dataset.streamSaveAllowed!==next;form.dataset.streamSaveAllowed=next;
   if(changed&&typeof Event==='function')window.dispatchEvent?.(new Event('owner-stream-save-state-changed'));
  }

@@ -53,6 +53,14 @@ test('single or empty guide collections hide navigation and still have safe end 
  for(const offsets of [[],[40]]){const f=fixture(),g=guideControls(f,offsets);assert.equal(g.navigation.hidden,true);assert.equal(g.previous.disabled,true);assert.equal(g.next.disabled,true);assert.equal(g.position.textContent,offsets.length?'1 of 1':'0 of 0');if(!offsets.length){g.next.onclick();assert.equal(g.track.lastScroll,undefined);}}
 });
 
+test('guide navigation counts only the selected Support topic and skips unrelated hidden cards',()=>{
+ const f=fixture({path:'/support',initial:'support'}),g=guideControls(f);
+ g.track.children[1].hidden=true;f.dispatchWindow('support-guided-flow-updated');
+ assert.equal(g.position.textContent,'1 of 2');g.next.onclick();assert.equal(g.track.lastScroll.left,600);assert.equal(g.position.textContent,'2 of 2');assert.equal(g.next.disabled,true);
+ for(const card of g.track.children)card.hidden=true;g.track.hidden=true;f.dispatchWindow('support-guided-flow-updated');
+ assert.equal(g.navigation.hidden,true);assert.equal(g.position.textContent,'0 of 0');assert.equal(g.next.disabled,true);assert.equal(g.previous.disabled,true);
+});
+
 test('changing guides honors reduced motion and stops existing players without autoplaying their replacements',()=>{
  for(const reducedMotion of [false,true]){
   const f=fixture({reducedMotion,path:'/support',initial:'support'}),g=guideControls(f);let pauses=0;const pauseCalls=[];
@@ -93,6 +101,26 @@ test('owner-page navigation also unloads a playing tutorial without touching the
 test('listener installation uses Radio/Support while direct owner screens keep their navigation',()=>{
  for(const options of [{app:true},{standalone:true}]){const f=fixture(options);assert.equal(f.nodes.get('navAdd').hidden,true);assert.equal(f.document.body.classList.values.has('listener-app'),true);vm.runInContext("page('editor')",f.context);assert.equal(f.nodes.get('navAdd').hidden,false);assert.equal(f.document.body.classList.values.has('app-listener-page'),false);}
  const browser=fixture();assert.equal(browser.nodes.get('navAdd').hidden,false);assert.equal(browser.document.body.classList.values.has('app-listener-page'),true);
+});
+
+test('Support contact visibility belongs to the guided flow in both regular and installed views',()=>{
+ for(const app of [false,true]){
+  const f=fixture({app}),form=f.nodes.get('ticketForm');let contact=false,renders=0;
+  f.window.supportGuidedFlow={render(){renders++;form.hidden=!contact;},openContact(options){assert.equal(options.focus,false);contact=true;form.hidden=false;}};
+  vm.runInContext("page('support')",f.context);assert.equal(form.hidden,true);assert.ok(renders>0);
+  form.elements.name.value='Keep listener name';form.elements.message.value='Keep original message';form.elements.subject.value='Wi-Fi connection problem';form.dataset.dirty='1';
+  assert.equal(f.window.openStationProblemReport({code:'13',name:'Station One'}),true);
+  assert.equal(form.hidden,false);assert.equal(form.elements.station_code.value,'13');assert.equal(form.elements.subject.value,'Wi-Fi connection problem');assert.equal(form.elements.message.value,'Keep original message');
+  vm.runInContext("page('myRadio');page('support')",f.context);assert.equal(form.hidden,false);assert.equal(form.elements.name.value,'Keep listener name');assert.equal(form.dataset.dirty,'1');
+ }
+});
+
+test('a missing guided Support script leaves the complete fallback contact form usable in installed views',()=>{
+ for(const options of [{app:true},{standalone:true}]){
+  const f=fixture({...options,path:'/support',initial:'support'}),form=f.nodes.get('ticketForm');
+  assert.equal(form.hidden,false);form.elements.message.value='A kept draft';vm.runInContext("page('myRadio');page('support')",f.context);
+  assert.equal(form.hidden,false);assert.equal(form.elements.message.value,'A kept draft');
+ }
 });
 
 test('a standalone owner loading or retry card keeps account navigation available and its own title',()=>{

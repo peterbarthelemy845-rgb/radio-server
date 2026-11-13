@@ -20,11 +20,10 @@ function appApplyMode(){
  document.body.classList.toggle('listener-app',listener&&listenerPage);
  $('navAdd').hidden=listener&&listenerPage;
  if($('listenerAppTitle'))$('listenerAppTitle').textContent=appCurrentPage==='wifiSetup'?'Wi-Fi setup':appCurrentPage==='support'?'Support':'Radio';
- const help=$('listenerSupportHelp');if(help)help.hidden=!listener;
- // A listener can open the complete help form; regular website users always
- // get the complete form. Switching pages never resets its contents.
- if(!listener)$('ticketForm').hidden=false;
- else if(help&&!help.dataset.expanded)$('ticketForm').hidden=true;
+ // One Support flow owns visibility on both the website and installed view.
+ // If its script cannot load, keep the original contact form available.
+ if(typeof window.supportGuidedFlow?.render==='function')window.supportGuidedFlow.render();
+ else $('ticketForm').hidden=false;
  const supportLink=document.querySelector('nav a[href^="/support"]');
  if(supportLink)supportLink.setAttribute('aria-current',appCurrentPage==='support'?'page':'false');
  $('navRadio').setAttribute('aria-current',['myRadio','wifiSetup'].includes(appCurrentPage)?'page':'false');
@@ -54,19 +53,19 @@ function appRestoreSupportMedia(){
 }
 let appGuideNavigation,appGuidePrevious,appGuideNext,appGuidePosition;
 function appGuideIndex(){
- const track=$('supportVideos'),cards=[...track.children];if(!cards.length)return 0;
+ const track=$('supportVideos'),cards=[...track.children].filter(card=>!card.hidden);if(!cards.length)return 0;
  const left=track.scrollLeft||0,first=cards[0].offsetLeft||0;
  return cards.reduce((best,card,index)=>Math.abs((card.offsetLeft||0)-first-left)<Math.abs((cards[best].offsetLeft||0)-first-left)?index:best,0);
 }
 function appUpdateGuideNavigation(){
- if(!appGuideNavigation)return;const total=$('supportVideos').children.length,index=appGuideIndex();
- appGuideNavigation.hidden=total<=1;appGuidePrevious.disabled=index<=0;appGuideNext.disabled=index>=total-1;
+ if(!appGuideNavigation)return;const track=$('supportVideos'),total=[...track.children].filter(card=>!card.hidden).length,index=appGuideIndex();
+ appGuideNavigation.hidden=track.hidden||total<=1;appGuidePrevious.disabled=index<=0;appGuideNext.disabled=index>=total-1;
  appGuidePrevious.textContent=window.appI18n?.t('guide.previousShort')||'Previous';appGuideNext.textContent=window.appI18n?.t('guide.nextShort')||'Next';
  appGuidePrevious.setAttribute('aria-label',window.appI18n?.t('guide.previous')||'Previous guide');appGuideNext.setAttribute('aria-label',window.appI18n?.t('guide.next')||'Next guide');
  appGuidePosition.textContent=window.appI18n?.t('guide.position',{current:total?index+1:0,total})||((total?index+1:0)+' of '+total);
 }
 function appMoveGuide(direction){
- const track=$('supportVideos'),cards=[...track.children],index=Math.max(0,Math.min(cards.length-1,appGuideIndex()+direction));if(!cards[index])return;
+ const track=$('supportVideos'),cards=[...track.children].filter(card=>!card.hidden),index=Math.max(0,Math.min(cards.length-1,appGuideIndex()+direction));if(!cards[index])return;
  appPauseSupportMedia();appRestoreSupportMedia();
  track.scrollTo({left:(cards[index].offsetLeft||0)-(cards[0].offsetLeft||0),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
@@ -80,6 +79,7 @@ function appInstallGuideNavigation(){
  }appUpdateGuideNavigation();
 }
 window.addEventListener('support-guides-ready',appInstallGuideNavigation);window.addEventListener('resize',appUpdateGuideNavigation);
+window.addEventListener('support-guided-flow-updated',appUpdateGuideNavigation);
 window.addEventListener('app-language-changed',()=>{appUpdatePageTitle();appUpdateGuideNavigation();});
 const appOriginalPage=page;
 page=function(id){
@@ -147,8 +147,8 @@ function appReportStationProblem({code,name}={}){
  // without reopening the add popup or starting another addition.
  const panel=history.state?.radioLocalsApp?.panel==='station';
  if(stationPopup.open){appPanelOrigin=null;stationPopup.close();}
- appHelp.dataset.expanded='1';appHelp.setAttribute('aria-expanded','true');
- appShowPage('support',{replace:panel,push:!panel});form.hidden=false;
+ appShowPage('support',{replace:panel,push:!panel});
+ if(typeof window.supportGuidedFlow?.openContact==='function')window.supportGuidedFlow.openContact({focus:false});else form.hidden=false;
  const generation=appNavigationGeneration;requestAnimationFrame(()=>{if(generation!==appNavigationGeneration||appCurrentPage!=='support')return;form.scrollIntoView?.({block:'start'});form.elements.message.focus({preventScroll:true});});
  return true;
 }
@@ -214,8 +214,6 @@ window.addEventListener('click',event=>{
  appShowPage(next,{push:!backToRadio,replace:backToRadio,focus:guidedReturn?null:next==='myRadio'?$('navRadio'):$('listenerAppTitle')});
  if(guidedReturn)appResumeRadioConnection();
 },true);
-const appHelp=document.createElement('button');appHelp.id='listenerSupportHelp';appHelp.type='button';appHelp.className='support-help';appHelp.textContent='Get help';appHelp.setAttribute('aria-expanded','false');
-appHelp.onclick=()=>{const expanded=!appHelp.dataset.expanded;if(expanded)appHelp.dataset.expanded='1';else delete appHelp.dataset.expanded;$('ticketForm').hidden=!expanded;appHelp.setAttribute('aria-expanded',String(expanded));if(expanded)$('ticketForm').elements.name.focus();};$('ticketForm').before(appHelp);
 if('scrollRestoration' in history)history.scrollRestoration='manual';
 if(appIsListenerPage(appCurrentPage))appReplaceHistory(appHistoryValue());
 appApplyMode();appDisplayMode.addEventListener?.('change',appApplyMode);

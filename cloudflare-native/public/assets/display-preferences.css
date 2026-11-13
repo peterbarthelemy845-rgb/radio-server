@@ -1,0 +1,22 @@
+/* One shared Display trigger; the existing preference controls live in a modal. */
+.app-header-tools{gap:0}
+.app-header-tools>.app-header-language-label,.app-header-tools>#appLanguage,.app-header-tools>#listenerTextSize{display:none}
+.app-header-tools .display-preferences-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;max-width:100%;margin:0;padding:9px 12px;border:1px solid #ccdcef;border-radius:10px;background:#edf4fe;color:#214f8b;font-size:.875rem;font-weight:650;line-height:1.3;white-space:normal}
+.display-preferences-icon{display:inline-flex;flex:0 0 20px;width:20px;height:20px}
+.display-preferences-icon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+#displayPreferences{position:fixed;inset:0 0 var(--app-visible-bottom,0px);box-sizing:border-box;width:min(360px,calc(100% - 24px));max-width:360px;max-height:calc(var(--app-visible-height,100dvh) - 24px - env(safe-area-inset-top));margin:auto;padding:20px;border:1px solid #dde7f4;border-radius:20px;background:#fff;color:#172b4d;box-shadow:0 24px 80px #020a2560;overflow:auto;overscroll-behavior:contain;scroll-padding:14px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+#displayPreferences::backdrop{background:#061126a6;backdrop-filter:none}
+#displayPreferences .display-preferences-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:18px}
+#displayPreferences h2{min-width:0;margin:4px 0 0;font-size:21px;line-height:1.3;overflow-wrap:anywhere}
+#displayPreferences #closeDisplayPreferences{flex:0 0 auto;width:auto;min-width:62px;min-height:44px;margin:0;padding:9px 10px;border-radius:9px;font-size:14px;line-height:1.3;background:#e9f0fa;color:#244b7d}
+#displayPreferences .display-preferences-field{display:grid;grid-template-columns:minmax(0,1fr);gap:7px;margin-top:16px}
+#displayPreferences .display-preferences-language-label,#displayPreferences #displayTextSizeLabel{display:block;position:static;width:auto;height:auto;margin:0;padding:0;overflow:visible;clip:auto;white-space:normal;font-size:15px;font-weight:650;line-height:1.4}
+#displayPreferences #appLanguage,#displayPreferences #listenerTextSize{box-sizing:border-box;width:100%;max-width:none;min-height:48px;margin:0;padding:11px 12px;border:1px solid #c8d9ed;border-radius:10px;background:#f6f9ff;color:#174a8b;font:inherit;font-size:16px;line-height:1.4;text-align:left}
+#displayPreferences #listenerTextSize[aria-pressed=true]{background:#174f9a;color:#fff}
+#displayPreferences #listenerTextSize::after{content:none;display:none}
+#displayPreferences :is(button,select):focus-visible,.display-preferences-button:focus-visible{outline:3px solid #2279ed;outline-offset:3px}
+body.app-large-text #displayPreferences :is(label,span,select,button){font-size:18px!important;line-height:1.5}
+body.app-large-text #displayPreferences h2{font-size:24px}
+@media(max-width:360px){#displayPreferences{padding:16px}.app-header-tools .display-preferences-button{gap:5px;padding:9px 10px}#displayPreferences .display-preferences-heading{gap:8px}#displayPreferences h2{font-size:20px}}
+@media(prefers-reduced-motion:reduce){#displayPreferences,.display-preferences-button{animation:none;transition:none;scroll-behavior:auto}}
+@media(forced-colors:active){#displayPreferences,.display-preferences-button,#displayPreferences :is(button,select){border:1px solid CanvasText}}

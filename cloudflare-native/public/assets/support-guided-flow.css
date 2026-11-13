@@ -1,0 +1,20 @@
+#supportGuidedFlow{margin:16px 0 0;color:#172b4d}
+#supportGuidedFlow h2{font-size:1.25rem;line-height:1.35;margin:0 0 12px}
+#supportGuidedFlow .support-topic-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+#supportGuidedFlow .support-topic-choice{display:flex;align-items:center;justify-content:center;min-height:72px;padding:14px 10px;background:#edf4ff;border:1px solid #d3e2f6;border-radius:12px;color:#163c73;font-size:1rem;line-height:1.35;text-align:center}
+#supportGuidedFlow .support-topic-choice:hover{background:#e0edff}
+#supportGuidedFlow .support-contact-link,#supportGuidedFlow .support-help-back{background:none;color:#1756a2;font-size:.9375rem;line-height:1.4;padding:10px 2px;min-height:48px;margin:4px 0;text-decoration:underline;text-underline-offset:3px}
+#supportGuidedFlow .support-contact-link{display:block;margin:8px auto 0}
+#supportGuidedFlow .support-help-back{display:block;text-align:left}
+#supportGuidedFlow .support-topic-help ol{margin:0 0 16px;padding-left:23px;line-height:1.55;font-size:1rem}
+#supportGuidedFlow .support-topic-help li+li{margin-top:10px}
+#supportGuidedFlow .support-contact-primary{width:100%;min-height:48px;font-size:1rem;margin:8px 0 12px}
+#supportGuidedFlow .support-slider{margin-top:6px}
+#support #supportGuidedFlow .support-slide{flex-basis:100%;box-sizing:border-box}
+#supportGuidedFlow .support-slide[hidden],#supportGuidedFlow [hidden]{display:none!important}
+#supportGuidedFlow button:focus-visible{outline:3px solid #2279ed;outline-offset:3px}
+#supportGuidedFlow[data-view="contact"]{margin-top:8px}
+#supportGuidedFlow[data-view="contact"]+#ticketForm{margin-top:0}
+body.app-large-text #supportGuidedFlow :is(button,li){font-size:1.125rem}
+@media(max-width:340px){#supportGuidedFlow .support-topic-choices{gap:8px}#supportGuidedFlow .support-topic-choice{padding:12px 7px}}
+@media(forced-colors:active){#supportGuidedFlow .support-topic-choice{border:1px solid ButtonText}}
