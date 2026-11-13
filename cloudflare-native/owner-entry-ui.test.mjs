@@ -2,6 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import {webcrypto} from 'node:crypto';
+import {metadataOptions} from './station-metadata.mjs';
 
 const source=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
 const between=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end));
@@ -10,10 +12,11 @@ async function settle(){for(let i=0;i<8;i++)await new Promise(resolve=>setImmedi
 function fixture({sdkReady=true}={}){
  const nodes=new Map(),widgets=[],removed=[],scripts=[],calls=[],verified=[],answers=[],timers=new Map(),windowEvents=new Map();let clock=0,focused;
  function node(id,tagName='DIV'){
+  const handlers=new Map();
   const value={id,tagName,dataset:{},attrs:{},disabled:false,hidden:true,open:false,textContent:'',value:'',type:tagName==='BUTTON'?'submit':'text',elements:{},fields:[],buttons:[],children:[],append(child){this.children.push(child);},
    focus(){focused=this;},getAttribute(key){return Object.hasOwn(this.attrs,key)?this.attrs[key]:null;},setAttribute(key,val){this.attrs[key]=val;},removeAttribute(key){delete this.attrs[key];},
    querySelectorAll(selector){return selector.includes('input')?[...this.fields,...this.buttons]:this.buttons;},querySelector(selector){if(selector==='span')return this.children.find(child=>child.tagName==='SPAN')||null;return selector==='.human'?this.area:this.buttons[0];},
-   replaceChildren(){this.emptied=true;},dispatchEvent(){},remove(){this.removed=true;},
+   replaceChildren(){this.emptied=true;},addEventListener(type,fn){const events=handlers.get(type)||[];events.push(fn);handlers.set(type,events);},dispatchEvent(event){for(const fn of handlers.get(event.type)||[])fn(event);},remove(){this.removed=true;},
   };nodes.set(id,value);return value;
  }
  const get=id=>nodes.get(id)||node(id);
@@ -155,4 +158,48 @@ test('provider choices stay out of signup fingerprints and API payloads while ex
   f.widgets[0].options.callback('provider-token');await pending;
   assert.equal(f.calls.length,1,provider);assert.equal(f.calls[0].path,'/api/owner/register');assert.equal(Object.hasOwn(f.calls[0].body,'stream_provider'),false,provider);assert.equal(f.calls[0].body.stream_url,stream,provider);assert.equal(f.calls[0].body.request_id,'provider-independent-request');assert.equal(f.calls[0].body.turnstile_token,'provider-token');assert.equal(form.elements.stream_url.value,stream);assert.equal(f.verified.length,1);
  }
+});
+
+test('signup metadata survives busy and failed attempts, with retry identity tied to the selected metadata',async()=>{
+ const f=fixture(),form=f.get('registerForm'),digests=[];
+ for(const [name,value] of Object.entries({language:'ht',category:'news_talk'})){const field=f.get('signup-'+name);field.tagName='SELECT';field.name=name;field.value=value;form.elements[name]=field;form.fields.push(field);}
+ f.context.crypto={subtle:{digest(...args){const pending=webcrypto.subtle.digest(...args);digests.push(pending);return pending;}},randomUUID:()=>webcrypto.randomUUID()};
+ vm.runInContext(between('async function registrationRequest(','function ownerAccessSuccess('),f.context);
+ f.page('register');
+ async function attempt(){
+  const count=f.calls.length,widgetCount=f.widgets.length;f.answers.push(Error('Please retry this submission.'));
+  const pending=f.submit('registerForm');await settle();await Promise.all(digests);await settle();
+  assert.equal(f.busy('registerForm'),true);assert.equal(form.elements.language.disabled,true);assert.equal(form.elements.category.disabled,true);
+  await f.submit('registerForm');assert.equal(f.widgets.length,widgetCount+1);assert.equal(f.calls.length,count);
+  f.widgets.at(-1).options.callback('metadata-token-'+widgetCount);await pending;
+  assert.equal(f.busy('registerForm'),false);assert.equal(form.elements.language.disabled,false);assert.equal(form.elements.category.disabled,false);
+  assert.equal(f.calls.length,count+1);assert.equal(f.verified.length,0);assert.match(f.get('registerMessage').textContent,/retry/);
+  return f.calls.at(-1).body;
+ }
+ const first=await attempt();assert.equal(first.language,'ht');assert.equal(first.category,'news_talk');assert.match(first.request_id,/^[a-f0-9]{32}$/);assert.equal(form.elements.language.value,'ht');assert.equal(form.elements.category.value,'news_talk');
+ const unchanged=await attempt();assert.equal(unchanged.request_id,first.request_id);assert.notEqual(unchanged.turnstile_token,first.turnstile_token);
+ form.elements.language.value='fr';const changedLanguage=await attempt();assert.notEqual(changedLanguage.request_id,first.request_id);assert.equal(changedLanguage.language,'fr');assert.equal(changedLanguage.category,'news_talk');
+ form.elements.category.value='culture';const changedCategory=await attempt();assert.notEqual(changedCategory.request_id,changedLanguage.request_id);assert.equal(changedCategory.language,'fr');assert.equal(changedCategory.category,'culture');
+ form.elements.language.value='';form.elements.category.value='';const unclassified=await attempt();assert.equal(Object.hasOwn(unclassified,'language'),true);assert.equal(Object.hasOwn(unclassified,'category'),true);assert.equal(unclassified.language,'');assert.equal(unclassified.category,'');assert.notEqual(unclassified.request_id,changedCategory.request_id);
+});
+
+test('registration reset clears retry identity including metadata, while a cancelled old digest cannot revive it',async()=>{
+ const f=fixture(),form=f.get('registerForm');f.context.crypto=webcrypto;
+ vm.runInContext(between('async function registrationRequest(','function ownerAccessSuccess('),f.context);
+ vm.runInContext(between("$('registerForm').addEventListener('reset'", "$('registerForm').onsubmit=async event=>"),f.context);
+ const data={name:'Test station',stream_url:'https://example.com/live',language:'ht',category:'news_talk'};
+ const before=await f.context.registrationRequest(data,()=>true);assert.equal(await f.context.registrationRequest(data,()=>true),before);
+ form.dispatchEvent({type:'reset'});
+ assert.equal(await f.context.registrationRequest({...data,language:'fr'},()=>false),'');
+ const after=await f.context.registrationRequest(data,()=>true);assert.notEqual(after,before);assert.equal(await f.context.registrationRequest(data,()=>true),after);
+});
+
+test('signup optional metadata starts collapsed and native-reset defaults stay unclassified with the server catalog',()=>{
+ const html=readFileSync(new URL('./public/index.html',import.meta.url),'utf8'),registration=html.match(/<form\b[^>]*id="registerForm"[^>]*>([\s\S]*?)<\/form>/)?.[1];assert.ok(registration);
+ const details=registration.match(/<details\b([^>]*\bid="registrationStationDetails"[^>]*)>([\s\S]*?)<\/details>/);assert.ok(details);assert.doesNotMatch(details[1],/\bopen(?:\s|=|$)/);
+ for(const [name,id,catalog] of [['language','registrationStationLanguage',metadataOptions.languages],['category','registrationStationCategory',metadataOptions.categories]]){
+  const select=details[2].match(new RegExp('<select\\b([^>]*\\bid="'+id+'"[^>]*)>([\\s\\S]*?)<\\/select>'));assert.ok(select,name);assert.match(select[1],new RegExp('\\bname="'+name+'"'));assert.doesNotMatch(select[1],/\b(?:required|disabled)(?:\s|=|$)/);
+  const choices=[...select[2].matchAll(/<option\b([^>]*\bvalue="([^"]*)"[^>]*)>([\s\S]*?)<\/option>/g)];assert.deepEqual(choices.map(choice=>choice[2]),['',...catalog.map(option=>option.value)]);assert.doesNotMatch(select[2],/\bselected(?:\s|=|>)/);assert.equal(choices[0][2],'');
+ }
+ assert.ok(registration.indexOf('name="email"')<registration.indexOf('id="registrationStationDetails"'));
 });
