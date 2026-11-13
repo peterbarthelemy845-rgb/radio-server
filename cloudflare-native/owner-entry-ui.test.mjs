@@ -194,9 +194,9 @@ test('registration reset clears retry identity including metadata, while a cance
  const after=await f.context.registrationRequest(data,()=>true);assert.notEqual(after,before);assert.equal(await f.context.registrationRequest(data,()=>true),after);
 });
 
-test('signup optional metadata starts collapsed and native-reset defaults stay unclassified with the server catalog',()=>{
+test('signup optional metadata starts expanded and native-reset defaults stay unclassified with the server catalog',()=>{
  const html=readFileSync(new URL('./public/index.html',import.meta.url),'utf8'),registration=html.match(/<form\b[^>]*id="registerForm"[^>]*>([\s\S]*?)<\/form>/)?.[1];assert.ok(registration);
- const details=registration.match(/<details\b([^>]*\bid="registrationStationDetails"[^>]*)>([\s\S]*?)<\/details>/);assert.ok(details);assert.doesNotMatch(details[1],/\bopen(?:\s|=|$)/);
+ const details=registration.match(/<details\b([^>]*\bid="registrationStationDetails"[^>]*)>([\s\S]*?)<\/details>/);assert.ok(details);assert.match(details[1],/\bopen(?:\s|=|$)/);
  for(const [name,id,catalog] of [['language','registrationStationLanguage',metadataOptions.languages],['category','registrationStationCategory',metadataOptions.categories]]){
   const select=details[2].match(new RegExp('<select\\b([^>]*\\bid="'+id+'"[^>]*)>([\\s\\S]*?)<\\/select>'));assert.ok(select,name);assert.match(select[1],new RegExp('\\bname="'+name+'"'));assert.doesNotMatch(select[1],/\b(?:required|disabled)(?:\s|=|$)/);
   const choices=[...select[2].matchAll(/<option\b([^>]*\bvalue="([^"]*)"[^>]*)>([\s\S]*?)<\/option>/g)];assert.deepEqual(choices.map(choice=>choice[2]),['',...catalog.map(option=>option.value)]);assert.doesNotMatch(select[2],/\bselected(?:\s|=|>)/);assert.equal(choices[0][2],'');
