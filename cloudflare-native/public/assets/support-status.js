@@ -96,7 +96,7 @@ function renderSupportTicket(reference,result,silent,previousReading=null){
  const checkedText=' '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),reading=previousReading||(sameTicket&&silent&&(snapshot!==view.snapshot||view.checkedTime.textContent!==checkedText)?supportTicketReadingPosition():null);
  if(snapshot!==view.snapshot){
   supportTicketText(view.title,ticket.subject);supportTicketText(view.created,supportStatusDate(ticket.created_at));supportTicketText(view.message,ticket.message);
-  view.station.hidden=!ticket.station_code;supportTicketText(view.station,ticket.station_code?' · '+(ticket.station_name||'Station')+' #'+ticket.station_code:'');
+  view.station.hidden=!ticket.station_code;supportTicketText(view.station,ticket.station_code?' · '+String(ticket.station_name||'Station').toLocaleUpperCase()+' #'+ticket.station_code:'');
   if(view.stateValue!==ticket.state){const [key,label]=supportStatusLabels[ticket.state]||supportStatusLabels.new;view.state.dataset.i18n=key;view.state.textContent=window.appI18n?.t?.(key)||label;view.stateValue=ticket.state;}
   const occurrences=new Map(),next=replies.map(reply=>{const value=JSON.stringify([reply.created_at,reply.body]),count=occurrences.get(value)||0;occurrences.set(value,count+1);return {key:value+':'+count,reply};}),keys=new Set(next.map(item=>item.key));
   // Remove expired entries before reconciling order, so the usual append-only

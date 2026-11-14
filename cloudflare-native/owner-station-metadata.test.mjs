@@ -33,12 +33,12 @@ function fixture({withSignup=false}={}){
  // Named controls are a live HTMLFormControlsCollection in a real browser.
  form.elements=new Proxy(form.elements,{get(target,key){if(key in target)return target[key];const visit=node=>node.name===key?node:node.children.map(visit).find(Boolean);return visit(form);}});
  form.addEventListener('input',()=>inputCount++);
- let signupForm,signupZip,signupDetails;
- if(withSignup){signupForm=new Node('form');signupForm.id='registerForm';signupDetails=new Node('details');signupDetails.id='registrationStationDetails';signupDetails.open=true;signupZip=new Node('input');signupZip.id='registrationStationZip';signupZip.name='zip_code';signupZip.form=signupForm;signupForm.append(signupDetails);signupDetails.append(signupZip);}
+ let signupForm,signupZip,signupCategory,signupDetails;
+ if(withSignup){signupForm=new Node('form');signupForm.id='registerForm';signupDetails=new Node('details');signupDetails.id='registrationStationDetails';signupDetails.open=true;signupZip=new Node('input');signupZip.id='registrationStationZip';signupZip.name='zip_code';signupZip.form=signupForm;signupCategory=new Node('select');signupCategory.id='registrationStationCategory';signupCategory.name='category';signupCategory.form=signupForm;for(const value of ['','news_talk','christian']){const option=new Node('option');option.value=value;signupCategory.append(option);}signupForm.append(signupDetails);signupDetails.append(signupZip,signupCategory);}
  const window={appI18n:{t:key=>key},addEventListener(type,fn){const group=windowHandlers.get(type)||[];group.push(fn);windowHandlers.set(type,group);},dispatchEvent(event){for(const fn of windowHandlers.get(event.type)||[])fn(event);}};
  const context=vm.createContext({window,document:{createElement:tag=>new Node(tag),getElementById:id=>nodes.get(id)},Event:UiEvent,queueMicrotask,MutationObserver:class{constructor(fn){this.fn=fn;}observe(target){observers.push({target,fn:this.fn});}},fetch(){networkCalls++;throw Error('Unexpected network call');},localStorage:{setItem(){throw Error('Metadata is not a display preference');}}});
  vm.runInContext(source,context);
- return {form,nodes,window,context,Node,bioLabel,signupForm,signupZip,signupDetails,details:nodes.get('ownerStationDetails'),zip:nodes.get('ownerStationZip'),category:nodes.get('ownerStationCategory'),notice:nodes.get('ownerStationMetadataMessage'),
+ return {form,nodes,window,context,Node,bioLabel,signupForm,signupZip,signupCategory,signupDetails,details:nodes.get('ownerStationDetails'),zip:nodes.get('ownerStationZip'),category:nodes.get('ownerStationCategory'),notice:nodes.get('ownerStationMetadataMessage'),
   sync(record=station,configuration={metadataOptions:options}){form.dataset.stationCode=String(record?.code||'');window.syncOwnerStationMetadata(record,configuration);},
   change(control,value){control.value=value;control.dispatchEvent(new UiEvent(control.tagName==='INPUT'?'input':'change',{bubbles:true}));},event(type){window.dispatchEvent(new UiEvent(type));},
   notify(){for(const observer of observers)observer.fn();},reset(){form.dispatchEvent(new UiEvent('reset'));},
@@ -46,14 +46,14 @@ function fixture({withSignup=false}={}){
  };
 }
 
-test('optional owner-only details are collapsed before Bio and use the received catalog',()=>{
+test('complete owner details are collapsed before Bio, required, and use the received catalog',()=>{
  const f=fixture();assert.equal(f.form.children[0],f.details);assert.equal(f.form.children[1],f.bioLabel);assert.equal(f.details.open,false);assert.equal(f.zip.disabled,true);
- f.sync();assert.equal(f.details.open,false);assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,false);assert.equal(f.zip.tagName,'INPUT');assert.equal(f.zip.type,'text');assert.equal(f.zip.getAttribute('inputmode'),'numeric');assert.equal(f.zip.getAttribute('maxlength'),'5');assert.equal(f.zip.getAttribute('pattern'),'[0-9]{5}');assert.equal(f.zip.getAttribute('autocomplete'),'postal-code');assert.equal(f.zip.value,'01234');assert.deepEqual(f.category.children.map(node=>node.value),['','news_talk','christian']);assert.equal(f.category.children[0].textContent,'Not set');assert.deepEqual(f.saveValues(),{zip_code:'01234',category:'christian'});assert.equal(f.nodes.has('ownerStationLanguage'),false);assert.equal(f.networkCalls,0);
+ f.sync();assert.equal(f.details.open,false);assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,false);assert.equal(f.zip.required,true);assert.equal(f.category.required,true);assert.equal(f.zip.tagName,'INPUT');assert.equal(f.zip.type,'text');assert.equal(f.zip.getAttribute('inputmode'),'numeric');assert.equal(f.zip.getAttribute('maxlength'),'5');assert.equal(f.zip.getAttribute('pattern'),'[0-9]{5}');assert.equal(f.zip.getAttribute('autocomplete'),'postal-code');assert.equal(f.zip.value,'01234');assert.deepEqual(f.category.children.map(node=>node.value),['','news_talk','christian']);assert.equal(f.category.children[0].textContent,'Choose category');assert.equal(f.category.children.find(node=>node.value==='christian').textContent,'Religion');assert.deepEqual(f.saveValues(),{zip_code:'01234',category:'christian'});assert.equal(f.nodes.has('ownerStationLanguage'),false);assert.equal(f.networkCalls,0);
 });
 
-test('selecting or clearing an optional value supplies a save value and dirties only the editor',()=>{
+test('editing required metadata dirties only the editor and clearing Category cannot produce a save value',()=>{
  const f=fixture();f.sync();f.change(f.zip,'04567');assert.equal(f.form.dataset.dirty,'1');assert.equal(f.inputCount,1);assert.equal(f.saveValues().zip_code,'04567');
- f.change(f.category,'');assert.deepEqual(f.saveValues(),{zip_code:'04567',category:''});assert.equal(f.window.prepareOwnerStationMetadata(),true);assert.equal(f.networkCalls,0);
+ f.change(f.category,'');assert.deepEqual(f.saveValues(),{});assert.equal(f.window.prepareOwnerStationMetadata(),false);assert.equal(f.focused,f.category);assert.match(f.category.validityMessage,/Choose a category/);f.change(f.category,'news_talk');assert.equal(f.window.prepareOwnerStationMetadata(),true);assert.deepEqual(f.saveValues(),{zip_code:'04567',category:'news_talk'});assert.equal(f.networkCalls,0);
 });
 
 test('same-station background reads preserve a draft; explicit refresh accepts the latest data',()=>{
@@ -63,17 +63,17 @@ test('same-station background reads preserve a draft; explicit refresh accepts t
 
 test('legacy omitted fields and missing same-station catalog do not clear saved metadata',()=>{
  const f=fixture();f.sync();f.sync({code:'13'},{preserveDraft:false});assert.deepEqual(f.saveValues(),{zip_code:'01234',category:'christian'});
- f.sync({code:'13',zip_code:'',category:''},{preserveDraft:false});assert.deepEqual(f.saveValues(),{zip_code:'',category:''});
+ f.sync({code:'13',zip_code:'',category:''},{preserveDraft:false});assert.deepEqual(f.saveValues(),{});assert.equal(f.details.open,true);assert.equal(f.window.prepareOwnerStationMetadata(),false);assert.equal(f.focused,f.zip);f.change(f.zip,'01234');assert.equal(f.window.prepareOwnerStationMetadata(),false);assert.equal(f.focused,f.category);
 });
 
 test('a different station does not inherit the previous values, draft, or catalog',()=>{
- const f=fixture();f.sync();f.change(f.zip,'04567');f.details.open=true;f.sync({code:'14'},{preserveDraft:true});assert.equal(f.zip.value,'');assert.equal(f.category.value,'');assert.equal(f.details.open,false);assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,true);assert.deepEqual(f.saveValues(),{zip_code:''});
- f.sync({code:'14'},{metadataOptions:options});assert.deepEqual(f.saveValues(),{zip_code:'',category:''});
+ const f=fixture();f.sync();f.change(f.zip,'04567');f.details.open=true;f.sync({code:'14'},{preserveDraft:true});assert.equal(f.zip.value,'');assert.equal(f.category.value,'');assert.equal(f.details.open,true);assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,true);assert.deepEqual(f.saveValues(),{});
+ f.sync({code:'14'},{metadataOptions:options});assert.deepEqual(f.saveValues(),{});assert.equal(f.details.open,true);
 });
 
-test('catalog failure disables only Category and preserves it while ZIP and Bio remain editable',()=>{
- const f=fixture();f.sync(station,{metadataOptions:{categories:[{value:'bad value',label:'Bad'}]}});assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,true);assert.equal(f.form.elements.bio.disabled,false);assert.equal(f.category.value,'christian');assert.equal(f.notice.hidden,false);assert.match(f.notice.textContent,/still edit ZIP/);assert.equal(f.window.prepareOwnerStationMetadata(),true);assert.deepEqual(f.saveValues(),{zip_code:'01234'});
- f.change(f.zip,'04567');assert.deepEqual(f.saveValues(),{zip_code:'04567'});
+test('catalog failure preserves edits and saved Category but blocks saving with a clear required-details notice',()=>{
+ const f=fixture();f.sync(station,{metadataOptions:{categories:[{value:'bad value',label:'Bad'}]}});assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,true);assert.equal(f.form.elements.bio.disabled,false);assert.equal(f.category.value,'christian');assert.equal(f.notice.hidden,false);assert.match(f.notice.textContent,/Refresh the editor before saving/);assert.equal(f.window.prepareOwnerStationMetadata(),false);assert.equal(f.focused,f.notice);assert.equal(f.details.open,true);assert.deepEqual(f.saveValues(),{});
+ f.change(f.zip,'04567');assert.deepEqual(f.saveValues(),{});assert.equal(f.zip.value,'04567');
  f.sync(station,{metadataOptions:options});assert.equal(f.zip.disabled,false);assert.equal(f.notice.hidden,true);assert.deepEqual(f.saveValues(),{zip_code:'01234',category:'christian'});
 });
 
@@ -88,20 +88,21 @@ test('busy state and logout keep disabled controls from leaking another owner\'s
 });
 
 test('display-language changes relabel the ZIP and Category fields without changing values or creating a draft',()=>{
- const f=fixture();f.sync();f.change(f.zip,'04567');const count=f.inputCount;f.window.appI18n={t:key=>({'metadata.details':'Detay estasyon (opsyonèl)','metadata.zip':'Kòd ZIP','metadata.category.christian':'Kretyen','metadata.notSet':'Pa chwazi'}[key]||key)};f.event('app-language-changed');
- assert.equal(f.details.children[0].textContent,'Detay estasyon (opsyonèl)');assert.equal(f.zip.parent.children[0].textContent,'Kòd ZIP');assert.equal(f.zip.value,'04567');assert.equal(f.category.children.find(node=>node.value==='christian').textContent,'Kretyen');assert.equal(f.inputCount,count);assert.equal(f.saveValues().zip_code,'04567');
+ const f=fixture();f.sync();f.change(f.zip,'04567');const count=f.inputCount;f.window.appI18n={t:key=>({'metadata.details':'Detay estasyon','metadata.zip':'Kòd ZIP','metadata.category.christian':'Relijyon','metadata.chooseCategory':'Chwazi kategori'}[key]||key)};f.event('app-language-changed');
+ assert.equal(f.details.children[0].textContent,'Detay estasyon');assert.equal(f.zip.parent.children[0].textContent,'Kòd ZIP');assert.equal(f.zip.value,'04567');assert.equal(f.category.children.find(node=>node.value==='christian').textContent,'Relijyon');assert.equal(f.inputCount,count);assert.equal(f.saveValues().zip_code,'04567');
 });
 
-test('owner ZIP preserves leading zeroes, permits empty, and rejects every other non-five-ASCII-digit value',()=>{
+test('required owner ZIP preserves leading zeroes and rejects empty or non-five-ASCII-digit values',()=>{
  const f=fixture();f.sync();
- for(const value of ['1234','123456','12a45',' 12345','12345 ','１２３４５','١٢٣٤٥','12345-6789']){f.change(f.zip,value);assert.equal(f.window.prepareOwnerStationMetadata(),false,value);assert.equal(f.focused,f.zip,value);assert.equal(f.details.open,true);assert.match(f.zip.validityMessage,/5-digit/);assert.deepEqual(f.saveValues(),{});}
- for(const value of ['', '00001','01234','90210']){f.change(f.zip,value);assert.equal(f.window.prepareOwnerStationMetadata(),true,value);assert.equal(f.zip.validityMessage,'');assert.equal(f.saveValues().zip_code,value);}
+ for(const value of ['', '1234','123456','12a45',' 12345','12345 ','１２３４５','١٢٣٤٥','12345-6789']){f.change(f.zip,value);assert.equal(f.window.prepareOwnerStationMetadata(),false,value);assert.equal(f.focused,f.zip,value);assert.equal(f.details.open,true);assert.match(f.zip.validityMessage,/5-digit/);assert.deepEqual(f.saveValues(),{});}
+ for(const value of ['00001','01234','90210']){f.change(f.zip,value);assert.equal(f.window.prepareOwnerStationMetadata(),true,value);assert.equal(f.zip.validityMessage,'');assert.equal(f.saveValues().zip_code,value);}
 });
 
-test('signup ZIP guard opens/focuses invalid input and reset clears validation without changing expanded details',()=>{
- const f=fixture({withSignup:true});assert.equal(f.window.prepareRegistrationStationMetadata(),true);
- for(const value of ['1234','123456','12a45',' 12345','１２３４５']){f.signupDetails.open=false;f.change(f.signupZip,value);assert.equal(f.window.prepareRegistrationStationMetadata(),false,value);assert.equal(f.signupDetails.open,true);assert.equal(f.focused,f.signupZip);assert.match(f.signupZip.validityMessage,/5-digit/);}
- f.change(f.signupZip,'01234');assert.equal(f.window.prepareRegistrationStationMetadata(),true);assert.equal(f.signupZip.value,'01234');f.change(f.signupZip,'bad');f.signupForm.dispatchEvent({type:'reset'});assert.equal(f.signupZip.validityMessage,'');assert.equal(f.signupDetails.open,true);f.signupZip.value='';assert.equal(f.window.prepareRegistrationStationMetadata(),true);
+test('signup requires ZIP and Category, opens/focuses invalid fields, and reset clears validation but not expansion',()=>{
+ const f=fixture({withSignup:true});assert.equal(f.window.prepareRegistrationStationMetadata(),false);assert.equal(f.focused,f.signupZip);
+ for(const value of ['', '1234','123456','12a45',' 12345','１２３４５']){f.signupDetails.open=false;f.change(f.signupZip,value);assert.equal(f.window.prepareRegistrationStationMetadata(),false,value);assert.equal(f.signupDetails.open,true);assert.equal(f.focused,f.signupZip);assert.match(f.signupZip.validityMessage,/5-digit/);}
+ f.change(f.signupZip,'01234');assert.equal(f.window.prepareRegistrationStationMetadata(),false);assert.equal(f.focused,f.signupCategory);assert.match(f.signupCategory.validityMessage,/Choose a category/);f.change(f.signupCategory,'unexpected');assert.equal(f.window.prepareRegistrationStationMetadata(),false);f.change(f.signupCategory,'christian');assert.equal(f.window.prepareRegistrationStationMetadata(),true);assert.equal(f.signupZip.value,'01234');
+ f.signupDetails.open=false;f.signupCategory.dispatchEvent({type:'invalid'});assert.equal(f.signupDetails.open,true);f.change(f.signupZip,'bad');f.change(f.signupCategory,'');f.signupForm.dispatchEvent({type:'reset'});assert.equal(f.signupZip.validityMessage,'');assert.equal(f.signupCategory.validityMessage,'');assert.equal(f.signupDetails.open,true);f.signupZip.value='';assert.equal(f.window.prepareRegistrationStationMetadata(),false);
 });
 
 test('small-phone controls keep touch targets and a single-column fallback',()=>{

@@ -14,7 +14,7 @@ import {encrypt,decrypt,mac} from './security.mjs';
 
 const page=async(f,params='')=>(await directoryResponse(new Request('https://radiolocals.com/api/stations'+params),f.env)).json();
 const owner=async f=>(await authRoutes(f.request('/api/owner/station'),f.env,f.now)).json();
-const save=(f,station,extra={})=>authRoutes(f.request('/api/owner/station',{revision:station.revision,name:station.name,stream_url:station.stream_url,bio:station.bio,...extra}),f.env,f.now);
+const save=(f,station,extra={})=>authRoutes(f.request('/api/owner/station',{revision:station.revision,name:station.name,stream_url:station.stream_url,bio:station.bio,zip_code:station.zip_code||'00501',category:station.category||'other',...extra}),f.env,f.now);
 
 test('ZIP values stay optional text and reject non-ASCII, partial, extended, numeric and oversized input',()=>{
  for(const value of ['', '00501','00000','10001','99999'])assert.equal(metadataValue('zip_code',value),value);
@@ -57,7 +57,7 @@ test('ZIP-only owner changes preserve approved values and legacy language/catego
  const f=await operationsFixture();f.owner();f.sqlite.prepare("UPDATE stations SET language='ht',category='culture',zip_code='00501' WHERE code=?").run(f.station);const loaded=(await owner(f)).station;assert.equal(loaded.zip_code,'00501');
  await save(f,loaded,{zip_code:'10001'});let draft=(await owner(f)).station;assert.equal(draft.zip_code,'10001');assert.equal(draft.approved.zip_code,'00501');assert.equal(draft.language,'ht');assert.equal(draft.category,'culture');assert.notEqual(draft.revision,loaded.revision);assert.equal((await publicStation(f.env.DB,f.station)).zip_code,'00501');
  const unchanged=await(await save(f,draft)).json();assert.equal(unchanged.unchanged,true);assert.equal((await owner(f)).station.zip_code,'10001');await assert.rejects(save(f,loaded,{zip_code:'90210'}),error=>error.status===409);
- draft=(await owner(f)).station;await save(f,draft,{zip_code:''});draft=(await owner(f)).station;assert.equal(draft.zip_code,'');assert.equal(draft.approved.zip_code,'00501');
+ draft=(await owner(f)).station;await assert.rejects(save(f,draft,{zip_code:''}),error=>error.status===400&&error.message==='Enter a 5-digit ZIP code.');draft=(await owner(f)).station;assert.equal(draft.zip_code,'10001');assert.equal(draft.approved.zip_code,'00501');
 });
 
 test('invalid ZIP edits do not upload artwork or bypass stream-test requirements',async()=>{

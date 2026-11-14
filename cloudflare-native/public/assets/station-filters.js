@@ -4,14 +4,14 @@
  if(!library||!search||typeof applyStationDirectoryFilters!=='function')return;
  const dimensions=[{key:'category',plural:'categories',title:'Category'}],catalogDimensions=[{key:'language',plural:'languages'},...dimensions];
  const allowed={language:new Set(['en','ht','fr','es','pt','other']),category:new Set(['christian','news_talk','music','culture','other'])};
- const fallbackLabels={en:'English',ht:'Haitian Creole',fr:'French',es:'Spanish',pt:'Portuguese',other:'Other',christian:'Christian',news_talk:'News & talk',music:'Music',culture:'Culture'};
+ const fallbackLabels={en:'English',ht:'Haitian Creole',fr:'French',es:'Spanish',pt:'Portuguese',other:'Other',christian:'Religion',news_talk:'News & talk',music:'Music',culture:'Culture'};
  const options={languages:[],categories:[]},facets={languages:[],categories:[]};let catalogReady=false,zipSearchResult=null;
  function text(key,fallback,values){const value=window.appI18n?.t(key,values);return typeof value==='string'&&value!==key?value:fallback;}
  function labelled(element,key,fallback){element.dataset.i18n=key;element.textContent=text(key,fallback);return element;}
  function element(tag,id,className){const node=document.createElement(tag);if(id)node.id=id;if(className)node.className=className;return node;}
  function button(id,key,label,className='secondary'){const node=element('button',id,className);node.type='button';return labelled(node,key,label);}
  function applied(){const state=readStationDirectoryState();return {zip_code:state.zip_code||'',category:state.category||''};}
- function labelFor(dimension,value){return options[dimension.plural].find(option=>option.value===value)?.label||fallbackLabels[value]||value;}
+ function labelFor(dimension,value){return dimension.key==='category'&&value==='christian'?fallbackLabels.christian:options[dimension.plural].find(option=>option.value===value)?.label||fallbackLabels[value]||value;}
  function valueLabel(dimension,value){return text('metadata.'+dimension.key+'.'+value,labelFor(dimension,value));}
  const controls=element('div','stationSearchControls','station-search-controls');search.before(controls);controls.append(search);
  const open=button('openStationFilters','filters.open','Filters','station-filters-open secondary');open.setAttribute('aria-haspopup','dialog');open.setAttribute('aria-controls','stationFiltersDialog');controls.append(open);

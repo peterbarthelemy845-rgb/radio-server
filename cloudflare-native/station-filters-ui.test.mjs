@@ -55,6 +55,11 @@ test('only dimensions with multiple populated values appear, without invented op
  assert.equal(f.document.activeElement,f.$('stationFilterZip'));assert.equal(f.commits.length,0);
 });
 
+test('the Religion label retains its existing internal category value even with an older catalog label',()=>{
+ const f=fixture(),categories=[{value:'christian',label:'Christian'},{value:'music',label:'Music'}];f.update({metadata_options:{languages:[],categories},facets:{languages:[],categories:categories.map(option=>({...option,count:2}))}});f.open();
+ const select=f.$('stationFilterCategory'),religion=select.children.find(option=>option.value==='christian');assert.equal(religion.textContent,'Religion');select.value='christian';f.apply();assert.deepEqual(f.commits.at(-1),{zip_code:'',category:'christian'});assert.equal(f.$('stationAppliedFilters').children[0].textContent,'Religion ×');
+});
+
 test('draft changes, Close, Escape and backdrop cancellation never change applied filters',()=>{
  const f=fixture();f.update(catalog());
  for(const cancel of [()=>f.close(),()=>f.dialog.dispatch('cancel'),()=>f.dialog.dispatch('click',{clientX:1,clientY:1})]){

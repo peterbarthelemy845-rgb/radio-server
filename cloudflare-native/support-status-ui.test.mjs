@@ -34,7 +34,7 @@ test('private ticket content is rendered as untranslated text, never executable 
 });
 
 test('a station problem ticket keeps its selected station visible as literal text',async()=>{
- const f=fixture();f.answers.push({...result,ticket:{...result.ticket,station_code:'13',station_name:'<b>Test station</b>'}});await f.open(reference);assert.match(text(f.get('statusPrivate')),/<b>Test station<\/b> #13/);
+ const f=fixture(),ticket={...result.ticket,station_code:'13',station_name:'<b>Test station</b>'};f.answers.push({...result,ticket});await f.open(reference);assert.match(text(f.get('statusPrivate')),/<B>TEST STATION<\/B> #13/);assert.equal(ticket.station_name,'<b>Test station</b>');assert.equal(ticket.message,result.ticket.message);
 });
 
 test('unchanged automatic ticket checks preserve content and focused controls without rebuilding the panel',async()=>{

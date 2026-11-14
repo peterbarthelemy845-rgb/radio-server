@@ -2,7 +2,7 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 import {HttpError,json,digest,randomHex,mac,otp,encrypt,decrypt,limit,readJson,session,browserWrite,human} from './security.mjs';
 import {screenStation} from './moderation.mjs';
 import {stationState,ownerRevision,stationStateGuard,stationName} from './station-edits.mjs';
-import {metadataOptions,stationMetadata} from './station-metadata.mjs';
+import {metadataOptions,requiredStationMetadata} from './station-metadata.mjs';
 import {attachStreamCheck,streamPublicationAllowed,streamOwnerStatus,requireStreamSaveCheck,assertStreamSaveCheck} from './stream-verification.mjs';
 const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
@@ -178,7 +178,7 @@ export async function authRoutes(request,env,now,deps={human}){
   }
   if(path==='/api/owner/register'){
     await deps.human(request,env,body.turnstile_token,'station-submit',now);
-    const name=stationName(body.name),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase(),metadata=stationMetadata(body);
+    const name=stationName(body.name),bio=String(body.bio||'').trim(),email=String(body.email||'').trim().toLowerCase(),metadata=requiredStationMetadata(body);
     if(bio.length>250||email.length>254||!emailPattern.test(email))throw new HttpError(400,'Check the station bio and email.');
     if(body.rights_confirmed!==true||body.agreement_version!==VERSION)throw new HttpError(400,'Confirm station rights and the current terms.');
     let requestId=body.request_id;
@@ -339,7 +339,7 @@ export async function authRoutes(request,env,now,deps={human}){
     const {station,pending}=await stationState(env,current.owner_station);
     if(!station||['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     if(typeof body.revision!=='string'||body.revision!==await ownerRevision(env,station,pending))throw new HttpError(409,'This station has changed. Review the latest saved version before saving again.');
-    const draft=pending||station,name=stationName(body.name===undefined?draft.name:body.name),url=streamUrl(body.stream_url),bio=String(body.bio||'').trim(),metadata=stationMetadata(body,draft);
+    const draft=pending||station,name=stationName(body.name===undefined?draft.name:body.name),url=streamUrl(body.stream_url),bio=String(body.bio||'').trim(),metadata=requiredStationMetadata(body,draft);
     if(bio.length>250)throw new HttpError(400,'Bio must be 250 characters or fewer.');
     const streamSave=await requireStreamSaveCheck(env,current.token_hash,url,now,station);
     await assertStreamSaveCheck(env,streamSave);

@@ -20,7 +20,7 @@ async function fixture(){
   const response=await authRoutes(new Request(host+'/api/session'),env,now);
   const state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
   async function post(path,body,changes={},time=now,deps={human:async()=>{}}){return authRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'Content-Type':'application/json','X-CSRF-Token':state.csrf,...changes},body:JSON.stringify(body)}),env,time,deps);}
-  const registration={request_id:'1'.repeat(32),name:'Test station',email:'owner@example.com',stream_url:'https://example.com/live',bio:'Test bio',rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
+  const registration={request_id:'1'.repeat(32),name:'Test station',email:'owner@example.com',stream_url:'https://example.com/live',bio:'Test bio',zip_code:'00501',category:'other',rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
   async function owner(){return (await(await authRoutes(new Request(host+'/api/owner/station',{headers:{Cookie:cookie}}),env,now)).json()).station;}
   async function passed(url=registration.stream_url,hash=sqlite.prepare('SELECT token_hash FROM sessions ORDER BY rowid LIMIT 1').get().token_hash){const id=await beginStreamCheck(env,hash,url,now);await completeStreamCheck(env,hash,url,id,true,now);}
   // General auth tests start after the required successful stream test. Tests
@@ -30,6 +30,15 @@ async function fixture(){
 }
 async function registered(){const f=await fixture();const response=await f.post('/api/owner/register',f.registration);f.result=await response.json();
   const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get();f.code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];return f;}
+
+test('registration cannot bypass required ZIP and category with missing or blank JSON fields',async()=>{
+ const f=await fixture();
+ for(const [missing,extra,message] of [[['zip_code'],{},'Enter a 5-digit ZIP code.'],[['category'],{},'Choose a category.'],[['zip_code','category'],{},'Enter a 5-digit ZIP code.'],[[],{zip_code:''},'Enter a 5-digit ZIP code.'],[[],{category:''},'Choose a category.']]){
+  const body={...f.registration,...extra};for(const key of missing)delete body[key];await assert.rejects(f.post('/api/owner/register',body),error=>error.status===400&&error.message===message);
+ }
+ assert.equal(f.imageReads(),0);assert.equal(f.objects.size,0);assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM stations').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM registration_requests').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM agreement_acceptances').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM mail_outbox').get().n,0);
+ const result=await(await f.post('/api/owner/register',{...f.registration,zip_code:'00501',category:'christian'})).json();assert.equal(result.status,'ok');assert.equal(f.sqlite.prepare('SELECT zip_code FROM stations').get().zip_code,'00501');assert.equal(f.sqlite.prepare('SELECT category FROM stations').get().category,'christian');
+});
 
 test('optional signup metadata is validated, bound to registration retries and retained after email verification',async()=>{
  const f=await fixture();for(const metadata of [{language:'unknown'},{category:null}])await assert.rejects(f.post('/api/owner/register',{...f.registration,...metadata}),error=>error.status===400);assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM stations').get().n,0);

@@ -9,10 +9,13 @@ const png=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1H
 const required=error=>error.status===428&&error.message==='Test your stream and get a pass before saving.';
 async function fixture(){
  const f=await operationsFixture();f.hash=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash;f.images=0;f.puts=0;
+ // Keep required station details valid so these tests reach the stream-proof
+ // checks, including historical/private stations and legacy owner payloads.
+ f.sqlite.prepare("UPDATE stations SET zip_code='00501',category='other' WHERE code=?").run(f.station);
  const put=f.env.MEDIA.put;f.env.MEDIA.put=async(...args)=>{f.puts++;return put(...args);};
  f.env.IMAGES={async info(){f.images++;return {width:1,height:1};},input(){return {transform(){return {async output(){return {response:()=>new Response(png)};}};}};}};
  const state=await(await authRoutes(f.request('/api/session'),f.env,f.now)).json();
- f.registration={request_id:'9'.repeat(32),name:'New station',email:'owner@example.com',stream_url:url,rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
+ f.registration={request_id:'9'.repeat(32),name:'New station',email:'owner@example.com',stream_url:url,zip_code:'00501',category:'other',rights_confirmed:true,agreement_version:state.agreement_version,artwork:{name:'logo.png',base64:Buffer.from(png).toString('base64')}};
  f.register=(body=f.registration)=>authRoutes(f.request('/api/owner/register',body),f.env,f.now,{human:async()=>{}});
  f.pass=async(value=url,hash=f.hash,at=f.now)=>{const id=await beginStreamCheck(f.env,hash,value,at);await completeStreamCheck(f.env,hash,value,id,true,at);return id;};
  f.edit=async(changes={})=>{const station=(await(await authRoutes(f.request('/api/owner/station'),f.env,f.now)).json()).station;return authRoutes(f.request('/api/owner/station',{name:station.name,stream_url:station.stream_url,bio:station.bio,revision:station.revision,...changes}),f.env,f.now);};

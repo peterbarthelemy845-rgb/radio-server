@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {operationsFixture} from './operations-fixture.mjs';
-import {metadataOptions,stationMetadata} from './station-metadata.mjs';
+import {metadataOptions,stationMetadata,requiredStationMetadata} from './station-metadata.mjs';
 import {authRoutes} from './owner-auth.mjs';
 import {adminRoutes} from './admin.mjs';
 import {stationState,publishStationEdit} from './station-edits.mjs';
@@ -14,12 +14,35 @@ import {decrypt,encrypt} from './security.mjs';
 const page=async(f,params='')=>(await directoryResponse(new Request('https://radiolocals.com/api/stations'+params),f.env)).json();
 const owner=async f=>(await authRoutes(f.request('/api/owner/station'),f.env,f.now)).json();
 const save=(f,body)=>authRoutes(f.request('/api/owner/station',body),f.env,f.now);
-const update=(station,extra={})=>({revision:station.revision,name:station.name,stream_url:station.stream_url,bio:station.bio,...extra});
+const update=(station,extra={})=>({revision:station.revision,name:station.name,stream_url:station.stream_url,bio:station.bio,zip_code:station.zip_code||'00501',category:station.category||'other',...extra});
 
 test('metadata catalog validates exact optional values and legacy payloads preserve classifications',()=>{
  assert.deepEqual(metadataOptions.languages.map(item=>item.value),['en','ht','fr','es','pt','other']);assert.deepEqual(metadataOptions.categories.map(item=>item.value),['christian','news_talk','music','culture','other']);
  assert.deepEqual(stationMetadata({}),{language:'',category:'',zip_code:''});assert.deepEqual(stationMetadata({}, {language:'ht',category:'christian'}),{language:'ht',category:'christian',zip_code:''});assert.deepEqual(stationMetadata({language:''},{language:'ht',category:'culture'}),{language:'',category:'culture',zip_code:''});
  for(const body of [{language:'HT'},{language:null},{language:[]},{language:'ht\u0000'},{category:'news'},{category:123},{category:'music OR 1=1'}])assert.throws(()=>stationMetadata(body),error=>error.status===400);
+});
+
+test('write validation requires ZIP and category while legacy reads, filters and snapshots remain optional',()=>{
+ assert.equal(metadataOptions.categories.find(item=>item.value==='christian').label,'Religion');
+ assert.deepEqual(stationMetadata({}),{language:'',category:'',zip_code:''});
+ assert.deepEqual(requiredStationMetadata({}, {language:'ht',category:'christian',zip_code:'00501'}),{language:'ht',category:'christian',zip_code:'00501'});
+ for(const [input,fallback,message] of [[{}, {},'Enter a 5-digit ZIP code.'],[{category:'music'}, {},'Enter a 5-digit ZIP code.'],[{zip_code:'00501'}, {},'Choose a category.'],[{zip_code:''},{category:'culture',zip_code:'00501'},'Enter a 5-digit ZIP code.'],[{category:''},{category:'culture',zip_code:'00501'},'Choose a category.']])assert.throws(()=>requiredStationMetadata(input,fallback),error=>error.status===400&&error.message===message);
+});
+
+test('legacy blank owner records remain readable but cannot save without completing required fields',async()=>{
+ const f=await operationsFixture();f.owner();const loaded=(await owner(f)).station,before=f.sqlite.prepare('SELECT * FROM stations').get();assert.equal(loaded.zip_code,'');assert.equal(loaded.category,'');
+ const write=extra=>authRoutes(f.request('/api/owner/station',{revision:loaded.revision,name:loaded.name,stream_url:loaded.stream_url,bio:'An owner edit',artwork:{name:'invalid-image.png'},...extra}),f.env,f.now);
+ for(const [extra,message] of [[{},'Enter a 5-digit ZIP code.'],[{zip_code:'',category:'culture'},'Enter a 5-digit ZIP code.'],[{zip_code:'00501'},'Choose a category.'],[{zip_code:'00501',category:''},'Choose a category.']])await assert.rejects(write(extra),error=>error.status===400&&error.message===message);
+ assert.deepEqual(f.sqlite.prepare('SELECT * FROM stations').get(),before);assert.equal(f.sqlite.prepare('SELECT count(*) AS n FROM station_edits').get().n,0);assert.equal(f.objects.size,0);assert.equal((await publicStation(f.env.DB,f.station)).zip_code,'');
+});
+
+test('a legacy owner payload can omit required fields only when its saved proposal already has valid values',async()=>{
+ const f=await operationsFixture();f.owner();const first=(await owner(f)).station;
+ await authRoutes(f.request('/api/owner/station',{revision:first.revision,name:first.name,stream_url:first.stream_url,bio:first.bio,zip_code:'00501',category:'christian'}),f.env,f.now);
+ const loaded=(await owner(f)).station;assert.equal(loaded.zip_code,'00501');assert.equal(loaded.category,'christian');assert.equal(loaded.approved.zip_code,'');
+ await authRoutes(f.request('/api/owner/station',{revision:loaded.revision,name:loaded.name,stream_url:loaded.stream_url,bio:'Legacy-client bio edit'}),f.env,f.now);
+ const preserved=(await owner(f)).station;assert.equal(preserved.zip_code,'00501');assert.equal(preserved.category,'christian');assert.equal(preserved.bio,'Legacy-client bio edit');
+ await assert.rejects(authRoutes(f.request('/api/owner/station',{revision:preserved.revision,name:preserved.name,stream_url:preserved.stream_url,bio:preserved.bio,category:''}),f.env,f.now),error=>error.status===400&&error.message==='Choose a category.');
 });
 
 test('additive migration leaves old approved and proposed stations unclassified and constrains stored labels',()=>{
@@ -34,7 +57,7 @@ test('filtered SQL pagination reaches every matching published station beyond th
  const first=await page(f,'?limit=50&language=ht&category=christian');assert.equal(first.stations.length,50);assert.equal(first.has_more,true);assert.equal(first.scanned_count,50);const all=[...first.stations];let cursor=first.next_cursor;
  while(cursor){const next=await page(f,'?limit=50&language=ht&category=christian&cursor='+encodeURIComponent(cursor));all.push(...next.stations);cursor=next.next_cursor;}
  assert.equal(all.length,124);assert.equal(new Set(all.map(item=>item.listener_code)).size,124);assert.ok(all.every(item=>item.language==='ht'&&item.category==='christian'));assert.equal(all.some(item=>Object.hasOwn(item,'contact_email')),false);
- assert.deepEqual(first.metadata_options,metadataOptions);assert.deepEqual(first.facets.languages,[{value:'ht',label:'Haitian Creole',count:131}]);assert.deepEqual(first.facets.categories,[{value:'christian',label:'Christian',count:124},{value:'music',label:'Music',count:7}]);
+ assert.deepEqual(first.metadata_options,metadataOptions);assert.deepEqual(first.facets.languages,[{value:'ht',label:'Haitian Creole',count:131}]);assert.deepEqual(first.facets.categories,[{value:'christian',label:'Religion',count:124},{value:'music',label:'Music',count:7}]);
 });
 
 test('directory filters combine with accent-insensitive name/code search and cannot reuse another filter cursor',async()=>{
@@ -65,10 +88,10 @@ test('optional metadata enforces owner auth, enum validation and existing stream
  await assert.rejects(save(f,update(loaded,{language:'ht',stream_url:'https://different.example.com/live'})),error=>error.status===428);assert.equal((await owner(f)).station.language,'');
 });
 
-test('legacy owner writes preserve live metadata and explicit blanks clear it only in the proposal',async()=>{
+test('legacy owner writes preserve valid metadata while required category cannot be cleared',async()=>{
  const f=await operationsFixture();f.owner();f.sqlite.prepare("UPDATE stations SET language='fr',category='culture' WHERE code=?").run(f.station);let loaded=(await owner(f)).station;
  await save(f,update(loaded,{bio:'Updated bio'}));loaded=(await owner(f)).station;assert.equal(loaded.language,'fr');assert.equal(loaded.category,'culture');
- await save(f,update(loaded,{language:'',category:''}));loaded=(await owner(f)).station;assert.equal(loaded.language,'');assert.equal(loaded.category,'');assert.equal(loaded.approved.language,'fr');assert.equal(loaded.approved.category,'culture');
+ await assert.rejects(save(f,update(loaded,{language:'',category:''})),error=>error.status===400&&error.message==='Choose a category.');loaded=(await owner(f)).station;assert.equal(loaded.language,'fr');assert.equal(loaded.category,'culture');assert.equal(loaded.approved.language,'fr');assert.equal(loaded.approved.category,'culture');
 });
 
 test('administrator approval publishes reviewed metadata atomically and stale metadata cannot reuse an old review',async()=>{

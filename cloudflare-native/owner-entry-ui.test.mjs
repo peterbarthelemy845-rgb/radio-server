@@ -180,7 +180,7 @@ test('signup metadata survives busy and failed attempts, with retry identity tie
  const unchanged=await attempt();assert.equal(unchanged.request_id,first.request_id);assert.notEqual(unchanged.turnstile_token,first.turnstile_token);
  form.elements.zip_code.value='10001';const changedZip=await attempt();assert.notEqual(changedZip.request_id,first.request_id);assert.equal(changedZip.zip_code,'10001');assert.equal(changedZip.category,'news_talk');
  form.elements.category.value='culture';const changedCategory=await attempt();assert.notEqual(changedCategory.request_id,changedZip.request_id);assert.equal(changedCategory.zip_code,'10001');assert.equal(changedCategory.category,'culture');
- form.elements.zip_code.value='';form.elements.category.value='';const unclassified=await attempt();assert.equal(Object.hasOwn(unclassified,'zip_code'),true);assert.equal(Object.hasOwn(unclassified,'category'),true);assert.equal(unclassified.zip_code,'');assert.equal(unclassified.category,'');assert.notEqual(unclassified.request_id,changedCategory.request_id);
+ form.elements.zip_code.value='00001';form.elements.category.value='christian';const leadingZero=await attempt();assert.equal(leadingZero.zip_code,'00001');assert.equal(leadingZero.category,'christian');assert.notEqual(leadingZero.request_id,changedCategory.request_id);
 });
 
 test('registration reset clears retry identity including metadata, while a cancelled old digest cannot revive it',async()=>{
@@ -194,13 +194,14 @@ test('registration reset clears retry identity including metadata, while a cance
  const after=await f.context.registrationRequest(data,()=>true);assert.notEqual(after,before);assert.equal(await f.context.registrationRequest(data,()=>true),after);
 });
 
-test('signup optional metadata starts expanded and native-reset defaults stay unclassified with the server catalog',()=>{
+test('signup required station details start expanded with empty reset defaults and the server category catalog',()=>{
  const html=readFileSync(new URL('./public/index.html',import.meta.url),'utf8'),registration=html.match(/<form\b[^>]*id="registerForm"[^>]*>([\s\S]*?)<\/form>/)?.[1];assert.ok(registration);
  const details=registration.match(/<details\b([^>]*\bid="registrationStationDetails"[^>]*)>([\s\S]*?)<\/details>/);assert.ok(details);assert.match(details[1],/\bopen(?:\s|=|$)/);
- const zip=details[2].match(/<input\b([^>]*\bid="registrationStationZip"[^>]*)>/);assert.ok(zip);for(const attribute of ['name="zip_code"','type="text"','inputmode="numeric"','maxlength="5"','pattern="[0-9]{5}"','autocomplete="postal-code"'])assert.ok(zip[1].includes(attribute),attribute);assert.doesNotMatch(zip[1],/\b(?:required|disabled|value)(?:\s|=|$)/);assert.doesNotMatch(registration,/\bname="language"/);
+ assert.match(details[2],/>Station details<\/summary>/);assert.doesNotMatch(details[2],/optional/);
+ const zip=details[2].match(/<input\b([^>]*\bid="registrationStationZip"[^>]*)>/);assert.ok(zip);for(const attribute of ['name="zip_code"','type="text"','inputmode="numeric"','maxlength="5"','pattern="[0-9]{5}"','autocomplete="postal-code"'])assert.ok(zip[1].includes(attribute),attribute);assert.match(zip[1],/\brequired(?:\s|=|$)/);assert.doesNotMatch(zip[1],/\b(?:disabled|value)(?:\s|=|$)/);assert.doesNotMatch(registration,/\bname="language"/);
  for(const [name,id,catalog] of [['category','registrationStationCategory',metadataOptions.categories]]){
-  const select=details[2].match(new RegExp('<select\\b([^>]*\\bid="'+id+'"[^>]*)>([\\s\\S]*?)<\\/select>'));assert.ok(select,name);assert.match(select[1],new RegExp('\\bname="'+name+'"'));assert.doesNotMatch(select[1],/\b(?:required|disabled)(?:\s|=|$)/);
-  const choices=[...select[2].matchAll(/<option\b([^>]*\bvalue="([^"]*)"[^>]*)>([\s\S]*?)<\/option>/g)];assert.deepEqual(choices.map(choice=>choice[2]),['',...catalog.map(option=>option.value)]);assert.doesNotMatch(select[2],/\bselected(?:\s|=|>)/);assert.equal(choices[0][2],'');
+  const select=details[2].match(new RegExp('<select\\b([^>]*\\bid="'+id+'"[^>]*)>([\\s\\S]*?)<\\/select>'));assert.ok(select,name);assert.match(select[1],new RegExp('\\bname="'+name+'"'));assert.match(select[1],/\brequired(?:\s|=|$)/);assert.doesNotMatch(select[1],/\bdisabled(?:\s|=|$)/);
+  const choices=[...select[2].matchAll(/<option\b([^>]*\bvalue="([^"]*)"[^>]*)>([\s\S]*?)<\/option>/g)];assert.deepEqual(choices.map(choice=>choice[2]),['',...catalog.map(option=>option.value)]);assert.doesNotMatch(select[2],/\bselected(?:\s|=|>)/);assert.equal(choices[0][2],'');assert.equal(choices[0][3],'Choose category');assert.equal(choices.find(choice=>choice[2]==='christian')[3],'Religion');
  }
  assert.ok(registration.indexOf('name="email"')<registration.indexOf('id="registrationStationDetails"'));
 });

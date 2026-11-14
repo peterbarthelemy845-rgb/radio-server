@@ -1,0 +1,17 @@
+/* Station names are capitalized for display. Stored names, bios, URLs and
+   contact details keep their original text and case. */
+.station-display-name,
+.station-tile-name,
+#shareName,
+#ownerName,
+#ticketStationName,
+#stationDeliveryStatus > span:first-child,
+#reportResults > article > h2,
+#adminStations > article > h2,
+#adminStations > article > h3 + p,
+#stationPlayerName,
+#stationBio #bioTitle,
+#registerForm input[name="name"],
+#editForm input[name="name"],
+#radioControlsDialog select:has(option[data-i18n-skip]),
+#radioControlsDialog option[data-i18n-skip]{text-transform:uppercase}

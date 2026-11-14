@@ -146,7 +146,7 @@ if($('ownerReviewLatest'))$('ownerReviewLatest').onclick=async()=>{
  const form=$('editForm'),button=$('ownerReviewLatest');if(formIsBusy(form)||ownerLogoutBusy||button.disabled||$('editor').hidden)return;const generation=sitePageGeneration;button.disabled=true;busy(form,true,true);
  try{
   const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return;
-  const station=result.station,summary=ownerText('owner.latestName','Latest station name:')+'\n'+station.name+'\n\n'+ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
+  const station=result.station,summary=ownerText('owner.latestName','Latest station name:')+'\n'+String(station.name).toLocaleUpperCase()+'\n\n'+ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
   if(await listenerActionDialog(ownerText('owner.reviewLatest','Review latest version'),summary,ownerText('owner.useLatest','Use latest version'),true)&&generation===sitePageGeneration)applyOwnerStation(station,false,result.metadata_options);
  }catch(error){if(generation===sitePageGeneration)ownerEditFeedback(error.message,false,true);}
  finally{button.disabled=false;busy(form,false);}
@@ -354,9 +354,9 @@ async function adminList(){
    button.onclick=async()=>{
     if(button.disabled)return;const view=sitePageGeneration;button.disabled=true;let reason='',streamOverride=false;
     try{
-     if(['reject_edit','reject','delete'].includes(action)){const entered=await appPrompt(button.textContent+' '+station.name,'Short reason for the owner (no links or private information):',{required:action!=='delete',maxLength:300,confirmText:button.textContent,danger:action!=='reject_edit'});if(entered===null)return;reason=entered.trim();if(action!=='delete'&&!reason){$('adminMessage').textContent='Enter a short reason for the owner.';return;}}
+     if(['reject_edit','reject','delete'].includes(action)){const entered=await appPrompt(button.textContent+' '+String(station.name).toLocaleUpperCase(),'Short reason for the owner (no links or private information):',{required:action!=='delete',maxLength:300,confirmText:button.textContent,danger:action!=='reject_edit'});if(entered===null)return;reason=entered.trim();if(action!=='delete'&&!reason){$('adminMessage').textContent='Enter a short reason for the owner.';return;}}
      else if(station.stream_check?.status!=='passed'){const entered=await appPrompt('Review stream before publishing','The automatic stream check has not passed. Manually verify this exact stream, then enter your review reason to approve it.',{required:true,maxLength:300,confirmText:'Approve reviewed stream'});if(entered===null||!entered.trim())return;reason=entered.trim();streamOverride=true;}
-     else if(!await appConfirm(button.textContent+' '+station.name,station.pending_edit?'Publish these reviewed changes?':'Publish this reviewed station?',{confirmText:button.textContent}))return;
+     else if(!await appConfirm(button.textContent+' '+String(station.name).toLocaleUpperCase(),station.pending_edit?'Publish these reviewed changes?':'Publish this reviewed station?',{confirmText:button.textContent}))return;
      if(view!==sitePageGeneration||$('admin').hidden)return;
      const changed=await api('/api/admin/station',{code:station.code,revision:station.revision,action,reason,stream_override:streamOverride});void refreshStationDirectory(true);if(view!==sitePageGeneration||$('admin').hidden)return;await adminList();$('adminMessage').textContent=changed.notification_queued?'Station updated. Owner notification queued.':'Station updated.';window.dispatchEvent(new Event('admin-data-changed'));
     }catch(e){if(view===sitePageGeneration&&!$('admin').hidden)$('adminMessage').textContent=e.message;}finally{button.disabled=false;}

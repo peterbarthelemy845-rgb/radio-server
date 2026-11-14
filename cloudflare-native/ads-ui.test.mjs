@@ -18,6 +18,11 @@ function fixture({serializeFile=async file=>({name:file.name,base64:'data'}),che
  return {ctx,form,originalFile,calls,answers,pages,messages,events,busyEvents,get:expression=>runInNewContext(expression,ctx),id:get,show:runInNewContext('showAds',ctx),navigate:runInNewContext('page',ctx),submit:()=>form.onsubmit({preventDefault(){},target:form})};
 }
 const ad={id:'a'.repeat(32),business:'Bakery',station_code:10,message:'Bread',phone:'555-0100',status:'pending_review',scanner_passed:1,reported_displays:0};
+
+test('the advertiser heading capitalizes only the displayed station name without changing station data or contact fields',async()=>{
+ const f=fixture(),station={name:'Radio Étoile',stream_url:'https://Stream.Example.com/Live.MP3'};f.ctx.location.pathname='/advertise/13';f.answers.push(station);await f.get('initAdsPage')();
+ assert.equal(f.id('advertiseTitle').textContent,'Advertise on RADIO ÉTOILE');assert.equal(station.name,'Radio Étoile');assert.equal(station.stream_url,'https://Stream.Example.com/Live.MP3');assert.equal(f.form.elements.email.value,'owner@example.com');assert.equal(f.calls[0].path,'/api/stations/13');
+});
 test('advertiser submission snapshots before freezing fields and blocks repeated submissions',async()=>{
  const file=deferred(),serialized=[],f=fixture({serializeFile:async value=>{serialized.push(value);return await file.promise;}});f.answers.push({message:'Submitted for approval.'});const first=f.submit();await f.submit();
  assert.equal(f.form.dataset.busy,'1');assert.equal(f.form.elements.business.disabled,true);assert.equal(f.form.elements.artwork.disabled,true);assert.equal(serialized.length,1);assert.equal(serialized[0],f.originalFile);

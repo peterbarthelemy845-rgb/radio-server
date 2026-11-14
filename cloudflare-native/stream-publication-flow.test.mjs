@@ -10,7 +10,9 @@ const categories=['sexual','sexual/minors','violence','violence/graphic','hate',
 const creative=passed=>new Response(JSON.stringify({results:[{flagged:!passed,categories:Object.fromEntries(categories.map(key=>[key,false])),category_scores:Object.fromEntries(categories.map(key=>[key,0.001]))}]}),{headers:{'Content-Type':'application/json'}});
 async function fixture({published=false,owner=true}={}){
  const f=await operationsFixture();f.hash=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash;f.env.OPENAI_API_KEY='test-only-never-sent-to-a-real-service';f.env.ADMIN_EMAIL='admin@example.com';const artwork='a'.repeat(64)+'.png';await f.env.MEDIA.put('sanitized/'+artwork,new Uint8Array([137,80,78,71,13,10,26,10]),{customMetadata:{sanitizer_version:'1'},httpMetadata:{contentType:'image/png'}});
- f.sqlite.prepare('UPDATE stations SET stream_url=?,status=?,email_verified_at=?,artwork_key=? WHERE code=?').run(original,published?'published':'pending_review',f.now,artwork,f.station);if(owner)f.owner();return f;
+ // Valid required metadata keeps these publication/security tests focused on
+ // stream evidence and creative approval rather than form completion errors.
+ f.sqlite.prepare("UPDATE stations SET stream_url=?,status=?,email_verified_at=?,artwork_key=?,zip_code='00501',category='other' WHERE code=?").run(original,published?'published':'pending_review',f.now,artwork,f.station);if(owner)f.owner();return f;
 }
 const row=f=>f.sqlite.prepare('SELECT * FROM stations WHERE code=?').get(f.station);
 const pending=f=>f.sqlite.prepare('SELECT * FROM station_edits WHERE station_code=?').get(f.station);
