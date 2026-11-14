@@ -25,6 +25,7 @@
  function render(data){
   result.replaceChildren(report(data.report));
   const allowance=data.allowance;if(allowance)result.prepend(el('p','AI allowance: '+allowance.day_requests+' / '+allowance.daily_limit+' requests today · '+allowance.month_requests+' / '+allowance.monthly_limit+' this month.','small'));
+  const issue=allowance?.service;if(issue&&issue.code!=='ok'){const billing=['insufficient_quota','credit_balance_exhausted','organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded'].includes(issue.code),access=['invalid_api_key','model_not_found','permission_denied'].includes(issue.code);result.prepend(el('p',billing?'OpenAI credits or a usage limit need attention.':access?'Check OpenAI key and model access.':'The AI service needs checking.','ai-needs-check'),el('p','Diagnostic: '+issue.code+(issue.http_status?' · HTTP '+issue.http_status:'')+(issue.parameter?' · '+issue.parameter:'')+' · '+timestamp(issue.updated_at),'small'));}
   const streams=el('details',null,'ai-stream-checks');streams.append(el('summary','Stream checks'));
   if(!data.stream_monitor_enabled)streams.append(el('p','Scheduled stream checks are not enabled.'));
   else if(!data.health?.length)streams.append(el('p','Published stations will be checked automatically. No checks have completed yet.'));

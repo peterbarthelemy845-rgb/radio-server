@@ -28,6 +28,12 @@ test('a corrupt cached result can be safely regenerated',async()=>{
  await runAI(f.env,options(f,{fetcher}));f.sqlite.exec("UPDATE ai_results SET encrypted_payload='invalid'");
  const result=await runAI(f.env,options(f,{fetcher}));assert.equal(result.data.answer,'Approved help');assert.equal(result.cache_hit,false);assert.equal(calls,2);
 });
+test('provider diagnostics store only allowlisted codes, status and field names, never error messages or credentials',async()=>{
+ const f=await setup();const fetcher=async()=>new Response(JSON.stringify({error:{code:'insufficient_quota',type:'insufficient_quota',param:'private-secret-field',message:'PRIVATE SECRET test-private-key'}}),{status:429});
+ await assert.rejects(runAI(f.env,options(f,{fetcher})),e=>e.status===503);
+ const issue=f.sqlite.prepare('SELECT * FROM ai_service_health').get();assert.equal(issue.code,'insufficient_quota');assert.equal(issue.http_status,429);assert.equal(issue.parameter,'');assert.ok(!JSON.stringify(issue).includes('PRIVATE'));assert.ok(!JSON.stringify(issue).includes('test-private-key'));
+ f.admin();const status=await (await aiRuntimeRoutes(f.request('/api/admin/ai/status'),f.env,f.now)).json();assert.equal(status.service.code,'insufficient_quota');
+});
 test('AI stays unavailable without enabled configuration or key; oversized requests never call provider',async()=>{
  const f=await setup();let calls=0;const fetcher=async()=>{calls++;return response();};
  for(const env of [{...f.env,AI_ASSISTANTS_ENABLED:'false'},{...f.env,OPENAI_API_KEY:''}])await assert.rejects(runAI(env,options(f,{fetcher})),e=>e.status===503);

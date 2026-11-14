@@ -83,6 +83,10 @@ altering station publication or existing support payloads. Production schema is
 managed through the Cloudflare D1 console; earlier migrations were also applied
 there, so there is no Wrangler migration ledger to assume.
 
+Release 2026.11.14.2 also applies `0030_ai_diagnostics.sql`: the admin operations
+panel records only allowlisted provider error codes, HTTP status and field names,
+without provider error messages, prompts or credentials.
+
 The existing minute cron runs mail and backups first. AI task failures are
 isolated. Response caches are transient; draft queue and health/report caches
 are reconstructible and excluded from portable backups. Usage reservations
