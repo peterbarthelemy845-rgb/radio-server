@@ -3,7 +3,7 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 import {stationName} from './station-edits.mjs';
 import {stationMetadata} from './station-metadata.mjs';
 import {STREAM_CHECK_LIFETIME} from './stream-verification.mjs';
-export const BACKUP_TABLES=['stations','station_edits','station_stream_checks','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies'];
+export const BACKUP_TABLES=['stations','station_edits','station_stream_checks','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies','support_ticket_flags','support_folder_actions','share_event_states'];
 const MAX_RECORDS=50000,MAX_MEDIA=250,MAX_MANIFEST_BYTES=8*1024*1024,MAX_MEDIA_BYTES=50*1024*1024;
 // AES-GCM adds a 16-byte tag; the existing envelope hex-encodes ciphertext
 // plus its 12-byte IV and one separator. Every accepted manifest must restore.
@@ -31,6 +31,32 @@ function validateStationStreamChecks(stations,edits,checks,createdAt){
   try{if(publicStreamUrl(check.stream_url)!==check.stream_url)throw Error('normalized');}catch{throw new HttpError(400,'Invalid stream check evidence in backup.');}
   if(check.stream_url!==station.stream_url&&!(pending&&pending.stream_url===check.stream_url&&pending.revision===check.revision))throw new HttpError(400,'Stream check evidence does not match its station snapshot.');
   seen.add(key);
+ }
+}
+function validateListenerSupportSnapshot(tables,createdAt){
+ const fail=()=>{throw new HttpError(400,'Invalid support or share records in backup.');},hex=(value,size)=>typeof value==='string'&&value.length===size&&/^[a-f0-9]+$/.test(value),time=value=>Number.isSafeInteger(value)&&value>=0&&value<=createdAt;
+ const flags=tables.support_ticket_flags||[],actions=tables.support_folder_actions||[],outcomes=tables.share_event_states||[];
+ if(!flags.length&&!actions.length&&!outcomes.length)return;
+ if(!Number.isSafeInteger(createdAt)||createdAt<0)fail();
+ const records=(rows,key)=>{const map=new Map();for(const row of rows){if(map.has(row[key]))fail();map.set(row[key],row);}return map;};
+ const tickets=records(tables.legal_requests,'id'),events=records(tables.share_events,'id'),stations=new Set(tables.stations.map(row=>row.code));
+ const validTicket=(id,at)=>{const ticket=tickets.get(id);return hex(id,32)&&ticket?.kind==='support'&&time(ticket.created_at)&&time(at)&&at>=ticket.created_at;};
+ const seenFlags=new Set(),seenActions=new Set(),seenRequests=new Set(),seenOutcomes=new Set();
+ for(const row of flags){
+  if(!validTicket(row.ticket_id,row.updated_at)||seenFlags.has(row.ticket_id)||!['inbox','spam'].includes(row.folder)||!['','manual','many_links','repeated_characters','promotional_links'].includes(row.reason)||row.actor_hash!==null&&!hex(row.actor_hash,64))fail();
+  seenFlags.add(row.ticket_id);
+ }
+ for(const row of actions){
+  const request=JSON.stringify([row.ticket_id,row.request_id]);
+  if(!hex(row.id,32)||seenActions.has(row.id)||seenRequests.has(request)||!validTicket(row.ticket_id,row.created_at)||!['inbox','spam'].includes(row.folder)||typeof row.request_id!=='string'||!/^[-A-Za-z0-9_]{16,128}$/.test(row.request_id)||!hex(row.request_hash,64)||!hex(row.operation_token,32)||!hex(row.actor_hash,64))fail();
+  seenActions.add(row.id);seenRequests.add(request);
+ }
+ for(const row of outcomes){
+  const event=events.get(row.event_id);
+  // Only durable counts belong in a snapshot. Session provenance is transient;
+  // accepting a supplied browser hash would restore the ability to alter it.
+  if(!hex(row.event_id,32)||seenOutcomes.has(row.event_id)||row.session_hash!==''||!['attempted','share_sheet_completed','cancelled','link_copied','manual_link_shown'].includes(row.outcome)||!event||!Number.isSafeInteger(event.station_code)||event.station_code<10||!stations.has(event.station_code)||!['facebook','whatsapp','more'].includes(event.channel)||!time(event.created_at)||!time(row.reported_at)||row.reported_at<event.created_at)fail();
+  seenOutcomes.add(row.event_id);
  }
 }
 function backupLimit(reason){const error=new Error(reason);error.backupReason=reason;return error;}
@@ -70,7 +96,9 @@ export async function createBackup(env,now,kind='manual'){
   if(count!==preflight.record_count)throw backupLimit('Backup snapshot was incomplete. Try again.');
   validateStationEditSnapshot(tables.stations,tables.station_edits);
   tables.station_stream_checks=tables.station_stream_checks.map(row=>({...row,session_hash:null}));
+  tables.share_event_states=tables.share_event_states.map(row=>({...row,session_hash:''}));
   validateStationStreamChecks(tables.stations,tables.station_edits,tables.station_stream_checks,now);
+  validateListenerSupportSnapshot(tables,now);
   const keys=new Set();for(const row of [...tables.stations,...tables.station_edits,...tables.local_ads])if(row.artwork_key)keys.add('sanitized/'+row.artwork_key);for(const row of tables.ad_policy)if(row.pixels_key)keys.add('ad-pixels/'+row.pixels_key);
   if(keys.size>MAX_MEDIA)throw backupLimit('Backup capacity reached: more than 250 media files.');let size=0;const media=[];
   for(const key of keys){if(!validMedia(key))throw backupLimit('Backup contains an unexpected media path.');const object=await env.MEDIA.get(key);if(!object)throw backupLimit('A referenced media file is missing.');size+=object.size;if(size>MAX_MEDIA_BYTES)throw backupLimit('Backup capacity reached: media exceeds 50 MiB.');await env.MEDIA.put('backups/'+id+'/media/'+key,object.body,{httpMetadata:object.httpMetadata,customMetadata:object.customMetadata});media.push(key);}
@@ -80,7 +108,7 @@ export async function createBackup(env,now,kind='manual'){
 }
 export async function restoreBackup(env,id,now,actor=null){
  const run=await env.DB.prepare("SELECT 1 FROM backup_runs WHERE id=? AND state='ready'").bind(id).first();if(!run)throw new HttpError(404,'Backup not found.');const object=await env.MEDIA.get('backups/'+id+'/manifest.enc');if(!object||object.size>MAX_ENCRYPTED_MANIFEST_BYTES)throw new HttpError(400,'Backup manifest unavailable.');let snapshot;try{const plain=await decrypt(env,await object.text());if(new TextEncoder().encode(plain).length>MAX_MANIFEST_BYTES)throw Error('manifest capacity');snapshot=JSON.parse(plain);}catch{throw new HttpError(400,'Backup could not be authenticated.');}
- if(snapshot.version!==1||!snapshot.tables||!Array.isArray(snapshot.media)||snapshot.media.length>MAX_MEDIA||Object.keys(snapshot.tables).some(t=>!BACKUP_TABLES.includes(t)))throw new HttpError(400,'Unsupported backup.');
+ if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot)||snapshot.version!==1||!snapshot.tables||typeof snapshot.tables!=='object'||Array.isArray(snapshot.tables)||!Array.isArray(snapshot.media)||snapshot.media.length>MAX_MEDIA||Object.keys(snapshot.tables).some(t=>!BACKUP_TABLES.includes(t)))throw new HttpError(400,'Unsupported backup.');
  // Old snapshots contain no classifications. Restore blank optional values,
  // never guess from artwork/names or inherit a newer live station's metadata.
  for(const table of ['stations','station_edits'])if(Array.isArray(snapshot.tables[table]))snapshot.tables[table]=snapshot.tables[table].map(row=>row&&typeof row==='object'&&!Array.isArray(row)?{...row,...stationMetadata(row)}:row);
@@ -98,14 +126,15 @@ export async function restoreBackup(env,id,now,actor=null){
  for(const table of BACKUP_TABLES){
   // Older snapshots omit tables added in migrations 0010 and 0011. Preserve
   // newer inventory reports and support correspondence during a legacy restore.
-  const rows=['radio_station_inventory','support_replies','station_edits','station_stream_checks'].includes(table)&&!Object.hasOwn(snapshot.tables,table)?[]:snapshot.tables[table];
+  const rows=['radio_station_inventory','support_replies','station_edits','station_stream_checks','support_ticket_flags','support_folder_actions','share_event_states'].includes(table)&&!Object.hasOwn(snapshot.tables,table)?[]:snapshot.tables[table];
   if(!Array.isArray(rows)||rows.length>MAX_RECORDS)throw new HttpError(400,'Invalid backup table.');const schema=(await env.DB.prepare('PRAGMA table_info('+table+')').all()).results,columns=schema.map(c=>c.name),primary=schema.filter(c=>c.pk).map(c=>c.name),updates=columns.filter(c=>!primary.includes(c)).map(c=>c+'=excluded.'+c).join(','),sql='INSERT INTO '+table+'('+columns.join(',')+') VALUES ('+columns.map(()=>'?').join(',')+') ON CONFLICT DO UPDATE SET '+updates;for(let row of rows){count++;
   // Snapshots made before migration 0009 cannot recover a display code from its
   // HMAC. Only this newly added nullable column may be absent in older rows.
   if(table==='radio_pairs'&&row&&typeof row==='object'&&!Array.isArray(row)&&columns.includes('code_encrypted')&&!Object.hasOwn(row,'code_encrypted'))row={...row,code_encrypted:null};
-  if(count>MAX_RECORDS||!row||Object.keys(row).length!==columns.length||Object.keys(row).some(c=>!columns.includes(c))||Object.values(row).some(v=>v!==null&&!['string','number'].includes(typeof v)))throw new HttpError(400,'Invalid backup row.');statements.push(env.DB.prepare(sql).bind(...columns.map(c=>row[c])));}}
+  if(count>MAX_RECORDS||!row||Object.keys(row).length!==columns.length||Object.keys(row).some(c=>!columns.includes(c))||Object.values(row).some(v=>v!==null&&!['string','number'].includes(typeof v)||typeof v==='number'&&!Number.isFinite(v)))throw new HttpError(400,'Invalid backup row.');statements.push(env.DB.prepare(sql).bind(...columns.map(c=>row[c])));}}
  const edits=snapshot.tables.station_edits||[];validateStationEditSnapshot(snapshot.tables.stations,edits,new Set(snapshot.media));
  validateStationStreamChecks(snapshot.tables.stations,edits,snapshot.tables.station_stream_checks||[],snapshot.created_at);
+ validateListenerSupportSnapshot(snapshot.tables,snapshot.created_at);
  // The approved station row and its proposals are one snapshot. In particular,
  // a legacy snapshot must not leave a newer proposal attached to restored data.
  statements.unshift(env.DB.prepare('DELETE FROM station_edits WHERE station_code IN (SELECT value FROM json_each(?))').bind(JSON.stringify(snapshot.tables.stations.map(row=>row.code))));
@@ -114,7 +143,7 @@ export async function restoreBackup(env,id,now,actor=null){
  // are prepared first and cannot be rolled back by the later D1 transaction.
  for(const key of snapshot.media){if(!validMedia(key)||!await env.MEDIA.head('backups/'+id+'/media/'+key))throw new HttpError(400,'Backup media is incomplete.');}
  for(const key of snapshot.media){const media=await env.MEDIA.get('backups/'+id+'/media/'+key);await env.MEDIA.put(key,media.body,{httpMetadata:media.httpMetadata,customMetadata:media.customMetadata});}
- statements.push(env.DB.prepare('DELETE FROM stream_check_results'),env.DB.prepare('DELETE FROM registration_requests'),env.DB.prepare("UPDATE email_verifications SET consumed_at=?,code_hash='' WHERE consumed_at IS NULL").bind(now),env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL'),env.DB.prepare('DELETE FROM support_ticket_grants'),env.DB.prepare('DELETE FROM support_status_verifications'),env.DB.prepare('DELETE FROM radio_control_commands'),env.DB.prepare('DELETE FROM radio_control_grants'),env.DB.prepare('DELETE FROM radio_telemetry'),env.DB.prepare('DELETE FROM phone_radios'),env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE state IN ('waiting','approved')"),env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE state IN ('pending','delivered')"),env.DB.prepare('DELETE FROM listening_sessions'));
+ statements.push(env.DB.prepare('DELETE FROM stream_check_results'),env.DB.prepare('DELETE FROM registration_requests'),env.DB.prepare("UPDATE email_verifications SET consumed_at=?,code_hash='' WHERE consumed_at IS NULL").bind(now),env.DB.prepare('UPDATE sessions SET owner_station=NULL,owner_expires=NULL'),env.DB.prepare('DELETE FROM support_ticket_grants'),env.DB.prepare('DELETE FROM support_status_verifications'),env.DB.prepare('DELETE FROM support_sender_grants'),env.DB.prepare('DELETE FROM support_pending_tickets'),env.DB.prepare('DELETE FROM support_problem_keys'),env.DB.prepare("UPDATE share_event_states SET session_hash='' WHERE session_hash!=''"),env.DB.prepare('DELETE FROM radio_control_commands'),env.DB.prepare('DELETE FROM radio_control_grants'),env.DB.prepare('DELETE FROM radio_telemetry'),env.DB.prepare('DELETE FROM phone_radios'),env.DB.prepare("UPDATE pair_claims SET state='cancelled' WHERE state IN ('waiting','approved')"),env.DB.prepare("UPDATE radio_commands SET state='failed' WHERE state IN ('pending','delivered')"),env.DB.prepare('DELETE FROM listening_sessions'));
  if(actor!==null)statements.push(auditStatement(env,actor,'backup-restore:'+id,now));
  await env.DB.batch(statements);return {records:count};
 }

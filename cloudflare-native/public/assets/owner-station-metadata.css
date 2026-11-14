@@ -16,3 +16,6 @@
 #register .owner-metadata-fields :is(select,input){min-height:44px;margin-top:4px;padding:8px 9px}
 @media(max-width:360px){:is(#editor,#register) .owner-metadata-fields{grid-template-columns:minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){:is(#ownerStationDetails,#registrationStationDetails){scroll-behavior:auto}}
+:is(#ownerStationDetails,#registrationStationDetails)[data-required="true"]>summary{display:block;min-height:32px;padding:8px 10px;cursor:default;list-style:none;font-size:12px}
+:is(#ownerStationDetails,#registrationStationDetails)[data-required="true"]>summary::-webkit-details-marker{display:none}
+.metadata-required{color:#b42318}

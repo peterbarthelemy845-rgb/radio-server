@@ -15,7 +15,7 @@ function fixture(){
 }
 
 test('an unverified stream explains the required check without a save-private or review action',()=>{
- const f=fixture();f.load();assert.equal(f.nodes.get('ownerStreamPublication').hidden,false);assert.equal(f.nodes.get('ownerStreamPublicationTitle').textContent,'Check your stream');assert.equal(f.nodes.get('ownerStreamPublicationHelp').textContent,'Test your stream before saving.');assert.equal(f.nodes.get('requestOwnerStreamReview').hidden,true);assert.equal(f.nodes.get('requestOwnerStreamReview').disabled,true);assert.equal(f.nodes.get('requestOwnerStreamReview').onclick,null);assert.equal(f.nodes.get('ownerStreamPublicationMessage').hidden,true);assert.equal(f.focus(),0);
+ const f=fixture();f.load();assert.equal(f.nodes.get('ownerStreamPublication').hidden,false);assert.equal(f.nodes.get('ownerStreamPublicationTitle').textContent,'Check your stream');assert.equal(f.nodes.get('ownerStreamPublicationHelp').textContent,'Test your stream');assert.equal(f.nodes.get('requestOwnerStreamReview').hidden,true);assert.equal(f.nodes.get('requestOwnerStreamReview').disabled,true);assert.equal(f.nodes.get('requestOwnerStreamReview').onclick,null);assert.equal(f.nodes.get('ownerStreamPublicationMessage').hidden,true);assert.equal(f.focus(),0);
 });
 
 test('only the Save gate controls the help panel; a pending draft status cannot claim approval',()=>{
@@ -27,7 +27,7 @@ test('guidance preserves typed stream data and stays hidden when the editor is c
 });
 
 test('required-check guidance translates without reviving the retired review button',()=>{
- const f=fixture();f.load();f.window.appI18n.t=key=>({'owner.streamNeedsCheck':'Verifye difizyon ou','owner.streamCheckRequired':'Teste difizyon ou anvan ou anrejistre.'}[key]||key);f.event('app-language-changed');assert.equal(f.nodes.get('ownerStreamPublicationTitle').textContent,'Verifye difizyon ou');assert.equal(f.nodes.get('ownerStreamPublicationHelp').textContent,'Teste difizyon ou anvan ou anrejistre.');assert.equal(f.nodes.get('requestOwnerStreamReview').hidden,true);
+ const f=fixture();f.load();f.window.appI18n.t=key=>({'owner.streamNeedsCheck':'Verifye difizyon ou','registration.testRequired':'Teste difizyon ou anvan ou anrejistre.'}[key]||key);f.event('app-language-changed');assert.equal(f.nodes.get('ownerStreamPublicationTitle').textContent,'Verifye difizyon ou');assert.equal(f.nodes.get('ownerStreamPublicationHelp').textContent,'Teste difizyon ou anvan ou anrejistre.');assert.equal(f.nodes.get('requestOwnerStreamReview').hidden,true);
 });
 
 test('the publication guidance remains next to the owner stream setup and loads only with owner tools',()=>{

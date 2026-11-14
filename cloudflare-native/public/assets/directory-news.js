@@ -8,16 +8,18 @@ function shareButton(label,name,url,{standalone=false}={}){
   // manual fallback. Pairing codes and query parameters never enter sharing.
   let publicUrl;try{publicUrl=new URL(url,location.origin);if(publicUrl.origin!==location.origin||!/^\/station\/[1-9][0-9]{1,5}$/.test(publicUrl.pathname)||publicUrl.search||publicUrl.hash)return;}catch{return;}
   running=true;button.disabled=true;host.querySelector('.station-share-feedback')?.remove();
-  api('/api/events',{event_id:crypto.randomUUID().replaceAll('-',''),station_code:publicUrl.pathname.split('/').pop(),channel:'more'}).catch(()=>{});
+  const event={event_id:crypto.randomUUID().replaceAll('-',''),station_code:publicUrl.pathname.split('/').pop(),channel:'more'},attempt=api('/api/events',{...event,phase:'attempt'}).then(()=>true).catch(()=>false);
+  const outcome=value=>attempt.then(saved=>saved?api('/api/events',{...event,phase:'outcome',outcome:value}).catch(()=>{}):undefined);
   try{
-   if(typeof navigator.share==='function')try{await navigator.share({title:name,url:publicUrl.href});return;}catch(error){if(error?.name==='AbortError'||!current())return;}
+   if(typeof navigator.share==='function')try{await navigator.share({title:name,url:publicUrl.href});void outcome('share_sheet_completed');return;}catch(error){if(error?.name==='AbortError'){void outcome('cancelled');return;}if(!current())return;}
    if(!current())return;
    try{
     if(typeof navigator.clipboard?.writeText!=='function')throw Error('Clipboard unavailable');
-    await navigator.clipboard.writeText(publicUrl.href);if(!current())return;
+    await navigator.clipboard.writeText(publicUrl.href);void outcome('link_copied');if(!current())return;
     const status=document.createElement('p');status.className='station-share-feedback';status.setAttribute('role','status');status.setAttribute('data-i18n','sharing.copied');status.textContent='Link copied';button.after(status);
    }catch{
     if(!current())return;
+    void outcome('manual_link_shown');if(!current())return;
     const feedback=document.createElement('div');feedback.className='station-share-feedback';const label=document.createElement('label'),help=document.createElement('span');help.setAttribute('role','status');help.setAttribute('data-i18n','sharing.copyHelp');help.textContent='Copy this link to share the station.';
     const link=document.createElement('input');link.type='text';link.readOnly=true;link.value=publicUrl.href;link.setAttribute('data-i18n-skip','');link.onclick=()=>link.select();link.onfocus=()=>link.select();label.append(help,link);feedback.append(label);button.after(feedback);link.focus();
    }
@@ -32,17 +34,21 @@ function renderStationSlider(track,found,emptyText,saved=false){
  track.replaceChildren();
  for(const station of found){
   const tile=document.createElement('button');tile.type='button';tile.className='station-logo-tile';tile.setAttribute('aria-label',station.name+(saved?' — on your radio':' — add to your radio'));tile.title=station.name;tile.setAttribute('aria-haspopup','dialog');
-  const image=document.createElement('img');let triedOriginal=!station.logo_thumb_url||!station.logo_url||station.logo_thumb_url===station.logo_url;
-  image.onerror=()=>{if(!triedOriginal){triedOriginal=true;image.src=station.logo_url;}else{image.onerror=null;image.src='/assets/logo-placeholder.svg';}};image.src=station.logo_thumb_url||station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
+  const image=document.createElement('img');let triedOriginal=!station.logo_thumb_url||!station.logo_url||station.logo_thumb_url===station.logo_url,artworkFailed=false;
+  const recoverArtwork=()=>{artworkFailed=true;if(!triedOriginal){triedOriginal=true;image.src=station.logo_url;}else{image.onerror=null;image.src='/assets/logo-placeholder.svg';}};
+  image.onerror=recoverArtwork;image.src=station.logo_thumb_url||station.logo_url||'/assets/logo-placeholder.svg';image.alt='';image.loading='lazy';image.width=96;image.height=96;
+  image.retryArtwork=()=>{if(!artworkFailed||!station.logo_thumb_url&&!station.logo_url)return;artworkFailed=false;triedOriginal=!station.logo_thumb_url||!station.logo_url||station.logo_thumb_url===station.logo_url;image.onerror=recoverArtwork;image.src=station.logo_thumb_url||station.logo_url;};
   const name=document.createElement('span');name.className='station-tile-name';name.textContent=station.name;
   const feedback=document.createElement('span');feedback.className='station-tile-delivery';feedback.setAttribute('aria-hidden','true');
   let adding;
   tile.updateDeliveryStatus=()=>{
    const radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',delivery=radioId&&typeof stationDeliveries!=='undefined'?stationDeliveries.get(String(radioId)+'|'+String(station.listener_code)):null,pending=delivery?.state==='sending'||delivery?.state==='pending';
-   if(adding===pending)return;adding=pending;
+   const current=typeof window!=='undefined'&&typeof window.currentStationTileCode==='function'?window.currentStationTileCode():null,currentStation=current&&String(current)===String(station.listener_code),state=pending?'adding':currentStation?'current':'';
+   if(adding===state)return;adding=state;
    tile.setAttribute('aria-busy',String(pending));
    if(pending){feedback.setAttribute('data-i18n','busy.adding');const text=typeof window!=='undefined'?window.appI18n?.t('busy.adding'):null;feedback.textContent=text&&text!=='busy.adding'?text:'Adding…';}
-   else{feedback.removeAttribute('data-i18n');feedback.textContent='';}
+   else if(currentStation){feedback.setAttribute('data-i18n','station.current');const text=window.appI18n?.t('station.current');feedback.textContent=text&&text!=='station.current'?text:'Current station';}
+   else{feedback.removeAttribute('data-i18n');feedback.textContent='';}feedback.setAttribute('data-state',state);
   };
   tile.append(image,name,feedback);tile.onclick=()=>openStationPopup(station.listener_code,{autoAdd:!saved});const item=document.createElement('div');item.className='station-slider-item';item.setAttribute('data-station-code',String(station.listener_code));item.append(tile);
   track.append(item);tile.updateDeliveryStatus();
@@ -52,18 +58,18 @@ function renderStationSlider(track,found,emptyText,saved=false){
  if(focusedIndex>=0&&!document.hidden&&(typeof $!=='function'||!$('myRadio')?.hidden)&&!document.querySelector?.('dialog[open]')){const items=[...track.children].filter(item=>item.className==='station-slider-item'),item=items.find(item=>item.getAttribute?.('data-station-code')===focusedCode)||items[Math.min(focusedIndex,items.length-1)],target=item?.children[0]||(typeof $==='function'?$('search'):null);target?.focus?.({preventScroll:true});}
 }
 list=function(){
- const fold=value=>String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),query=fold($('search').value.slice(0,96).trim().replace(/^#\s*(?=\d)/,'')),radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',inventory=typeof readRadioInventory==='function'?readRadioInventory(radioId):null,known=!!inventory?.known;
+ const fold=value=>String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),query=fold($('search').value.slice(0,96).trim().replace(/^#\s*(?=\d)/,'')).replace(/\s+/g,' '),radioId=typeof readSelectedRadio==='function'?readSelectedRadio():'',inventory=typeof readRadioInventory==='function'?readRadioInventory(radioId):null,known=!!inventory?.known;
  if(radioId&&typeof loadRadioInventory==='function')loadRadioInventory(radioId);
- const directory=typeof readStationDirectoryState==='function'?readStationDirectoryState():null,savedCodes=known?inventory.codes:new Set(),matches=s=>fold(s.name+' '+s.listener_code).includes(query);
+ const directory=typeof readStationDirectoryState==='function'?readStationDirectoryState():null,savedCodes=known?inventory.codes:new Set(),matches=s=>query.split(/\s+/).filter(Boolean).every(token=>fold(s.name+' '+s.listener_code).includes(token));
  const saved=known?[...savedCodes].map(code=>(typeof getSavedStationMetadata==='function'?getSavedStationMetadata(code):null)||stations.find(s=>String(s.listener_code)===code)||(typeof getStationDirectoryStation==='function'?getStationDirectoryStation(code):null)||{listener_code:code,name:'Station '+code,logo_url:''}).filter(matches):[];
  // The server expands the entered ZIP to nearby stations; do not discard a
  // nearby result merely because its own postal code differs from the search.
  const zip_code=directory?.zip_code||'',category=directory?.category||'',filtered=!!(zip_code||category),current=!directory||directory.loadedQuery===query&&(directory.loadedZipCode||'')===zip_code&&(directory.loadedCategory||'')===category,available=current?stations.filter(s=>!savedCodes.has(String(s.listener_code))&&matches(s)&&(!category||s.category===category)):[];
  const hint=!radioId?'':inventory?.stale?'Saved stations not checked. Showing the last known list.':inventory?.unavailable?'Saved stations could not be checked. Try refreshing your radio status.':inventory&&!known?'Saved list updates after a radio software update.':'';
  const waiting=directory?.loading?'Loading stations…':directory?.hasMore?'More stations may match. Load more to continue.':directory?.failed?'Stations could not load. Try again.':'';
+ $('clearStationSearch').hidden=!$('search').value.length;
  const snapshot=JSON.stringify([radioId,known,query,zip_code,category,hint,saved,available,available.length?'':waiting]);if(snapshot===stationListSnapshot)return;stationListSnapshot=snapshot;
  $('stationCount').textContent='';$('savedStationsSection').hidden=!known||saved.length===0;$('stationInventoryHelp').textContent=hint;$('stationInventoryHelp').hidden=!hint;
- $('clearStationSearch').hidden=!query||saved.length+available.length>0||!!directory?.loading||!!directory?.hasMore;
  renderStationSlider($('savedStations'),saved,query?'No matching saved stations.':'No saved stations reported.',true);
  renderStationSlider($('stations'),available,waiting||(filtered?'No stations match these filters.':query?'No matching available stations.':known?'No more stations available.':'No stations yet.'));
 };
@@ -81,12 +87,17 @@ window.onStationDirectoryComplete=function(detail={}){
  const tracks=[$('savedStations'),$('stations')],items=tracks.flatMap(track=>[...track.children].filter(item=>item.className==='station-slider-item'));
  const signature=JSON.stringify([detail.query||'',detail.zip_code||'',detail.category||'',items.map(item=>item.getAttribute('data-station-code')),!!detail.hasMore]);
  if(signature!==stationResultAnnouncementSignature){stationResultAnnouncementSignature=signature;const key=detail.hasMore?'directory.resultsMore':'directory.results',fallback=items.length+' stations shown.'+(detail.hasMore?' More available.':''),translated=window.appI18n?.t(key,{count:items.length});stationResultAnnouncement.textContent=translated&&translated!==key?translated:fallback;}
- if(!detail.append||!detail.moreFocused||document.querySelector('dialog[open]'))return;
- const more=$('loadMoreStations'),active=document.activeElement;if(active!==more&&active!==document.body)return;
- if(detail.hasMore){more.focus({preventScroll:true});return;}
- const added=new Set(detail.receivedCodes||[]),available=[...$('stations').children].filter(item=>item.className==='station-slider-item'),saved=[...$('savedStations').children].filter(item=>item.className==='station-slider-item'),target=available.find(item=>added.has(item.getAttribute('data-station-code')))?.children[0]||available.at(-1)?.children[0]||saved.at(-1)?.children[0]||$('search');
- target.focus({preventScroll:true});target.scrollIntoView?.({block:'nearest',inline:'nearest',behavior:'auto'});
+ // Search and pagination announce results without moving keyboard focus.
+ // The explicit Skip to stations link is the only shortcut into the tile row.
 };
+const skipStations=document.createElement('a');skipStations.className='skip-to-stations';skipStations.href='#availableStationsTitle';skipStations.textContent='Skip to stations';skipStations.setAttribute('data-i18n','directory.skip');
+skipStations.onclick=event=>{event.preventDefault();const heading=$('savedStationsSection').hidden?$('availableStationsTitle'):$('savedStationsTitle');heading.setAttribute('tabindex','-1');heading.focus({preventScroll:true});heading.scrollIntoView?.({block:'start',behavior:'auto'});};
+$('library').before(skipStations);
+skipStations.hidden=$('library').hidden;
+new MutationObserver(()=>{skipStations.hidden=$('library').hidden;}).observe($('library'),{attributes:true,attributeFilter:['hidden']});
+let stationArtworkRetryPending=false;
+function retryStationArtwork(){if(!stationArtworkRetryPending||document.hidden||$('myRadio').hidden)return;stationArtworkRetryPending=false;for(const id of ['savedStations','stations'])for(const item of $(id).children)item.children[0]?.children[0]?.retryArtwork?.();}
+window.addEventListener('online',()=>{stationArtworkRetryPending=true;retryStationArtwork();});
 
 window.addEventListener('radio-locals-ready',list);
 window.addEventListener('radio-selection-changed',list);
@@ -111,7 +122,8 @@ function updateStationSliderControls(track){
  controls.row.hidden=!overflow;controls.previous.disabled=!overflow||offset<=1;controls.next.disabled=!overflow||offset>=limit-1;controls.previous.textContent=rtl?'›':'‹';controls.next.textContent=rtl?'‹':'›';
 }
 window.addEventListener('resize',()=>{for(const id of ['savedStations','stations'])updateStationSliderControls($(id));});
-window.addEventListener('radio-status-updated',()=>{for(const id of ['savedStations','stations'])updateStationSliderControls($(id));});
+window.addEventListener('radio-status-updated',()=>{for(const id of ['savedStations','stations']){updateStationSliderControls($(id));for(const item of $(id).children)item.children[0]?.updateDeliveryStatus?.();}retryStationArtwork();});
+window.addEventListener('radio-current-station-invalidated',()=>{for(const id of ['savedStations','stations'])for(const item of $(id).children)item.children[0]?.updateDeliveryStatus?.();});
 
 // Owner account navigation stays beside Sign in, above both forms.
 const coverInput=$('registerForm').elements.artwork,coverPreview=$('registrationLogoPreview'),coverHint=$('registrationLogoHint'),coverRemove=$('removeRegistrationLogo');

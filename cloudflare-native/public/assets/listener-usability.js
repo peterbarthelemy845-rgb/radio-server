@@ -47,6 +47,9 @@ function showRadioApproval(target,number){
  const instruction=document.createElement('span');instruction.className='radio-approval-instruction';instruction.dataset.i18n='pairing.approve';const translated=window.appI18n?.t('pairing.approve');instruction.textContent=translated&&translated!=='pairing.approve'?translated:'Match this number and tap Allow on your radio.';
  target.replaceChildren(digits,instruction);
 }
+for(const id of ['connectRadioForm','shareForm']){
+ const form=$(id);if(!form)continue;const help=document.createElement('details');help.className='radio-code-help';const title=document.createElement('summary'),text=document.createElement('p');title.textContent='Which code?';title.dataset.i18n='pairing.whichCode';text.textContent='Device Code connects your radio. Station Code identifies a station. Private email codes verify station ownership; never share them here.';text.dataset.i18n='pairing.codeHelp';help.append(title,text);form.append(help);
+}
 let sharedConfirmationGeneration=0;
 async function updateStationConfirmation(){
  const select=$('shareForm').elements.radio_id,id=select.value,code=String(sharedCode),generation=sharedOpenGeneration,check=++sharedConfirmationGeneration,submit=$('shareSubmit');
@@ -84,7 +87,31 @@ function listenerActionDialog(title,text,confirmLabel='Done',allowCancel=false){
   try{listenerDialog.showModal();(allowCancel?listenerDialogCancel:listenerDialogConfirm).focus();}catch(error){listenerDialog.removeEventListener('close',closed);listenerDialogPending=false;reject(error);}
  });
 }
-const draftForms=['registerForm','editForm','ticketForm','advertiseForm'];for(const id of draftForms){const form=$(id);form.addEventListener('input',event=>{if(id==='registerForm'&&event?.target?.name==='stream_provider'||id==='editForm'&&event?.target?.name==='owner_stream_provider')return;form.dataset.dirty='1';});form.addEventListener('reset',()=>delete form.dataset.dirty);}
+const draftForms=['registerForm','editForm','ticketForm','advertiseForm'],draftBaselines=new WeakMap();
+function draftSnapshot(form){
+ if(typeof form.querySelectorAll!=='function')return null;
+ const entries=[];
+ for(const field of form.querySelectorAll('input,select,textarea')){
+  const key=field.name||field.id;if(!key||['stream_provider','owner_stream_provider'].includes(key)||/turnstile|csrf|request_id/i.test(key)||['submit','button','reset'].includes(field.type))continue;
+  if(field.type==='radio'&&!field.checked)continue;
+  const value=field.type==='file'?Array.from(field.files||[]).map(file=>[file.name,file.size,file.lastModified]):field.type==='checkbox'?field.checked:String(field.value||'').trim();
+  if(value===false||value===''||Array.isArray(value)&&!value.length)continue;
+  entries.push([key,value]);
+ }
+ return JSON.stringify(entries.sort((a,b)=>a[0].localeCompare(b[0])));
+}
+function refreshFormDraftState(form){
+ const saved=draftBaselines.get(form),next=draftSnapshot(form);
+ if(saved===null||next===null)return !!form.dataset.dirty;
+ const changed=next!==saved;if(changed)form.dataset.dirty='1';else delete form.dataset.dirty;return changed;
+}
+window.resetFormDraftBaseline=function(form){if(!form)return;draftBaselines.set(form,draftSnapshot(form));delete form.dataset.dirty;};
+for(const id of draftForms){
+ const form=$(id);window.resetFormDraftBaseline(form);
+ const changed=event=>{if(id==='registerForm'&&event?.target?.name==='stream_provider'||id==='editForm'&&event?.target?.name==='owner_stream_provider')return;if(draftBaselines.get(form)===null)form.dataset.dirty='1';else refreshFormDraftState(form);};
+ form.addEventListener('input',changed);form.addEventListener('change',changed);
+ form.addEventListener('reset',()=>{delete form.dataset.dirty;const reset=()=>window.resetFormDraftBaseline(form);if(typeof queueMicrotask==='function')queueMicrotask(reset);else reset();});
+}
 // Internal tabs retain their hidden forms. A real reload or departure discards
 // all in-memory drafts, including those on a page that is no longer visible.
-window.addEventListener('beforeunload',event=>{if(draftForms.some(id=>$(id).dataset.dirty)){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(draftForms.some(id=>refreshFormDraftState($(id)))){event.preventDefault();event.returnValue='';}});

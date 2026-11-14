@@ -12,7 +12,8 @@
   const permitted=form.dataset.streamSaveAllowed==='true';
   panel.hidden=!loaded||editor.hidden||permitted;panel.dataset.state=permitted?'passed':'needs_check';
   title.textContent=text('owner.streamNeedsCheck','Check your stream');
-  help.textContent=text('owner.streamCheckRequired','Test your stream before saving.');
+  const port=document.getElementById('ownerStreamPort'),missingPort=port&&!port.disabled&&!port.value.trim();
+  help.textContent=missingPort?text('registration.enterPort','Enter port number'):text('registration.testRequired','Test your stream');
  }
  window.renderOwnerStreamPublication=station=>{loaded=!!station&&typeof station==='object'&&!!station.code;render();};
  for(const event of ['input','change','owner-stream-mode-changed','form-busy-changed'])form.addEventListener(event,render);

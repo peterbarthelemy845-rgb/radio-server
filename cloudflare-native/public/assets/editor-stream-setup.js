@@ -22,11 +22,11 @@
   if(notify){internal=true;try{url.dispatchEvent(new Event('input',{bubbles:true}));}finally{internal=false;}}
  }
  function syncBuilder(parsed){
-  nodes.ownerStreamHost.value=parsed?.hostname||'';nodes.ownerStreamPort.value=parsed?.port||'';
+  nodes.ownerStreamHost.value=parsed?.hostname||'';nodes.ownerStreamPort.value=parsed?(parsed.port||(parsed.protocol==='https:'?'443':'80')):'';
   nodes.ownerStreamProtocol.value=parsed?parsed.protocol.slice(0,-1):'https';nodes.ownerStreamPath.value=parsed?parsed.pathname+parsed.search:'';
  }
  function controls(){
-  const locked=busy();for(const field of builder){field.required=false;field.disabled=!manual()||locked;}
+  const locked=busy();for(const field of builder){field.required=manual()&&field===nodes.ownerStreamPort;field.disabled=!manual()||locked;}
   url.disabled=locked;url.required=!manual();url.readOnly=manual();
  }
  function render(){
@@ -39,8 +39,9 @@
   const host=nodes.ownerStreamHost.value.trim(),port=nodes.ownerStreamPort.value.trim(),protocol=nodes.ownerStreamProtocol.value,path=nodes.ownerStreamPath.value.trim()||'/';
   if(!host||/[\s\/:@?#\[\]\\]/.test(host))throw issue('registration.hostOnly','Enter only the public server hostname or IPv4 address.',nodes.ownerStreamHost);
   if(!['https','http'].includes(protocol))throw issue('registration.chooseProtocol','Choose HTTP or HTTPS.',nodes.ownerStreamProtocol);
-  if(nodes.ownerStreamPort.validity?.badInput||port&&!/^\d{1,5}$/.test(port)||port&&(Number(port)<1||Number(port)>65535))throw issue('registration.validPort','Enter a port from 1 to 65535, or leave it blank.',nodes.ownerStreamPort);
-  if(!path.startsWith('/')||path.startsWith('//')||/[\x00-\x1f\x7f\\#]/.test(path))throw issue('registration.validPath','Start the stream path with one / and do not include a fragment.',nodes.ownerStreamPath);
+  if(!port)throw issue('registration.enterPort','Enter port number',nodes.ownerStreamPort);
+  if(nodes.ownerStreamPort.validity?.badInput||!/^\d{1,5}$/.test(port)||Number(port)<1||Number(port)>65535)throw issue('registration.portRange','Enter a port from 1 to 65535.',nodes.ownerStreamPort);
+  if(!path.startsWith('/')||path.startsWith('//')||/[\x00-\x20\x7f\\#]/.test(path))throw issue('registration.validPath','Start the stream path with one / and do not include spaces or a fragment.',nodes.ownerStreamPath);
   try{return parse(protocol+'://'+host+(port?':'+port:'')+path);}catch(error){throw {...error,field:['registration.noTokens','registration.urlLength'].includes(error.key)?nodes.ownerStreamPath:nodes.ownerStreamHost};}
  }
  function validate(report=false,canonicalize=false,notify=false){

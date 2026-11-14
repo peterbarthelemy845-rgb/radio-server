@@ -94,3 +94,9 @@
 #editor #requestOwnerStreamReview{width:auto;min-height:44px;padding:8px 12px;margin:8px 0 0;font-size:12px;background:#e0eafb;color:#164f95}
 #editor .owner-stream-publication[data-state=passed]{border-color:#bbdfce;background:#f0faf4}
 #editor #ownerStreamPublicationMessage{color:#244c78}
+#register #streamSaveHint{font-size:12px;line-height:1.35;margin:5px 0;color:#60718a}
+#register #streamTestStatus[data-state="success"],#editor #ownerStreamTestStatus[data-state="success"]{font-weight:650;color:#167044}
+.owner-code-help{font-size:12px;line-height:1.45;color:#526581;margin:5px 0 12px}
+.owner-continue-verification{width:100%;margin:8px 0 0;min-height:40px;font-size:13px}
+#changeVerificationEmailForm{padding:10px;background:#f3f7ff;border:1px solid #dce6f5;border-radius:10px;margin:8px 0}
+#changeVerificationEmailForm label{font-size:13px}#changeVerificationEmailForm button{margin-top:8px}

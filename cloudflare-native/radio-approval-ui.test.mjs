@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 
 const source=readFileSync(new URL('./public/assets/listener-usability.js',import.meta.url),'utf8');
-const approvalSource=source.slice(source.indexOf('function showRadioApproval('),source.indexOf('let sharedConfirmationGeneration='));
+const approvalSource=source.slice(source.indexOf('function showRadioApproval('),source.indexOf("for(const id of ['connectRadioForm','shareForm'])"));
 function fixture(appI18n){
   function node(tagName='p'){return {tagName:tagName.toUpperCase(),className:'',dataset:{},children:[],textContent:'',set innerHTML(_){throw Error('Approval values must remain literal text');},replaceChildren(...children){this.children=children;}};}
   const show=runInNewContext(approvalSource+';showRadioApproval;',{document:{createElement:node},window:appI18n?{appI18n}:{}});

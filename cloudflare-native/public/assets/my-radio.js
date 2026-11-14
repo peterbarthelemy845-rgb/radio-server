@@ -1,6 +1,26 @@
 'use strict';
 let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0,radioPairingBusy=false,radioPairingGeneration=0,radioSessionExpired=false,radioRefreshFailures=0;
 let radioPairingAttempt=null;
+function phoneApprovalMessage(state){return ({denied:'Connection not approved: denied on your radio. Start again and tap Allow only for your own request.',expired:'Connection expired. Enter the current Device Code and start again.',cancelled:'Connection cancelled. Start again when you are ready.'})[state]||'Connection could not be checked. Start again when you are ready.';}
+async function pollPhoneApproval(claimId,{current,deadline,signal}={}){
+ let failures=0;
+ while(Date.now()<deadline){
+  await delay();if(!current())return null;
+  let result;
+  try{result=await api('/api/phone/claim/status',{claim_id:claimId},{signal});failures=0;}
+  catch(error){
+   if(!current()||error?.name==='AbortError')return null;
+   // Retry only the same read-only status request. Never create a new claim,
+   // repeat a bot check, or retry an authorization/terminal rejection.
+   if(error?.status>=400&&error.status<500||++failures>3)throw error;
+   continue;
+  }
+  if(!current())return null;
+  if(!['waiting','approved','denied','expired','cancelled'].includes(result?.state))throw Error('Connection status could not be checked. Start again.');
+  if(result.state!=='waiting')return result;
+ }
+ return {state:'expired'};
+}
 let radioPairingCancellation=Promise.resolve();
 // Connection steps stay in this tab. Wi-Fi credentials are entered only on the
 // radio's local setup page; finding a radio never grants this phone access.
@@ -78,11 +98,25 @@ function updateRadioCardStatus(available){
 }
 window.addEventListener('radio-inventory-changed',()=>{if(radioStatusAvailable&&!radioLoading&&!$('myRadio').hidden)updateRadioCardStatus(true);});
 function publishRadioStatus(radios){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{radios,checked_at:Date.now()}}));}
-function markRadioStatusUnavailable(text){window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{unavailable:true}}));syncRadioConnectionControls();updateRadioCardStatus(false);showRadioFreshness(false);$('refreshRadios').hidden=false;if(text)$('radioConnectStatus').textContent=text;}
+window.currentStationTileCode=()=>{
+ const radio=radioCardViews.get(String(readSelectedRadio()))?.radio,now=Date.now();
+ return radioStatusAvailable&&radioLastChecked>0&&now>=radioLastChecked&&now-radioLastChecked<=30000&&radio?.online&&Number(radio.telemetry_reported_at)*1000<=now&&Number(radio.telemetry_reported_at)*1000>now-90000&&/^[1-9][0-9]{1,5}$/.test(String(radio.current_station_code||''))?String(radio.current_station_code):null;
+};
+let stationDestination;
+function renderStationDestination(){
+ if(!$('library'))return;
+ if(!stationDestination){stationDestination=document.createElement('p');stationDestination.id='stationDestination';stationDestination.setAttribute('data-i18n-skip','');const anchor=$('stationSearchControls')||$('search');anchor?.before(stationDestination);}
+ const selected=radioCardViews.get(String(readSelectedRadio()))?.radio;
+ stationDestination.hidden=!radioCardViews.size;
+ const key=selected?.device_code?'pairing.addingTo':'pairing.chooseDevice',fallback=selected?.device_code?'Adding to Device Code '+selected.device_code:'Choose a Device Code above.',translated=window.appI18n?.t(key,{code:selected?.device_code});stationDestination.textContent=translated&&translated!==key?translated:fallback;
+}
+window.addEventListener('radio-status-updated',renderStationDestination);window.addEventListener('radio-selection-changed',renderStationDestination);window.addEventListener('app-language-changed',renderStationDestination);
+function markRadioStatusUnavailable(text){syncRadioConnectionControls();updateRadioCardStatus(false);window.dispatchEvent(new CustomEvent('radio-status-updated',{detail:{unavailable:true}}));showRadioFreshness(false);$('refreshRadios').hidden=false;if(text)$('radioConnectStatus').textContent=text;}
 function markRadioStatusUpdating(){
  // A refresh is not a failure. Retain the last reported station while making
  // its freshness clear, and reserve retry controls for a failed request.
  radioStatusAvailable=false;for(const {status,report} of radioCardViews.values()){status.textContent='Updating status…';status.className='radio-unknown';if(report)report.hidden=true;}
+ window.dispatchEvent(new Event('radio-current-station-invalidated'));
  if(radioCardViews.size)showRadioFreshness(false);
  else{radioFreshness.hidden=false;radioFreshness.textContent='Updating status…';}
  $('refreshRadios').hidden=true;$('radioConnectStatus').textContent='';
@@ -150,9 +184,9 @@ $('connectRadioForm').onsubmit=async event=>{
   const turnstile_token=await human(form,'radio-link',attempt.controller.signal);if(!currentRadioPairing(generation))return;
   await Promise.all([radioPairingCancellation,typeof sharedPairingCancellation==='undefined'?Promise.resolve():sharedPairingCancellation]);if(!currentRadioPairing(generation))return;
   attempt.dispatched=true;const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token,request_id:attempt.requestId});if(!currentRadioPairing(generation))return;
-  showRadioApproval($('radioConnectStatus'),claim.confirmation_code);const deadline=Date.now()+180000;let approved=false;
-  while(Date.now()<deadline){await delay();if(!currentRadioPairing(generation))return;const result=await api('/api/phone/claim/status',{claim_id:claim.claim_id});if(!currentRadioPairing(generation))return;if(result.state==='approved'){attempt.approved=true;if(result.radio_id)rememberSelectedRadio(result.radio_id);approved=true;break;}if(result.state!=='waiting')throw Error('Connection was not approved. Please try again.');}
-  if(!approved)throw Error('Connection timed out. Please try again.');$('cancelRadioConnection').hidden=true;form.reset();form.hidden=true;radioConnectionStep='idle';await loadMyRadios();if(!currentRadioPairing(generation))return;$('radioConnectStatus').textContent='';if(!document.hidden)await listenerActionDialog('Radio connected','');
+  showRadioApproval($('radioConnectStatus'),claim.confirmation_code);const result=await pollPhoneApproval(claim.claim_id,{current:()=>currentRadioPairing(generation),deadline:Date.now()+180000,signal:attempt.controller.signal});if(!result||!currentRadioPairing(generation))return;
+  if(result.state!=='approved')throw Error(phoneApprovalMessage(result.state));attempt.approved=true;if(result.radio_id)rememberSelectedRadio(result.radio_id);
+  $('cancelRadioConnection').hidden=true;form.reset();form.hidden=true;radioConnectionStep='idle';await loadMyRadios();if(!currentRadioPairing(generation))return;$('radioConnectStatus').textContent='';if(!document.hidden)await listenerActionDialog('Radio connected','');
  }catch(e){if(currentRadioPairing(generation))$('radioConnectStatus').textContent=e.message;}
  finally{cancelRadioPairingRequest(attempt,false,generation);if(generation===radioPairingGeneration){radioPairingBusy=false;radioPairingAttempt=null;attempt.controller.abort();$('cancelRadioConnection').hidden=true;busy(form,false);}}
 };

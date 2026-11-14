@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('./public/assets/directory-news.js',import.meta.url),'utf8');
 const renderSource=source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'));
-const completionSource=source.slice(source.indexOf('const stationResultAnnouncement='),source.indexOf("window.addEventListener('radio-locals-ready',list)"));
+const completionSource=source.slice(source.indexOf('const stationResultAnnouncement='),source.indexOf('const skipStations='));
 const station=code=>({listener_code:String(code),name:'Station '+code,logo_url:'/artwork/'+code+'.png'});
 function fixture(){const ids=new Map(),focuses=[];let document;
  function node(tag='div'){let text='';const item={tagName:tag.toUpperCase(),children:[],parentElement:null,attributes:{},dataset:{},className:'',hidden:false,writes:0,scrolls:0,setAttribute(key,value){this.attributes[key]=String(value);},getAttribute(key){return this.attributes[key]??null;},removeAttribute(key){delete this.attributes[key];},append(...children){for(const child of children){child.parentElement=this;this.children.push(child);}},contains(target){return !!target&&(target===this||this.children.some(child=>child.contains(target)));},closest(selector){for(let current=this;current;current=current.parentElement)if(selector==='.'+current.className)return current;return null;},replaceChildren(...children){if(this.contains(document.activeElement)&&document.activeElement!==this)document.activeElement=document.body;for(const child of this.children)child.parentElement=null;this.children=[];this.append(...children);},focus(options){focuses.push({node:this,options});document.activeElement=this;},scrollIntoView(){this.scrolls++;}};
@@ -40,16 +40,14 @@ test('failed or hidden results do not announce or advance the visible-result sig
 test('station announcements use the translated result count without exposing station names as live text',()=>{
  const f=fixture(),calls=[];f.ctx.window.appI18n={t(key,values){calls.push({key,count:values.count});return values.count+' stations disponibles.';}};f.paint([10,11]);f.complete({query:'community',hasMore:false});assert.equal(f.announcement().textContent,'2 stations disponibles.');assert.deepEqual(calls,[{key:'directory.results',count:2}]);assert.doesNotMatch(f.announcement().textContent,/Station 10|Station 11/);
 });
-test('a focused final More action moves to the first new available tile, even if a received code was already saved',()=>{
- const f=fixture();f.paint([13],'savedStations');f.paint([10,14]);f.$('loadMoreStations').hidden=true;f.document.activeElement=f.document.body;f.complete({append:true,moreFocused:true,receivedCodes:['13','14'],hasMore:false});assert.equal(f.document.activeElement,f.find(14));assert.equal(f.find(14).scrolls,1);
+test('final and intermediate pages announce their results while preserving the current focus',()=>{
+ for(const hasMore of [true,false]){const f=fixture();f.paint([13],'savedStations');f.paint([10,14]);f.document.activeElement=f.$('loadMoreStations');f.complete({append:true,moreFocused:true,receivedCodes:['13','14'],hasMore});assert.equal(f.document.activeElement,f.$('loadMoreStations'));assert.equal(f.focuses.length,0);assert.equal(f.find(14).scrolls,0);}
 });
 
-test('a final page with only previously saved codes falls back through available, saved, then search',()=>{
- const f=fixture();f.paint([13],'savedStations');f.paint([10]);f.document.activeElement=f.document.body;f.complete({append:true,moreFocused:true,receivedCodes:['13'],hasMore:false});assert.equal(f.document.activeElement,f.find(10));f.paint([]);f.document.activeElement=f.document.body;f.complete({append:true,moreFocused:true,receivedCodes:['13'],hasMore:false});assert.equal(f.document.activeElement,f.find(13,'savedStations'));f.paint([],'savedStations');f.document.activeElement=f.document.body;f.complete({append:true,moreFocused:true,receivedCodes:[],hasMore:false});assert.equal(f.document.activeElement,f.$('search'));
+test('an empty final page does not move focus to search or a station without an explicit shortcut',()=>{
+ const f=fixture();f.document.activeElement=f.document.body;f.complete({append:true,moreFocused:true,receivedCodes:[],hasMore:false});assert.equal(f.document.activeElement,f.document.body);assert.equal(f.focuses.length,0);
 });
-test('More retains its focus while another page exists and empty final pages fall back to search',()=>{
- const f=fixture();f.paint([10,11]);f.document.activeElement=f.$('loadMoreStations');f.complete({append:true,moreFocused:true,receivedCodes:['11'],hasMore:true});assert.equal(f.document.activeElement,f.$('loadMoreStations'));assert.equal(f.focuses.length,1);f.paint([]);f.document.activeElement=f.document.body;f.complete({append:true,moreFocused:true,receivedCodes:[],hasMore:false});assert.equal(f.document.activeElement,f.$('search'));
-});
+
 test('More completion never steals focus after the visitor moved elsewhere, opened a dialog or hid the page',()=>{
  for(const mode of ['control','dialog','page','document','unfocused','failed']){const f=fixture();f.paint([10,11]);f.document.activeElement=mode==='control'?f.$('search'):f.$('loadMoreStations');if(mode==='dialog')f.document.dialogOpen=true;if(mode==='page')f.$('myRadio').hidden=true;if(mode==='document')f.document.hidden=true;f.complete({append:true,moreFocused:mode!=='unfocused',receivedCodes:['11'],hasMore:false,failed:mode==='failed'});assert.equal(f.focuses.length,0,mode);}
 });

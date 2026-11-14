@@ -1,11 +1,14 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {readFileSync} from 'node:fs';
-import {communityRoutes} from './community.mjs';import {authRoutes,processMail} from './owner-auth.mjs';import {decrypt} from './security.mjs';import {handle} from './worker.mjs';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {readdirSync,readFileSync} from 'node:fs';
+import {communityRoutes} from './community.mjs';import {authRoutes,processMail} from './owner-auth.mjs';import {decrypt,digest,mac} from './security.mjs';import {handle} from './worker.mjs';
 const now=1800000000,host='https://native.example';
 const ticket={name:'Test owner',email:'test@example.com',subject:'Wi-Fi help',message:'Cannot connect',device_code:'1234'};
-async function fixture({humanCheck=async()=>{}}={}){const sqlite=new DatabaseSync(':memory:');for(const file of ['0001_core.sql','0005_community.sql','0013_support_ticket_access.sql','0020_support_idempotency.sql'])sqlite.exec(readFileSync(new URL('./migrations/'+file,import.meta.url),'utf8'));
+async function fixture({humanCheck=async()=>{}}={}){const sqlite=new DatabaseSync(':memory:');for(const file of readdirSync(new URL('./migrations/',import.meta.url)).filter(file=>file.endsWith('.sql')).sort())sqlite.exec(readFileSync(new URL('./migrations/'+file,import.meta.url),'utf8'));
  const DB={prepare(sql){let args=[];const q={bind(...v){args=v;return q;},async first(){return sqlite.prepare(sql).get(...args)||null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return sqlite.prepare(sql).run(...args);}};return q;},async batch(queries){sqlite.exec('BEGIN');try{for(const q of queries)await q.run();sqlite.exec('COMMIT');}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
  const mail=[],humanCalls=[],env={DB,DATA_ENCRYPTION_KEY:'a'.repeat(64),EMAIL:{async send(message){mail.push(message);return {messageId:'test'};}}};
- async function browser(ip='unknown'){const response=await authRoutes(new Request(host+'/api/session'),env,now);const state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];return {post(path,body,at=now,headers={}){return communityRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'X-CSRF-Token':state.csrf,'Content-Type':'application/json','CF-Connecting-IP':ip,...headers},body:JSON.stringify(body)}),env,at,{human:async(...args)=>{humanCalls.push(args[3]);await humanCheck(...args);}});},get(path,at=now){return communityRoutes(new Request(host+path,{headers:{Cookie:cookie}}),env,at);}};}
+ async function browser(ip='unknown'){const response=await authRoutes(new Request(host+'/api/session'),env,now);const state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
+  // These legacy tests exercise accepted-ticket behavior after first-contact proof.
+  sqlite.prepare('INSERT INTO support_sender_grants(session_hash,email_hash,verified_at,expires) VALUES (?,?,?,?)').run(await digest(cookie.split('=')[1]),await mac(env,'support-email:'+ticket.email),now,now+2592000);
+  return {post(path,body,at=now,headers={}){return communityRoutes(new Request(host+path,{method:'POST',headers:{Origin:host,Cookie:cookie,'X-CSRF-Token':state.csrf,'Content-Type':'application/json','CF-Connecting-IP':ip,...headers},body:JSON.stringify(body)}),env,at,{human:async(...args)=>{humanCalls.push(args[3]);await humanCheck(...args);}});},get(path,at=now){return communityRoutes(new Request(host+path,{headers:{Cookie:cookie}}),env,at);}};}
  return {env,sqlite,browser,mail,humanCalls};}
 test('support tutorials are public without a session or passcode',async()=>{const f=await fixture();f.sqlite.prepare('INSERT INTO help_videos VALUES (1,?,?,?,?,?)').run('wifi','Wi-Fi setup','Help','abcdefghijk',now);const result=await(await communityRoutes(new Request(host+'/api/support'),f.env,now)).json();assert.equal(result.unlocked,true);assert.equal(result.public,true);assert.equal(result.videos.length,1);});
 test('retired support passcode routes return 404 without creating or changing historical grants or mailing',async()=>{
@@ -23,7 +26,7 @@ test('legal requests validate statements and keep private contact details encryp
 test('player exposes only the selected public stream and trusted local artwork',async()=>{const f=await fixture();const result=await(await communityRoutes(new Request(host+'/api/player'),f.env,now)).json();assert.equal(result.name,'La Voix Divine');assert.ok(result.stream_url.startsWith('https://'));assert.equal(result.logo_url,'/assets/radiolavoixdivine.png');});
 
 
-test('support ticket validates fields, checks bot protection and encrypts contact details',async()=>{const f=await fixture(),b=await f.browser();await assert.rejects(b.post('/api/support/ticket',{name:'Test'}),e=>e.status===400);const result=await(await b.post('/api/support/ticket',ticket)).json();assert.match(result.reference,/^[a-f0-9]{32}$/);const row=f.sqlite.prepare('SELECT * FROM legal_requests WHERE id=?').get(result.reference);assert.equal(row.kind,'support');assert.equal(row.encrypted_payload.includes('test@example.com'),false);assert.equal(JSON.parse(await decrypt(f.env,row.encrypted_payload)).message,'Cannot connect');assert.deepEqual(f.humanCalls,['support-ticket','support-ticket']);});
+test('support ticket validates fields before checking bot protection and encrypts contact details',async()=>{const f=await fixture(),b=await f.browser();await assert.rejects(b.post('/api/support/ticket',{name:'Test'}),e=>e.status===400);const result=await(await b.post('/api/support/ticket',ticket)).json();assert.match(result.reference,/^[a-f0-9]{32}$/);const row=f.sqlite.prepare('SELECT * FROM legal_requests WHERE id=?').get(result.reference);assert.equal(row.kind,'support');assert.equal(row.encrypted_payload.includes('test@example.com'),false);assert.equal(JSON.parse(await decrypt(f.env,row.encrypted_payload)).message,'Cannot connect');assert.deepEqual(f.humanCalls,['support-ticket']);});
 
 test('station problem tickets use the server station identity without changing the message or email receipt',async()=>{
  const f=await fixture(),b=await f.browser();f.sqlite.prepare('INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES (?,?,?,?,?,?)').run('Real station','https://example.com/live','owner@example.com','published',now,now);
@@ -72,10 +75,10 @@ test('ticket and receipt roll back together if either insert fails',async()=>{
 });
 
 test('receipt recipient limit is shared across browsers, IPs and email case',async()=>{
- const f=await fixture();for(let n=0;n<3;n++){const b=await f.browser('192.0.2.'+n);await b.post('/api/support/ticket',{...ticket,email:n%2?'TEST@EXAMPLE.COM':ticket.email});}
- const b=await f.browser('192.0.2.100');await assert.rejects(b.post('/api/support/ticket',ticket),e=>e.status===429);
+ const f=await fixture();for(let n=0;n<3;n++){const b=await f.browser('192.0.2.'+n);await b.post('/api/support/ticket',{...ticket,email:n%2?'TEST@EXAMPLE.COM':ticket.email,message:'Different connection problem '+n},now+n*60);}
+ const b=await f.browser('192.0.2.100');await assert.rejects(b.post('/api/support/ticket',{...ticket,message:'A fourth distinct connection problem'},now+180),e=>e.status===429);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM legal_requests').get().n,3);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,3);
- const result=await(await b.post('/api/support/ticket',ticket,now+3600)).json();assert.equal(result.receipt_queued,true);
+ const result=await(await b.post('/api/support/ticket',{...ticket,message:'A later distinct connection problem'},now+3600)).json();assert.equal(result.receipt_queued,true);
 });
 
 test('receipt delivery failures have five bounded retries without claiming delivery or exposing provider errors',async()=>{

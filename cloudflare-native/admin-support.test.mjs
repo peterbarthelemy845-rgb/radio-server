@@ -93,3 +93,38 @@ test('recipient and administrator limits bound support reply traffic',async()=>{
  const admin=await fixture();admin.admin();for(let i=0;i<60;i++)await admin.post({request_id:'admin_status_request_'+i,state:'review'});
  await assert.rejects(admin.post({request_id:'admin_status_request_60',state:'closed'}),e=>e.status===429);assert.equal(admin.sqlite.prepare('SELECT state FROM legal_requests').get().state,'review');
 });
+test('Spam folder lists only support tickets and binds pagination to the selected folder',async()=>{
+ const f=await fixture();f.admin();const encrypted=f.sqlite.prepare('SELECT encrypted_payload FROM legal_requests WHERE id=?').get(id).encrypted_payload;
+ for(let i=1;i<=205;i++)f.sqlite.prepare('INSERT INTO legal_requests(id,kind,encrypted_payload,created_at) VALUES (?,?,?,?)').run(i.toString(16).padStart(32,'0'),'support',encrypted,f.now-i);
+ const spamId=(204).toString(16).padStart(32,'0');f.sqlite.prepare('INSERT INTO support_ticket_flags(ticket_id,folder,reason,updated_at) VALUES (?,?,?,?)').run(spamId,'spam','many_links',f.now);
+ f.sqlite.prepare('INSERT INTO legal_requests(id,kind,encrypted_payload,created_at) VALUES (?,?,?,?)').run('c'.repeat(32),'copyright',encrypted,f.now);
+ const list=async query=>(await supportRoutes(f.request('/api/admin/support/list?'+query),f.env,f.now)).json();
+ const first=await list('folder=inbox');assert.equal(first.requests.length,200);assert.equal(first.has_more,true);assert.ok(first.next_cursor.startsWith('inbox:'));assert.equal(first.requests.some(row=>row.id===spamId),false);assert.equal(first.requests.some(row=>row.kind!=='support'),false);
+ const next=await list('folder=inbox&cursor='+encodeURIComponent(first.next_cursor));assert.equal(next.requests.length,5);assert.equal(next.has_more,false);assert.equal(new Set([...first.requests,...next.requests].map(row=>row.id)).size,205);
+ const spam=await list('folder=spam');assert.equal(spam.requests.length,1);assert.equal(spam.requests[0].id,spamId);assert.equal(spam.requests[0].spam_reason,'many_links');assert.equal(JSON.stringify(spam).includes('encrypted_payload'),false);
+ await assert.rejects(list('folder=spam&cursor='+encodeURIComponent(first.next_cursor)),e=>e.status===400);await assert.rejects(list('folder=deleted'),e=>e.status===400);
+});
+test('folder changes require current MFA, CSRF and a support ticket; they never email or delete',async()=>{
+ const f=await fixture(),change=body=>supportRoutes(f.request('/api/admin/support/folder',{ticket_id:id,folder:'spam',request_id:'folder_request_0001',...body}),f.env,f.now);
+ await assert.rejects(change({}),e=>e.status===401);f.admin();
+ const request=f.request('/api/admin/support/folder',{ticket_id:id,folder:'spam',request_id:'folder_request_0001'});request.headers.set('X-CSRF-Token','0'.repeat(64));await assert.rejects(supportRoutes(request,f.env,f.now),e=>e.status===403);
+ for(const body of [{folder:'delete'},{request_id:'short'},{ticket_id:'invalid'}])await assert.rejects(change(body),e=>e.status===400);
+ const moved=await(await change({})).json();assert.equal(moved.folder,'spam');assert.equal((await(await f.get()).json()).ticket.folder,'spam');assert.equal(f.sqlite.prepare('SELECT count(*) n FROM legal_requests').get().n,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);assert.equal(f.sqlite.prepare('SELECT action FROM legal_actions').get().action,'support_spam');
+ const legal=await fixture('copyright');legal.admin();await assert.rejects(supportRoutes(legal.request('/api/admin/support/folder',{ticket_id:id,folder:'spam',request_id:'folder_request_0001'}),legal.env,legal.now),e=>e.status===404);
+});
+test('restore is idempotent and old folder retries cannot reapply an obsolete Spam decision',async()=>{
+ const f=await fixture();f.admin();const change=(folder,requestId)=>supportRoutes(f.request('/api/admin/support/folder',{ticket_id:id,folder,request_id:requestId}),f.env,f.now);
+ await change('spam','folder_request_0001');await change('inbox','folder_request_0002');const duplicate=await(await change('spam','folder_request_0001')).json();assert.equal(duplicate.duplicate,true);assert.equal(duplicate.folder,'inbox');assert.equal(f.sqlite.prepare('SELECT folder FROM support_ticket_flags WHERE ticket_id=?').get(id).folder,'inbox');assert.equal(f.sqlite.prepare('SELECT count(*) n FROM legal_actions').get().n,2);
+ await assert.rejects(change('inbox','folder_request_0001'),e=>e.status===409);
+ const prepare=f.env.DB.prepare.bind(f.env.DB);let hide=true;f.env.DB.prepare=sql=>{const q=prepare(sql);if(sql.startsWith('SELECT id,request_hash FROM support_folder_actions')&&hide){hide=false;q.first=async()=>null;}return q;};
+ const raced=await(await change('spam','folder_request_0001')).json();assert.equal(raced.duplicate,true);assert.equal(raced.folder,'inbox');assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_folder_actions').get().n,2);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);
+});
+test('Spam must be restored before sending a new reply, including a race during the reply transaction',async()=>{
+ const f=await fixture();f.admin();f.sqlite.prepare('INSERT INTO support_ticket_flags(ticket_id,folder,reason,updated_at) VALUES (?,?,?,?)').run(id,'spam','manual',f.now);await assert.rejects(f.post({reply:'Do not send yet.'}),e=>e.status===409);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);
+ await supportRoutes(f.request('/api/admin/support/folder',{ticket_id:id,folder:'inbox',request_id:'folder_restore_0001'}),f.env,f.now);await f.post({reply:'Restored reply.'});assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,1);
+ f.sqlite.prepare("UPDATE support_ticket_flags SET folder='spam' WHERE ticket_id=?").run(id);assert.equal((await(await f.post({reply:'Restored reply.'})).json()).duplicate,true);
+ const race=await fixture();race.admin();const batch=race.env.DB.batch;race.env.DB.batch=async queries=>{race.sqlite.prepare('INSERT INTO support_ticket_flags(ticket_id,folder,reason,updated_at) VALUES (?,?,?,?)').run(id,'spam','manual',race.now);return batch(queries);};await assert.rejects(race.post({reply:'Concurrent reply.'}),e=>e.status===409);assert.equal(race.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);assert.equal(race.sqlite.prepare('SELECT count(*) n FROM support_replies').get().n,0);
+});
+test('folder action, Spam flag and audit history roll back together on storage failure',async()=>{
+ for(const table of ['support_folder_actions','support_ticket_flags','legal_actions']){const f=await fixture();f.admin();f.sqlite.exec(`CREATE TRIGGER reject_folder BEFORE INSERT ON ${table} BEGIN SELECT RAISE(ABORT,'test failure'); END;`);await assert.rejects(supportRoutes(f.request('/api/admin/support/folder',{ticket_id:id,folder:'spam',request_id:'folder_request_0001'}),f.env,f.now));assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_folder_actions').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_ticket_flags').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM legal_actions').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);}
+});

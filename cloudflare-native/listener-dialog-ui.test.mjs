@@ -31,10 +31,10 @@ test('short notices have one Done button and no empty description while confirma
 });
 
 const draftSource=source.slice(source.indexOf('const draftForms='));
-function draftFixture(){
+function draftFixture({enumerable=false}={}){
  const forms=new Map(),events=new Map();let confirms=0;
  for(const id of ['registerForm','editForm','ticketForm','advertiseForm']){
-  const handlers=new Map(),form={dataset:{},visible:false,value:'Private unsaved text',addEventListener(type,fn){handlers.set(type,fn);},getClientRects(){return this.visible?[{}]:[];},dispatch(type,event){handlers.get(type)?.(event);}};forms.set(id,form);
+  const handlers=new Map(),form={dataset:{},visible:false,value:'Private unsaved text',fields:[{name:'name',value:'Saved name',type:'text'},{name:'artwork',type:'file',files:[]},{name:'agree',type:'checkbox',checked:false}],addEventListener(type,fn){handlers.set(type,fn);},getClientRects(){return this.visible?[{}]:[];},dispatch(type,event){handlers.get(type)?.(event);}};if(enumerable)form.querySelectorAll=()=>form.fields;forms.set(id,form);
  }
  const context={$:id=>forms.get(id),window:{addEventListener(type,fn){events.set(type,fn);}},document:{addEventListener(type,fn){events.set(type,fn);}},confirm(){confirms++;return false;}};runInNewContext(draftSource,context);
  function event(){return {preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};}
@@ -47,6 +47,14 @@ test('real reload or departure protects hidden drafts on every editable page unt
   const departure=f.unload();assert.equal(departure.prevented,true,id);assert.equal(departure.returnValue,'');assert.equal(form.value,'Private unsaved text');assert.equal(form.dataset.dirty,'1');
   form.dispatch('reset');assert.equal(f.unload().prevented,undefined,id);
  }
+});
+test('reverting text, checkboxes and a replacement logo clears unsaved warnings while unrelated changes remain protected',()=>{
+ const f=draftFixture({enumerable:true}),form=f.forms.get('registerForm'),[name,artwork,agree]=form.fields;
+ name.value='Changed name';form.dispatch('input',{target:name});assert.equal(f.unload().prevented,true);
+ name.value='Saved name';form.dispatch('input',{target:name});assert.equal(f.unload().prevented,undefined);
+ agree.checked=true;form.dispatch('change',{target:agree});assert.equal(f.unload().prevented,true);agree.checked=false;form.dispatch('change',{target:agree});assert.equal(f.unload().prevented,undefined);
+ artwork.files=[{name:'replacement.png',size:100,lastModified:12}];form.dispatch('change',{target:artwork});assert.equal(f.unload().prevented,true);
+ name.value='Keep this edit';artwork.files=[];form.dispatch('change',{target:artwork});assert.equal(f.unload().prevented,true);name.value='Saved name';form.dispatch('input',{target:name});assert.equal(f.unload().prevented,undefined);
 });
 
 test('provider guidance alone creates no draft warning and never clears real station edits',()=>{

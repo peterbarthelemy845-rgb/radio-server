@@ -8,7 +8,8 @@ import {ipv4StreamResponse} from './ipv4-stream-socket.mjs';
 // Global fetch must route strictly over the public Internet. Never replace it
 // with a service/VPC binding or a local Node fetch configured for private access.
 const MAX_SAMPLE=8192,TIMEOUT_MS=6000,MAX_REDIRECTS=2;
-const negative=()=>json({result:'not_confirmed',audio_response:false,message:'Stream test failed. Check the details and try again before saving.'});
+const failures={timeout:['Server did not respond in time. Check that your broadcaster is running, then try again.','stream_host'],connection_failed:['Could not connect. Check the server, port and HTTP/HTTPS setting.','stream_port'],http_error:['The server responded, but the listening address was unavailable. Check your stream path / mount point.','stream_path'],not_audio:['This address did not return supported audio. Check your stream path / mount point.','stream_path'],not_confirmed:['Audio could not be confirmed. Keep your broadcaster running and try again.','stream_url']};
+const negative=reason=>{const [message,field]=failures[reason]||['Stream test failed. Check the details and try again before saving.','stream_url'];return json({result:'not_confirmed',audio_response:false,reason:Object.hasOwn(failures,reason)?reason:'not_confirmed',message,field});};
 const positive=()=>json({result:'audio_response',audio_response:true,message:'Stream responded with audio data. Playback is not verified.'});
 const text=(bytes,start,length)=>String.fromCharCode(...bytes.subarray(start,start+length));
 function audioSample(bytes,type){
@@ -68,9 +69,9 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
  await (deps.human||human)(request,env,body.turnstile_token,'stream-check',now);
  if(env.STREAM_CHECK_PUBLIC_FETCH!=='true')throw new HttpError(503,'Stream checking is temporarily unavailable.');
  const checkId=await beginStreamCheck(env,current.token_hash,validated,now);
- const finish=async passed=>{const stored=await completeStreamCheck(env,current.token_hash,validated,checkId,passed,now);return passed&&stored?positive():negative();};
+ const finish=async(passed,reason)=>{const stored=await completeStreamCheck(env,current.token_hash,validated,checkId,passed,now);return passed&&stored?positive():negative(reason);};
  const result=await probePublicStream(env,validated,{request,fetch:deps.fetch,connect:deps.connect});
- return finish(result.audio_response);
+ return finish(result.audio_response,result.reason);
 }
 
 // The scheduled health monitor uses exactly the same bounded public-network

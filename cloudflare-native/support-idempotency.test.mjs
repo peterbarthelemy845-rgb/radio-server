@@ -1,12 +1,16 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {operationsFixture} from './operations-fixture.mjs';import {communityRoutes} from './community.mjs';import {authRoutes} from './owner-auth.mjs';import {digest} from './security.mjs';
+import {operationsFixture} from './operations-fixture.mjs';import {communityRoutes} from './community.mjs';import {authRoutes} from './owner-auth.mjs';import {digest,mac} from './security.mjs';
 const draft={request_id:'a'.repeat(32),name:'Listener',email:'listener@example.com',subject:'Wi-Fi help',message:'My radio cannot connect.',device_code:'3961'};
 async function setup(){const f=await operationsFixture(),checks=[];let lock=Promise.resolve();const batch=f.env.DB.batch.bind(f.env.DB);f.env.DB.batch=queries=>{const result=lock.then(()=>batch(queries));lock=result.catch(()=>{});return result;};
- const send=(data=draft,request=f.request)=>communityRoutes(request('/api/support/ticket',data),f.env,f.now,{human:async()=>{checks.push('checked');}});
- return {...f,checks,send};}
+ const grantSender=async request=>f.sqlite.prepare('INSERT INTO support_sender_grants(session_hash,email_hash,verified_at,expires) VALUES (?,?,?,?)').run(await digest(request('/api/session').headers.get('Cookie').split('=')[1]),await mac(f.env,'support-email:'+draft.email),f.now,f.now+2592000);
+ // First-contact email proof has dedicated guardrail tests; these test accepted retries.
+ await grantSender(f.request);
+ const send=(data=draft,request=f.request,at=f.now)=>communityRoutes(request('/api/support/ticket',data),f.env,at,{human:async()=>{checks.push('checked');}});
+ return {...f,checks,send,grantSender};}
 test('uncertain-response retry returns the same support reference without another ticket, receipt, grant or new-ticket quota',async()=>{
  const f=await setup(),first=await(await f.send()).json();
- for(let i=0;i<5;i++)assert.deepEqual(await(await f.send({...draft,name:' Listener ',email:' LISTENER@EXAMPLE.COM ',device_code:' 3961 ',turnstile_token:'new-check'})).json(),first);
+ assert.equal(first.duplicate,false);assert.equal(first.receipt_queued,true);
+ for(let i=0;i<5;i++){const retry=await(await f.send({...draft,name:' Listener ',email:' LISTENER@EXAMPLE.COM ',device_code:' 3961 ',turnstile_token:'new-check'})).json();assert.equal(retry.reference,first.reference);assert.equal(retry.duplicate,true);assert.equal(retry.receipt_queued,false);}
  for(const table of ['legal_requests','mail_outbox','support_ticket_grants','support_ticket_requests'])assert.equal(f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n,1,table);
  const quota='ticket-recipient:'+await digest(draft.email);assert.equal(f.sqlite.prepare('SELECT count FROM rate_limits WHERE key=?').get(quota).count,1);assert.equal(f.checks.length,6);
  assert.equal(f.sqlite.prepare('SELECT count FROM rate_limits WHERE key=?').get('ticket-attempt-global:'+await digest('all')).count,6);
@@ -26,7 +30,8 @@ test('same browser can retry its submitted station ticket after the station is r
 test('support operation IDs are session-scoped and malformed supplied IDs fail without side effects',async()=>{
  const f=await setup();await f.send();const response=await authRoutes(new Request('https://radiolocals.com/api/session'),f.env,f.now),state=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];
  const request=(path,body)=>new Request('https://radiolocals.com'+path,{method:'POST',headers:{Cookie:cookie,Origin:'https://radiolocals.com','X-CSRF-Token':state.csrf,'Content-Type':'application/json'},body:JSON.stringify(body)});
- const other=await(await f.send({...draft,message:'Other browser'},request)).json();assert.notEqual(other.reference,f.sqlite.prepare('SELECT ticket_id FROM support_ticket_requests ORDER BY rowid').get().ticket_id);
+ await f.grantSender(request);
+ const other=await(await f.send({...draft,message:'Other browser'},request,f.now+60)).json();assert.notEqual(other.reference,f.sqlite.prepare('SELECT ticket_id FROM support_ticket_requests ORDER BY rowid').get().ticket_id);
  for(const request_id of ['',null,{},'A'.repeat(32),'a'.repeat(31)])await assert.rejects(f.send({...draft,request_id}),e=>e.status===400);
  assert.equal(f.sqlite.prepare('SELECT count(*) n FROM legal_requests').get().n,2);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,2);
 });

@@ -82,7 +82,7 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     }
     await deps.human(request,env,body.turnstile_token,'radio-link',now);
     const code=String(body.device_code||'').replace(/[-\s]/g,'').toUpperCase();
-    if(!/^(?:[0-9]{4,8}|[A-Z0-9]{8})$/.test(code))throw new HttpError(400,'Check the device code on your radio.');
+    if(!/^(?:[0-9]{4,8}|[A-Z0-9]{8})$/.test(code))throw new HttpError(400,'Code incorrect. Check the Device Code on your radio and try again.');
     const codeHash=await mac(env,'device-code:'+code);
     if(requestId){
       await env.DB.prepare("UPDATE phone_pair_requests SET code_hash=? WHERE session_hash=? AND request_id=? AND state='active' AND expires>? AND (code_hash='' OR code_hash=?)").bind(codeHash,current.token_hash,requestId,now,codeHash).run();
@@ -91,7 +91,7 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     }
     const pair=await env.DB.prepare(`SELECT radio_id FROM radio_pairs WHERE code_hash=? AND (expires=0 OR expires>?)`)
       .bind(codeHash,now).first();
-    if(!pair)throw new HttpError(400,'Check the device code on your radio.');
+    if(!pair)throw new HttpError(400,'Code incorrect. Check the Device Code on your radio and try again.');
     await limit(env.DB,'claim-radio',pair.radio_id,5,900,now);
     await env.DB.prepare("UPDATE pair_claims SET state='expired' WHERE radio_id=? AND state='waiting' AND expires<=?")
       .bind(pair.radio_id,now).run();
@@ -115,7 +115,7 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     if(!claim){
       if(!await env.DB.prepare('SELECT 1 FROM sessions WHERE token_hash=? AND expires>?').bind(current.token_hash,now).first())throw new HttpError(401,'Please reload this page.');
       if(requestId)throw new HttpError(409,'This connection request was cancelled or another request is waiting. Try again.');
-      throw new HttpError(400,'Check the current device code on your radio and try again.');
+      throw new HttpError(400,'Code incorrect. Check the Device Code on your radio and try again.');
     }
     if(claim.session_hash!==current.token_hash)throw new HttpError(409,'Another request is waiting on this radio. Try again shortly.');
     // Backfill older radios only after a valid, rate-limited pairing request.

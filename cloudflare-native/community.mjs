@@ -1,61 +1,82 @@
-import {json,browserWrite,readJson,limit,human,encrypt,digest,randomHex,HttpError} from './security.mjs';
+import {json,browserWrite,readJson,limit,human,encrypt,decrypt,digest,mac,otp,randomHex,HttpError} from './security.mjs';
 // Receipts use only a generated reference and fixed plain text. Never echo the
 // submitted subject, message, device code or contact details into an email.
 const receiptEmail=/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
-function ticketResponse(reference){return json({status:'ok',reference,receipt_queued:true,message:'Your support ticket was submitted successfully. A confirmation email has been queued. Keep your reference in case the email does not arrive.'});}
+function ticketResponse(reference,duplicate=false){return json({status:'ok',reference,duplicate,receipt_queued:!duplicate,message:duplicate?'This problem already has a support ticket. Your existing ticket is ready to view.':'Your support ticket was submitted successfully. A confirmation email has been queued. Keep your reference in case the email does not arrive.'});}
+async function existingSupportTicket(env,current,reference,now){await env.DB.prepare(`INSERT INTO support_ticket_grants(session_hash,ticket_id,expires) SELECT ?,id,? FROM legal_requests WHERE id=? AND kind='support' ON CONFLICT(session_hash,ticket_id) DO UPDATE SET expires=excluded.expires`).bind(current.token_hash,now+1800,reference).run();return ticketResponse(reference,true);}
+function supportWait(seconds,message='Wait before sending another support request.'){const error=new HttpError(429,message);error.retry_after=Math.max(1,Math.ceil(seconds));return error;}
+export function supportSpamReason(payload){const links=(payload.message.match(/https?:\/\//gi)||[]).length;if(links>=5)return 'many_links';if(/(.)\1{79}/u.test(payload.message))return 'repeated_characters';if(links>=2&&/\b(?:buy now|guaranteed income|seo services|crypto investment)\b/i.test(payload.message))return 'promotional_links';return '';}
+async function supportBlocked(env,current,emailHash,now){const blocked=await env.DB.prepare('SELECT expires FROM support_abuse_blocks WHERE session_hash=? AND email_hash=? AND expires>?').bind(current.token_hash,emailHash,now).first();if(blocked)throw supportWait(blocked.expires-now,'Too many unsuccessful email checks. Try again after the countdown.');}
+async function supportPayload(body,env){
+ const payload={};for(const [key,max] of [['name',100],['email',254],['subject',120],['message',3000]]){if(typeof body[key]!=='string'||!body[key].trim()||body[key].length>max)throw new HttpError(400,'Complete your name, email, subject and message.');payload[key]=body[key].trim();}
+ if(!receiptEmail.test(payload.email))throw new HttpError(400,'Enter a valid email.');payload.email=payload.email.toLowerCase();payload.device_code=String(body.device_code||'').trim();if(payload.device_code.length>32)throw new HttpError(400,'Device code is too long.');
+ const stationCode=typeof body.station_code==='string'?body.station_code.trim():body.station_code;if(stationCode!==undefined&&stationCode!==''){if(typeof stationCode!=='string'||!(/^[1-9][0-9]{1,5}$/).test(stationCode))throw new HttpError(400,'Choose a valid station.');payload.station_code=stationCode;}
+ return payload;
+}
+async function supportProofMailLimits(env,current,emailHash,now){await limit(env.DB,'support-proof-browser',current.token_hash,5,3600,now);await limit(env.DB,'support-proof-recipient',emailHash,3,3600,now);await limit(env.DB,'support-proof-global','all',60,3600,now);}
+function pendingResponse(row,now){return json({status:'verification_required',verification_id:row.id,expires_in:Math.max(0,row.expires-now),resend_after:Math.max(0,row.sent_at+60-now),message:'Verify your email once before we send your first ticket to support. Enter the private 6-digit code sent to that email.'});}
+async function createSupportProof(env,current,payload,requestId,payloadHash,emailHash,now){
+ const previous=await env.DB.prepare('SELECT * FROM support_pending_tickets WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();
+ if(previous&&previous.payload_hash!==payloadHash)throw new HttpError(409,'Support details changed. Start a new support request.');
+ if(previous&&!previous.consumed_at&&previous.expires>now)return pendingResponse(previous,now);
+ await supportProofMailLimits(env,current,emailHash,now);const id=previous?.id||randomHex(16),code=otp(),operation=randomHex(16),expires=now+900,text=`Your private Radio Locals support email code is ${code}.\n\nEnter it only on the support page where you requested it. It expires in 15 minutes and works once. Your ticket is not sent to support until you verify. Never share this code. If you did not request it, ignore this email.`;
+ await env.DB.batch([
+  env.DB.prepare("UPDATE support_pending_tickets SET consumed_at=?,code_hash='',encrypted_payload='' WHERE session_hash=? AND id!=? AND consumed_at IS NULL").bind(now,current.token_hash,id),
+  env.DB.prepare(`INSERT INTO support_pending_tickets(id,session_hash,request_id,email_hash,payload_hash,encrypted_payload,code_hash,attempts,expires,consumed_at,operation_token,created_at,sent_at) VALUES (?,?,?,?,?,?,?,0,?,NULL,?,?,?) ON CONFLICT(session_hash,request_id) DO UPDATE SET encrypted_payload=excluded.encrypted_payload,code_hash=excluded.code_hash,attempts=0,expires=excluded.expires,consumed_at=NULL,operation_token=excluded.operation_token,sent_at=excluded.sent_at WHERE support_pending_tickets.expires<=? OR support_pending_tickets.consumed_at IS NOT NULL`).bind(id,current.token_hash,requestId,emailHash,payloadHash,await encrypt(env,JSON.stringify(payload)),await mac(env,'support-contact:'+id+':'+code),expires,operation,now,now,now),
+  env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM support_pending_tickets WHERE id=? AND operation_token=?)`).bind('support-contact:'+id+':'+operation,payload.email,'Your private Radio Locals support email code',await encrypt(env,JSON.stringify({text})),now,expires,id,operation)
+ ]);
+ const saved=await env.DB.prepare('SELECT * FROM support_pending_tickets WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();if(!saved||saved.payload_hash!==payloadHash)throw new HttpError(409,'Support details changed. Start a new support request.');return pendingResponse(saved,now);
+}
+async function submitVerifiedSupport(env,current,payload,requestId,payloadHash,emailHash,ip,now){
+ const prior=await env.DB.prepare('SELECT payload_hash,ticket_id FROM support_ticket_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();if(prior){if(prior.payload_hash!==payloadHash)throw new HttpError(409,'Support details changed. Start a new support request.');return existingSupportTicket(env,current,prior.ticket_id,now);}
+ if(payload.station_code){const station=await env.DB.prepare("SELECT CAST(code AS TEXT) AS code,name FROM stations WHERE code=? AND status='published'").bind(Number(payload.station_code)).first();if(!station)throw new HttpError(400,'This station is no longer available. Clear the station to send a general support ticket.');payload={...payload,station_code:station.code,station_name:station.name};}
+ const normalized=value=>String(value||'').normalize('NFKC').toLowerCase().replace(/\s+/g,' ').trim(),problemHash=await mac(env,'support-problem:'+JSON.stringify([emailHash,normalized(payload.subject),normalized(payload.message),payload.station_code||'',payload.device_code]));
+ const duplicate=await env.DB.prepare('SELECT p.ticket_id FROM support_problem_keys p JOIN legal_requests r ON r.id=p.ticket_id WHERE p.problem_hash=? AND p.expires>?').bind(problemHash,now).first();
+ if(!duplicate){const activity=await env.DB.prepare('SELECT last_ticket_at FROM support_sender_activity WHERE email_hash=?').bind(emailHash).first();if(activity&&activity.last_ticket_at+60>now)throw supportWait(activity.last_ticket_at+60-now,'Wait before sending a different problem. You can view your existing ticket now.');await limit(env.DB,'ticket-ip',ip,5,3600,now);await limit(env.DB,'ticket-browser',current.token_hash,5,3600,now);await limit(env.DB,'ticket-global','all',100,3600,now);await limit(env.DB,'ticket-recipient',payload.email,3,3600,now);}
+ const id=randomHex(16),operation=randomHex(16),reason=supportSpamReason(payload),receipt={text:`We received your Radio Locals support ticket.\n\nReference: ${id}\n\nKeep this reference for any follow-up with Radio Locals support. Your message and any device or security codes are not included in this receipt.\n\nIf you did not submit this ticket, you can ignore this email.`};
+ await env.DB.batch([
+  env.DB.prepare(`INSERT INTO support_sender_activity(email_hash,last_ticket_at,operation_token) SELECT ?,?,? WHERE NOT EXISTS(SELECT 1 FROM support_ticket_requests WHERE session_hash=? AND request_id=?) AND NOT EXISTS(SELECT 1 FROM support_problem_keys p JOIN legal_requests r ON r.id=p.ticket_id WHERE p.problem_hash=? AND p.expires>?) ON CONFLICT(email_hash) DO UPDATE SET last_ticket_at=excluded.last_ticket_at,operation_token=excluded.operation_token WHERE support_sender_activity.last_ticket_at<=?`).bind(emailHash,now,operation,current.token_hash,requestId,problemHash,now,now-60),
+  env.DB.prepare(`INSERT INTO support_problem_keys(problem_hash,ticket_id,created_at,expires) SELECT ?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM support_ticket_requests WHERE session_hash=? AND request_id=?) AND EXISTS(SELECT 1 FROM support_sender_activity WHERE email_hash=? AND operation_token=?) ON CONFLICT(problem_hash) DO UPDATE SET ticket_id=excluded.ticket_id,created_at=excluded.created_at,expires=excluded.expires WHERE support_problem_keys.expires<=?`).bind(problemHash,id,now,now+86400,current.token_hash,requestId,emailHash,operation,now),
+  env.DB.prepare(`INSERT INTO support_ticket_requests(session_hash,request_id,payload_hash,ticket_id,operation_token,created_at,expires) SELECT ?,?,?,ticket_id,?,?,? FROM support_problem_keys WHERE problem_hash=? ON CONFLICT(session_hash,request_id) DO NOTHING`).bind(current.token_hash,requestId,payloadHash,operation,now,now+86400,problemHash),
+  env.DB.prepare(`INSERT INTO legal_requests(id,kind,encrypted_payload,created_at) SELECT ?,'support',?,? WHERE EXISTS(SELECT 1 FROM support_ticket_requests WHERE session_hash=? AND request_id=? AND operation_token=? AND ticket_id=?)`).bind(id,await encrypt(env,JSON.stringify(payload)),now,current.token_hash,requestId,operation,id),
+  env.DB.prepare(`INSERT INTO support_ticket_flags(ticket_id,folder,reason,updated_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM legal_requests WHERE id=?)`).bind(id,reason?'spam':'inbox',reason,now,id),
+  env.DB.prepare(`INSERT INTO support_ticket_grants(session_hash,ticket_id,expires) SELECT session_hash,ticket_id,? FROM support_ticket_requests WHERE session_hash=? AND request_id=? ON CONFLICT(session_hash,ticket_id) DO UPDATE SET expires=excluded.expires`).bind(now+1800,current.token_hash,requestId),
+  env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM legal_requests WHERE id=?)`).bind('support-receipt:'+id,payload.email,'Radio Locals support ticket received - '+id,await encrypt(env,JSON.stringify(receipt)),now,now+86400,id)
+ ]);
+ const saved=await env.DB.prepare('SELECT payload_hash,ticket_id FROM support_ticket_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();if(!saved){const activity=await env.DB.prepare('SELECT last_ticket_at FROM support_sender_activity WHERE email_hash=?').bind(emailHash).first();if(activity&&activity.last_ticket_at+60>now)throw supportWait(activity.last_ticket_at+60-now,'Wait before sending a different problem. You can view your existing ticket now.');throw new HttpError(409,'Support details changed. Start a new support request.');}if(saved.payload_hash!==payloadHash)throw new HttpError(409,'Support details changed. Start a new support request.');return ticketResponse(saved.ticket_id,saved.ticket_id!==id);
+}
 export async function communityRoutes(request,env,now,deps={human}){
  const path=new URL(request.url).pathname;
  if(path==='/api/player'&&request.method==='GET')return json({name:'La Voix Divine',stream_url:'https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live',logo_url:'/assets/radiolavoixdivine.png'});
- if(!['/api/support','/api/support/ticket','/api/legal/request'].includes(path))return null;
+ if(!['/api/support','/api/support/ticket','/api/support/ticket/verify','/api/support/ticket/resend','/api/legal/request'].includes(path))return null;
  if(request.method==='GET'&&path==='/api/support'){
   return json({unlocked:true,public:true,videos:(await env.DB.prepare('SELECT id,topic,title,description,video_id FROM help_videos ORDER BY topic,id LIMIT 50').all()).results});
  }
  if(path==='/api/support'||request.method!=='POST')throw new HttpError(405,'Method not allowed.');
  const current=await browserWrite(request,env,now);
- const body=await readJson(request,30000),ip=request.headers.get('CF-Connecting-IP')||'unknown';
- if(path==='/api/support/ticket'){
-  // Retries still pass bounded attempt limits and a fresh bot check, but do not
-  // spend another new-ticket/recipient allowance or enqueue another receipt.
-  await limit(env.DB,'ticket-attempt-ip',ip,30,3600,now);await limit(env.DB,'ticket-attempt-global','all',300,3600,now);
+ const ip=request.headers.get('CF-Connecting-IP')||'unknown';
+ if(path.startsWith('/api/support/ticket')){await limit(env.DB,'ticket-attempt-ip',ip,30,3600,now);await limit(env.DB,'ticket-attempt-session',current.token_hash,30,3600,now);await limit(env.DB,'ticket-attempt-global','all',300,3600,now);}
+ const body=await readJson(request,30000);
+ if(path.startsWith('/api/support/ticket')){
+  if(path!=='/api/support/ticket'){
+   const id=String(body.verification_id||'');if(!/^[a-f0-9]{32}$/.test(id))throw new HttpError(400,'Enter the private support email code.');
+   const pending=await env.DB.prepare('SELECT * FROM support_pending_tickets WHERE id=? AND session_hash=?').bind(id,current.token_hash).first();if(!pending||pending.expires<=now||!pending.encrypted_payload)throw new HttpError(400,'This email check expired. Submit your saved support draft again.');await supportBlocked(env,current,pending.email_hash,now);
+   if(path==='/api/support/ticket/resend'){
+    if(pending.consumed_at)throw new HttpError(400,'This email was already verified. Submit your saved support draft again.');if(pending.sent_at+60>now)throw supportWait(pending.sent_at+60-now,'Wait before requesting another email code.');await deps.human(request,env,body.turnstile_token,'support-ticket',now);await supportProofMailLimits(env,current,pending.email_hash,now);
+    const payload=JSON.parse(await decrypt(env,pending.encrypted_payload)),code=otp(),operation=randomHex(16),text=`Your private Radio Locals support email code is ${code}.\n\nEnter it only on the support page where you requested it. It expires in 15 minutes and works once. Never share this code. If you did not request it, ignore this email.`;
+    await env.DB.batch([env.DB.prepare('UPDATE support_pending_tickets SET code_hash=?,attempts=0,sent_at=?,expires=?,operation_token=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND sent_at<=?').bind(await mac(env,'support-contact:'+id+':'+code),now,now+900,operation,id,current.token_hash,now-60),env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM support_pending_tickets WHERE id=? AND operation_token=?)`).bind('support-contact:'+id+':'+operation,payload.email,'Your private Radio Locals support email code',await encrypt(env,JSON.stringify({text})),now,now+900,id,operation)]);
+    const saved=await env.DB.prepare('SELECT * FROM support_pending_tickets WHERE id=?').bind(id).first();if(saved.operation_token!==operation)throw supportWait(Math.max(1,saved.sent_at+60-now),'Wait before requesting another email code.');return pendingResponse(saved,now);
+   }
+   await limit(env.DB,'support-contact-verify-browser',current.token_hash,20,900,now);await limit(env.DB,'support-contact-verify-ip',ip,30,900,now);
+   const code=typeof body.code==='string'?body.code.replace(/\s/g,''):'';if(!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the 6-digit email code.');let check=pending;if(!pending.consumed_at)check=await env.DB.prepare('UPDATE support_pending_tickets SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *').bind(id,current.token_hash,now).first();
+   if(!check||check.code_hash!==await mac(env,'support-contact:'+id+':'+code)){if((check?.attempts||pending.attempts)>=5){await env.DB.prepare(`INSERT INTO support_abuse_blocks(session_hash,email_hash,expires,reason) VALUES (?,?,?,'failed_email_proof') ON CONFLICT(session_hash,email_hash) DO UPDATE SET expires=excluded.expires,reason=excluded.reason`).bind(current.token_hash,pending.email_hash,now+900).run();throw supportWait(900,'Too many unsuccessful email checks. Try again after the countdown.');}throw new HttpError(400,'Incorrect or expired support email code.');}
+   const operation=randomHex(16);await env.DB.batch([env.DB.prepare('UPDATE support_pending_tickets SET consumed_at=?,operation_token=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>?').bind(now,operation,id,current.token_hash,now),env.DB.prepare(`INSERT INTO support_sender_grants(session_hash,email_hash,verified_at,expires) SELECT session_hash,email_hash,?,? FROM support_pending_tickets WHERE id=? AND operation_token=? ON CONFLICT(session_hash,email_hash) DO UPDATE SET verified_at=excluded.verified_at,expires=excluded.expires`).bind(now,Math.min(current.expires,now+2592000),id,operation)]);
+   if(!await env.DB.prepare('SELECT 1 FROM support_sender_grants WHERE session_hash=? AND email_hash=? AND expires>?').bind(current.token_hash,pending.email_hash,now).first())throw new HttpError(400,'This email check is no longer active. Submit your support draft again.');return submitVerifiedSupport(env,current,JSON.parse(await decrypt(env,pending.encrypted_payload)),pending.request_id,pending.payload_hash,pending.email_hash,ip,now);
+  }
   if(body.request_id!==undefined&&(typeof body.request_id!=='string'||!/^[a-f0-9]{32}$/.test(body.request_id)))throw new HttpError(400,'Invalid support request reference.');
-  const requestId=body.request_id||randomHex(16);
-  await deps.human(request,env,body.turnstile_token,'support-ticket',now);
-  const payload={};for(const [key,max] of [['name',100],['email',254],['subject',120],['message',3000]]){if(typeof body[key]!=='string'||!body[key].trim()||body[key].length>max)throw new HttpError(400,'Complete your name, email, subject and message.');payload[key]=body[key].trim();}
-  if(!receiptEmail.test(payload.email))throw new HttpError(400,'Enter a valid email.');
-  payload.email=payload.email.toLowerCase();
-  payload.device_code=String(body.device_code||'').trim();if(payload.device_code.length>32)throw new HttpError(400,'Device code is too long.');
-  const stationCode=typeof body.station_code==='string'?body.station_code.trim():body.station_code;
-  if(stationCode!==undefined&&stationCode!==''){
-   if(typeof stationCode!=='string'||!(/^[1-9][0-9]{1,5}$/).test(stationCode))throw new HttpError(400,'Choose a valid station.');
-   payload.station_code=stationCode;
-  }
-  const payloadHash=await digest(JSON.stringify(payload));
-  const prior=await env.DB.prepare('SELECT payload_hash,ticket_id FROM support_ticket_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();
-  if(prior){if(prior.payload_hash!==payloadHash)throw new HttpError(409,'Support details changed. Start a new support request.');return ticketResponse(prior.ticket_id);}
-  await limit(env.DB,'ticket-ip',ip,5,3600,now);await limit(env.DB,'ticket-global','all',100,3600,now);
-  if(payload.station_code){
-   const station=await env.DB.prepare("SELECT CAST(code AS TEXT) AS code,name FROM stations WHERE code=? AND status='published'").bind(Number(payload.station_code)).first();
-   if(!station)throw new HttpError(400,'This station is no longer available. Clear the station to send a general support ticket.');
-   payload.station_code=station.code;payload.station_name=station.name;
-  }
-  await limit(env.DB,'ticket-recipient',payload.email,3,3600,now);
-  const id=randomHex(16),operation=randomHex(16),receipt={text:`We received your Radio Locals support ticket.\n\nReference: ${id}\n\nKeep this reference for any follow-up with Radio Locals support. Your message and any device or security codes are not included in this receipt.\n\nIf you did not submit this ticket, you can ignore this email.`};
-  // D1 batches are atomic: a ticket cannot be accepted without its durable
-  // receipt, and a failed ticket cannot leave a receipt for the mail worker.
-  // The ticket reference also identifies its one outbox job.
-  await env.DB.batch([
-   env.DB.prepare(`INSERT INTO support_ticket_requests(session_hash,request_id,payload_hash,ticket_id,operation_token,created_at,expires) VALUES (?,?,?,?,?,?,?)
-    ON CONFLICT(session_hash,request_id) DO NOTHING`).bind(current.token_hash,requestId,payloadHash,id,operation,now,now+86400),
-   env.DB.prepare(`INSERT INTO legal_requests(id,kind,encrypted_payload,created_at) SELECT ?,?,?,? WHERE EXISTS
-    (SELECT 1 FROM support_ticket_requests WHERE session_hash=? AND request_id=? AND operation_token=?)`).bind(id,'support',await encrypt(env,JSON.stringify(payload)),now,current.token_hash,requestId,operation),
-   env.DB.prepare(`INSERT INTO support_ticket_grants(session_hash,ticket_id,expires) SELECT ?,?,? WHERE EXISTS
-    (SELECT 1 FROM support_ticket_requests WHERE session_hash=? AND request_id=? AND operation_token=?)`).bind(current.token_hash,id,now+1800,current.token_hash,requestId,operation),
-   env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS
-    (SELECT 1 FROM support_ticket_requests WHERE session_hash=? AND request_id=? AND operation_token=?)`).bind('support-receipt:'+id,payload.email,'Radio Locals support ticket received - '+id,await encrypt(env,JSON.stringify(receipt)),now,now+86400,current.token_hash,requestId,operation)
-  ]);
-  const saved=await env.DB.prepare('SELECT payload_hash,ticket_id FROM support_ticket_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();
-  if(!saved||saved.payload_hash!==payloadHash)throw new HttpError(409,'Support details changed. Start a new support request.');
-  return ticketResponse(saved.ticket_id);
+  const payload=await supportPayload(body,env),requestId=body.request_id||randomHex(16),payloadHash=await digest(JSON.stringify(payload)),emailHash=await mac(env,'support-email:'+payload.email);await supportBlocked(env,current,emailHash,now);await deps.human(request,env,body.turnstile_token,'support-ticket',now);
+  const prior=await env.DB.prepare('SELECT payload_hash,ticket_id FROM support_ticket_requests WHERE session_hash=? AND request_id=?').bind(current.token_hash,requestId).first();if(prior){if(prior.payload_hash!==payloadHash)throw new HttpError(409,'Support details changed. Start a new support request.');return existingSupportTicket(env,current,prior.ticket_id,now);}
+  if(!await env.DB.prepare('SELECT 1 FROM support_sender_grants WHERE session_hash=? AND email_hash=? AND expires>?').bind(current.token_hash,emailHash,now).first())return createSupportProof(env,current,payload,requestId,payloadHash,emailHash,now);return submitVerifiedSupport(env,current,payload,requestId,payloadHash,emailHash,ip,now);
  }
  await limit(env.DB,'legal-ip',ip,5,3600,now);await limit(env.DB,'legal-global','all',100,3600,now);
  await deps.human(request,env,body.turnstile_token,'legal-request',now);

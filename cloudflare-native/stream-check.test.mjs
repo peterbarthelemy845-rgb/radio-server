@@ -14,6 +14,11 @@ function deferred(){let resolve;const promise=new Promise(yes=>{resolve=yes;});r
 async function check(f,url=audioUrl,fetcher=async()=>new Response(mp3(),{headers:{'Content-Type':'audio/mpeg'}}),extras={}){
  return (await streamCheckRoutes(f.request(path,body(url)),f.env,f.now,{human:async()=>{},fetch:fetcher,...extras})).json();
 }
+test('failed stream checks distinguish connection, listening-path and non-audio failures without disclosing upstream content',async()=>{
+ for(const [fetcher,reason,field,words] of [[async()=>{throw Error('upstream secret');},'connection_failed','stream_port',/Could not connect/],[async()=>new Response('private upstream error',{status:404}),'http_error','stream_path',/listening address was unavailable/],[async()=>new Response('<html>private upstream body</html>',{headers:{'Content-Type':'text/html'}}),'not_audio','stream_path',/did not return supported audio/],[async()=>new Response(new Uint8Array(20),{headers:{'Content-Type':'audio/mpeg'}}),'not_confirmed','stream_url',/could not be confirmed/]]){
+  const f=await fixture(),result=await check(f,audioUrl,fetcher);assert.equal(result.audio_response,false);assert.equal(result.reason,reason);assert.equal(result.field,field);assert.match(result.message,words);assert.doesNotMatch(JSON.stringify(result),/secret|private upstream/);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stream_check_results WHERE checked_at>0').get().n,0);
+ }
+});
 const encode=value=>new TextEncoder().encode(value);
 function rawResponse(payload=mp3(),headers='Content-Type: audio/mpeg\r\n',status='HTTP/1.1 200 OK'){
  const head=encode(status+'\r\n'+headers+'\r\n'),result=new Uint8Array(head.length+payload.length);result.set(head);result.set(payload,head.length);return result;

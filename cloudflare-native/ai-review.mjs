@@ -42,7 +42,7 @@ function validateReview(data){
 }
 async function ticketSnapshot(env,id){
  if(typeof id!=='string'||!/^[a-f0-9]{32}$/.test(id))throw new HttpError(400,'Choose a support ticket.');
- const row=await env.DB.prepare("SELECT id,state,created_at,encrypted_payload FROM legal_requests WHERE id=? AND kind='support'").bind(id).first();
+ const row=await env.DB.prepare("SELECT r.id,r.state,r.created_at,r.encrypted_payload,coalesce(f.folder,'inbox') AS folder,f.updated_at AS folder_updated_at FROM legal_requests r LEFT JOIN support_ticket_flags f ON f.ticket_id=r.id WHERE r.id=? AND r.kind='support' AND coalesce(f.folder,'inbox')='inbox'").bind(id).first();
  if(!row)throw new HttpError(404,'Support ticket not found.');
  const payload=JSON.parse(await decrypt(env,row.encrypted_payload));
  const replies=(await env.DB.prepare('SELECT encrypted_payload,state,created_at FROM support_replies WHERE ticket_id=? ORDER BY created_at DESC,rowid DESC LIMIT 3').bind(id).all()).results;
@@ -113,7 +113,7 @@ async function generateTicket(env,id,now,deps,snapshot){
 }
 async function storeTicket(env,id,epoch,result,lease){
  const encrypted=await encrypt(env,JSON.stringify(result.data)),query=env.DB.prepare(`UPDATE ai_ticket_assistance SET dirty=0,source_revision=?,encrypted_result=?,generated_at=?,lease_token='',lease_until=0,attempts=0,next_at=0
-  WHERE ticket_id=? AND epoch=?${lease?' AND lease_token=?':''} RETURNING ticket_id`);
+  WHERE ticket_id=? AND epoch=?${lease?' AND lease_token=?':''} AND NOT EXISTS(SELECT 1 FROM support_ticket_flags WHERE ticket_id=ai_ticket_assistance.ticket_id AND folder='spam') RETURNING ticket_id`);
  return !!await query.bind(result.revision,encrypted,result.generated_at,id,epoch,...(lease?[lease]:[])).first();
 }
 
@@ -122,12 +122,12 @@ async function storeTicket(env,id,epoch,result,lease){
 export async function scheduledReviewAI(env,now=Math.floor(Date.now()/1000),deps={runAI}){
  if(env.AI_ASSISTANTS_ENABLED!=='true'||!env.OPENAI_API_KEY)return {processed:0};
  const candidates=(await env.DB.prepare(`SELECT a.ticket_id FROM ai_ticket_assistance a JOIN legal_requests r ON r.id=a.ticket_id
-  WHERE a.dirty=1 AND a.next_at<=? AND a.lease_until<=? AND r.kind='support' AND r.state!='closed'
+  WHERE a.dirty=1 AND a.next_at<=? AND a.lease_until<=? AND r.kind='support' AND r.state!='closed' AND NOT EXISTS(SELECT 1 FROM support_ticket_flags f WHERE f.ticket_id=r.id AND f.folder='spam')
   ORDER BY a.attempts,r.created_at LIMIT 2`).bind(now,now).all()).results;
  let processed=0;
  for(const candidate of candidates){
   const token=randomHex(16),claim=await env.DB.prepare(`UPDATE ai_ticket_assistance SET lease_token=?,lease_until=?,attempts=attempts+1
-   WHERE ticket_id=? AND dirty=1 AND next_at<=? AND lease_until<=? RETURNING epoch,attempts`).bind(token,now+120,candidate.ticket_id,now,now).first();
+   WHERE ticket_id=? AND dirty=1 AND next_at<=? AND lease_until<=? AND NOT EXISTS(SELECT 1 FROM support_ticket_flags f WHERE f.ticket_id=ai_ticket_assistance.ticket_id AND f.folder='spam') RETURNING epoch,attempts`).bind(token,now+120,candidate.ticket_id,now,now).first();
   if(!claim)continue;
   try{
    const snapshot=await ticketSnapshot(env,candidate.ticket_id),result=await generateTicket(env,candidate.ticket_id,now,deps,snapshot);
@@ -153,7 +153,7 @@ export async function aiReviewRoutes(request,env,now=Math.floor(Date.now()/1000)
   await limit(env.DB,'ai-ticket-labels',current.token_hash,60,60,now);
   const tickets=[];
   for(const id of new Set(ids)){
-   const exists=await env.DB.prepare("SELECT 1 FROM legal_requests WHERE id=? AND kind='support'").bind(id).first();if(!exists)continue;
+   const exists=await env.DB.prepare("SELECT 1 FROM legal_requests r WHERE r.id=? AND r.kind='support' AND NOT EXISTS(SELECT 1 FROM support_ticket_flags f WHERE f.ticket_id=r.id AND f.folder='spam')").bind(id).first();if(!exists)continue;
    const result=await cachedTicket(env,id,await ticketSnapshot(env,id));if(!result)continue;
    const replied=await env.DB.prepare('SELECT 1 FROM support_replies WHERE ticket_id=? AND outbox_id IS NOT NULL LIMIT 1').bind(id).first();
    tickets.push({ticket_id:id,category:result.data.category,priority:result.data.priority,unanswered:!replied,generated_at:result.generated_at});

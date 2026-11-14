@@ -15,16 +15,23 @@ function fixture(){
  const navigator={onLine:true},document={hidden:false,activeElement:null,createElement:node,addEventListener(name,fn){documentEvents[name]=fn;}};
  class FakeDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
  const context={document,navigator,Date:FakeDate,URLSearchParams,location:{search:'',hash:'#radio'},history:{replaceState(){}},
-  CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{openStationProblemReport:station=>reports.push(station),dispatchEvent(event){statusEvents.push(event);},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
+  Event:class{constructor(type){this.type=type;}},CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},window:{openStationProblemReport:station=>reports.push(station),dispatchEvent(event){statusEvents.push(event);},addEventListener(name,fn){windowEvents[name]=fn;}},MutationObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(){}},
   $:id=>ids.get(id),api:async path=>{calls.push(path);const next=answers.shift();if(next instanceof Error)throw next;if(typeof next==='function')return next();if(!next)throw Error('No fixture response');return next;},
   reconcileSelectedRadio:radios=>selectedRadio=radios.length===1?radios[0].id:radios.some(r=>r.id===selectedRadio)?selectedRadio:'',loadRadioInventory(){},readRadioInventory:id=>context.radioInventories.get(id),readSelectedRadio(){return selectedRadio;},rememberSelectedRadio(id){selectedRadio=id;selections.push(id);},radioInventories:new Map(),listenerActionDialog:async(title)=>{dialogs.push(title);return dialogAnswers.length?await dialogAnswers.shift():true;},page(){ids.get('myRadio').hidden=false;},busy(){},human:async()=>'',delay:async()=>{},setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);}};
  runInNewContext(source,context);
  const load=runInNewContext('loadMyRadios',context),freshness=ids.get('radioConnectStatus').beforeNode;
- return {ids,load,answers,calls,dialogs,dialogAnswers,reports,selections,statusEvents,timers,inventories:context.radioInventories,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,schedule:runInNewContext('scheduleRadioRefresh',context),refreshDelay:runInNewContext('radioRefreshDelay',context),scheduled:()=>[...timers.values()].at(-1),async poll(){const [id,timer]=[...timers].at(-1)||[];assert.ok(timer,'Expected one scheduled status poll');timers.delete(id);await timer.fn();},
+ return {currentCode:()=>context.window.currentStationTileCode(),ids,load,answers,calls,dialogs,dialogAnswers,reports,selections,statusEvents,timers,inventories:context.radioInventories,windowEvents,documentEvents,navigator,document,freshness,views:()=>ids.get('linkedRadios').children,schedule:runInNewContext('scheduleRadioRefresh',context),refreshDelay:runInNewContext('radioRefreshDelay',context),scheduled:()=>[...timers.values()].at(-1),async poll(){const [id,timer]=[...timers].at(-1)||[];assert.ok(timer,'Expected one scheduled status poll');timers.delete(id);await timer.fn();},
   advance(ms){clock+=ms;},visibility(){observers[0].fn();},async flush(){await new Promise(resolve=>setImmediate(resolve));}};
 }
 const radio={id:'one',device_code:'3961',online:true,current_station:'Community Radio'};
 const response=(overrides={})=>({radios:[{...radio,...overrides}]});
+
+test('a current-station tile badge requires recent online status and recent device telemetry',async()=>{
+ const f=fixture(),now=Date.UTC(2026,10,7,12,30)/1000;f.answers.push(response({current_station_code:'13',telemetry_reported_at:now}));await f.load();assert.equal(f.currentCode(),'13');
+ f.advance(30001);assert.equal(f.currentCode(),null,'a stale browser check cannot claim current playback');
+ for(const overrides of [{telemetry_reported_at:now-100},{telemetry_reported_at:now+999},{online:false},{current_station_code:''}]){f.answers.push(response({current_station_code:'13',telemetry_reported_at:now,...overrides}));await f.load();assert.equal(f.currentCode(),null);}
+ f.answers.push(response({current_station_code:'14',telemetry_reported_at:now+30}));await f.load();assert.equal(f.currentCode(),'14');f.answers.push(Error('Cannot check'));await f.load(true);assert.equal(f.currentCode(),null,'a failed poll immediately withdraws the badge');
+});
 
 test('healthy radio checks hide timestamps and unchanged polls preserve card nodes without flashing',async()=>{
  const f=fixture();f.answers.push(response());await f.load();const card=f.views()[0],status=card.children[0].children[1],station=card.children[1],count=f.ids.get('linkedRadios').replacements;
@@ -35,7 +42,7 @@ test('healthy radio checks hide timestamps and unchanged polls preserve card nod
 test('returning to stale radio data shows a neutral update until the fresh response arrives',async()=>{
  const f=fixture();f.answers.push(response({current_station_code:'10'}));await f.load();const card=f.views()[0],status=card.children[0].children[1],station=card.children[1],report=card.children[3],events=f.statusEvents.length;
  f.ids.get('myRadio').hidden=true;f.visibility();f.advance(60000);const check=deferred();f.answers.push(check.promise);f.ids.get('myRadio').hidden=false;f.visibility();
- assert.equal(f.views()[0],card);assert.equal(status.textContent,'Updating status…');assert.equal(status.className,'radio-unknown');assert.equal(station.textContent,'Current station: COMMUNITY RADIO');assert.equal(report.hidden,true);assert.match(f.freshness.textContent,/^Last checked /);assert.equal(f.ids.get('radioConnectStatus').textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('linkedRadios').attributes['aria-busy'],'true');assert.equal(f.statusEvents.length,events);
+ assert.equal(f.views()[0],card);assert.equal(status.textContent,'Updating status…');assert.equal(status.className,'radio-unknown');assert.equal(station.textContent,'Current station: COMMUNITY RADIO');assert.equal(report.hidden,true);assert.match(f.freshness.textContent,/^Last checked /);assert.equal(f.ids.get('radioConnectStatus').textContent,'');assert.equal(f.ids.get('refreshRadios').hidden,true);assert.equal(f.ids.get('linkedRadios').attributes['aria-busy'],'true');assert.equal(f.statusEvents.length,events+1);assert.equal(f.statusEvents.at(-1).type,'radio-current-station-invalidated');
  check.resolve(response({online:false}));await f.flush();assert.equal(f.views()[0].children[0].children[1].textContent,'Radio offline. Check power and Wi-Fi.');assert.equal(f.freshness.textContent,'');assert.equal(f.freshness.hidden,true);assert.equal(f.ids.get('refreshRadios').hidden,true);
 });
 

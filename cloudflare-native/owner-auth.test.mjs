@@ -53,6 +53,50 @@ test('signup preserves ZIP leading zeros and binds the ZIP to its idempotent reg
  const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get(),code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];await f.post('/api/owner/verify',{verification_id:first.verification_id,code});assert.equal((await f.owner()).zip_code,'00501');
 });
 async function ownerLoginChallenge(f,headers={}){const result=await(await f.post('/api/owner/login',{email:f.registration.email,code:'10'},headers)).json(),job=f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get();return {...result,code:JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1]};}
+test('duplicate verified streams offer sign-in before image or email work, without revealing owner details',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
+ const reads=f.imageReads(),jobs=f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n;
+ await assert.rejects(f.post('/api/owner/register',{...f.registration,request_id:'2'.repeat(32),email:'different@example.com'}),error=>error.status===409&&error.message==='This stream already has a station. Sign in to update it.'&&!error.message.includes('owner@example.com'));
+ assert.equal(f.imageReads(),reads);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations').get().n,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,jobs);
+});
+test('pending signup resumes only in its original browser with masked metadata and never a private code',async()=>{
+ const f=await registered(),request=new Request(host+'/api/session',{headers:{Cookie:f.cookie}}),saved=await(await authRoutes(request,f.env,now+61)).json();
+ assert.equal(saved.pending_verification.verification_id,f.result.verification_id);assert.equal(saved.pending_verification.verification_purpose,'registration');assert.equal(saved.pending_verification.verification_email,'o***@example.com');assert.ok(!JSON.stringify(saved).includes(f.code));assert.ok(!JSON.stringify(saved).includes('owner@example.com'));
+ const other=await(await authRoutes(new Request(host+'/api/session'),f.env,now+61)).json();assert.equal(other.pending_verification,null);
+ await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});const after=await(await authRoutes(request,f.env,now+62)).json();assert.equal(after.pending_verification,null);assert.equal((await f.owner()).contact_email,'owner@example.com');
+});
+test('Change email rotates only the original browser unfinished signup proof and preserves its stream/artwork',async()=>{
+ const f=await registered(),before=f.sqlite.prepare('SELECT * FROM stations').get();
+ const changed=await(await f.post('/api/owner/change-email',{verification_id:f.result.verification_id,email:' NEW@EXAMPLE.COM '})).json();assert.notEqual(changed.verification_id,f.result.verification_id);assert.equal(changed.verification_email,'n***@example.com');assert.equal(changed.verification_purpose,'registration');
+ const after=f.sqlite.prepare('SELECT * FROM stations').get();assert.equal(after.contact_email,'new@example.com');assert.equal(after.artwork_key,before.artwork_key);assert.equal(after.stream_url,before.stream_url);assert.equal(after.email_verified_at,null);assert.equal(after.status,'pending_email');assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,null);
+ await assert.rejects(f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code}),error=>error.status===400);
+ const job=f.sqlite.prepare('SELECT * FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get(),code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];assert.equal(job.recipient,'new@example.com');assert.ok(!job.encrypted_payload.includes(code));
+ const retry=await(await f.post('/api/owner/register',f.registration)).json();assert.equal(retry.verification_id,changed.verification_id);assert.equal(retry.verification_email,changed.verification_email);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stations').get().n,1);
+ await f.post('/api/owner/verify',{verification_id:changed.verification_id,code:code.slice(0,3)+' '+code.slice(3)});assert.equal((await f.owner()).contact_email,'new@example.com');
+ await assert.rejects(f.post('/api/owner/change-email',{verification_id:changed.verification_id,email:'attacker@example.com'}),error=>error.status===409);assert.equal((await f.owner()).contact_email,'new@example.com');
+});
+test('Change email requires same-origin session, CSRF and the matching unverified registration',async()=>{
+ const f=await registered(),body={verification_id:f.result.verification_id,email:'new@example.com'},before=f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n;
+ for(const headers of [{Origin:'https://evil.example'},{Cookie:''},{'X-CSRF-Token':''}])await assert.rejects(f.post('/api/owner/change-email',body,headers),error=>[401,403].includes(error.status));
+ const otherResponse=await authRoutes(new Request(host+'/api/session'),f.env,now),other=await otherResponse.json(),cookie=otherResponse.headers.get('Set-Cookie').split(';')[0];
+ await assert.rejects(f.post('/api/owner/change-email',body,{Cookie:cookie,'X-CSRF-Token':other.csrf}),error=>error.status===409);
+ assert.equal(f.sqlite.prepare('SELECT contact_email FROM stations').get().contact_email,f.registration.email);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,before);
+});
+test('a correct old verification racing Change email cannot grant the unverified replacement address',async()=>{
+ const f=await registered(),paused=pauseOwnerBatch(f),verifying=f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});await paused.reached;
+ const changed=await(await f.post('/api/owner/change-email',{verification_id:f.result.verification_id,email:'new@example.com'})).json();paused.release();await assert.rejects(verifying,error=>error.status===400);
+ assert.equal(f.sqlite.prepare('SELECT owner_station FROM sessions').get().owner_station,null);assert.equal(f.sqlite.prepare('SELECT email_verified_at FROM stations').get().email_verified_at,null);assert.notEqual(changed.verification_id,f.result.verification_id);
+});
+test('a resend racing Change email cannot send a usable proof for the replacement address to the old email',async()=>{
+ const f=await registered(),paused=pauseOwnerBatch(f),resending=f.post('/api/owner/resend',{verification_id:f.result.verification_id},{},now+61);await paused.reached;
+ const changed=await(await f.post('/api/owner/change-email',{verification_id:f.result.verification_id,email:'new@example.com'},{},now+61)).json();paused.release();await assert.rejects(resending,error=>error.status===409);
+ const latest=f.sqlite.prepare('SELECT verification_id FROM registration_requests').get();assert.equal(latest.verification_id,changed.verification_id);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,2);assert.equal(f.sqlite.prepare('SELECT contact_email FROM stations').get().contact_email,'new@example.com');
+});
+test('expired and exhausted email codes give new-code guidance; pasted whitespace codes work once',async()=>{
+ const expired=await registered();await assert.rejects(expired.post('/api/owner/verify',{verification_id:expired.result.verification_id,code:expired.code},{},now+900),error=>error.status===400&&/expired.*Resend email/.test(error.message));
+ const f=await registered();f.sqlite.prepare('UPDATE email_verifications SET attempts=5 WHERE id=?').run(f.result.verification_id);await assert.rejects(f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code}),error=>error.status===400&&/Too many.*new code/.test(error.message));
+ const valid=await registered(),spaced=valid.code.split('').join(' ');await valid.post('/api/owner/verify',{verification_id:valid.result.verification_id,code:' '+spaced+'\n'});await assert.rejects(valid.post('/api/owner/verify',{verification_id:valid.result.verification_id,code:spaced}),error=>error.status===400);
+});
 function pauseOwnerBatch(f){const batch=f.env.DB.batch;let release,arrived,paused=false;const reached=new Promise(resolve=>{arrived=resolve;}),waiting=new Promise(resolve=>{release=resolve;});f.env.DB.batch=async queries=>{if(!paused){paused=true;arrived();await waiting;}return batch(queries);};return {reached,release};}
 test('fresh session uses secure host-only cookie; absent server key fails closed',async()=>{
   const f=await fixture();assert.match(f.cookie,/^__Host-rl_session=/);assert.equal(f.state.csrf.length,64);

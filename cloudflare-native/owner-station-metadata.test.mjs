@@ -19,6 +19,7 @@ function fixture({withSignup=false}={}){
   constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.parent=null;this.dataset={};this.attrs={};this.hidden=false;this.disabled=false;this.open=false;this.value='';this.textContent='';this.handlers=new Map();this.elements={};this.validityMessage='';this.files=[];}
   set id(value){this._id=value;nodes.set(value,this);}get id(){return this._id||'';}
   append(...children){for(const child of children){this.children.push(child);child.parent=this;}}
+  after(child){const index=this.parent?.children.indexOf(this);if(index!==undefined){this.parent.children.splice(index+1,0,child);child.parent=this.parent;}}
   before(child){const index=this.parent.children.indexOf(this);this.parent.children.splice(index,0,child);child.parent=this.parent;}
   closest(selector){for(let current=this;current;current=current.parent)if(selector==='label'&&current.tagName==='LABEL')return current;return null;}
   querySelector(selector){if(selector==='button[type="submit"]')return this.querySelectorAll('button').find(node=>node.type==='submit')||null;return null;}
@@ -46,9 +47,9 @@ function fixture({withSignup=false}={}){
  };
 }
 
-test('complete owner details are collapsed before Bio, required, and use the received catalog',()=>{
- const f=fixture();assert.equal(f.form.children[0],f.details);assert.equal(f.form.children[1],f.bioLabel);assert.equal(f.details.open,false);assert.equal(f.zip.disabled,true);
- f.sync();assert.equal(f.details.open,false);assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,false);assert.equal(f.zip.required,true);assert.equal(f.category.required,true);assert.equal(f.zip.tagName,'INPUT');assert.equal(f.zip.type,'text');assert.equal(f.zip.getAttribute('inputmode'),'numeric');assert.equal(f.zip.getAttribute('maxlength'),'5');assert.equal(f.zip.getAttribute('pattern'),'[0-9]{5}');assert.equal(f.zip.getAttribute('autocomplete'),'postal-code');assert.equal(f.zip.value,'01234');assert.deepEqual(f.category.children.map(node=>node.value),['','news_talk','christian']);assert.equal(f.category.children[0].textContent,'Choose category');assert.equal(f.category.children.find(node=>node.value==='christian').textContent,'Religion');assert.deepEqual(f.saveValues(),{zip_code:'01234',category:'christian'});assert.equal(f.nodes.has('ownerStationLanguage'),false);assert.equal(f.networkCalls,0);
+test('complete owner details stay expanded before Bio, required, and use the received catalog',()=>{
+ const f=fixture();assert.equal(f.form.children[0],f.details);assert.equal(f.form.children[1],f.bioLabel);assert.equal(f.details.open,true);assert.equal(f.zip.disabled,true);
+ f.sync();assert.equal(f.details.open,true);assert.equal(f.zip.disabled,false);assert.equal(f.category.disabled,false);assert.equal(f.zip.required,true);assert.equal(f.category.required,true);assert.equal(f.zip.tagName,'INPUT');assert.equal(f.zip.type,'text');assert.equal(f.zip.getAttribute('inputmode'),'numeric');assert.equal(f.zip.getAttribute('maxlength'),'5');assert.equal(f.zip.getAttribute('pattern'),'[0-9]{5}');assert.equal(f.zip.getAttribute('autocomplete'),'postal-code');assert.equal(f.zip.value,'01234');assert.deepEqual(f.category.children.map(node=>node.value),['','news_talk','christian']);assert.equal(f.category.children[0].textContent,'Choose category');assert.equal(f.category.children.find(node=>node.value==='christian').textContent,'Religion');assert.deepEqual(f.saveValues(),{zip_code:'01234',category:'christian'});assert.equal(f.nodes.has('ownerStationLanguage'),false);assert.equal(f.networkCalls,0);
 });
 
 test('editing required metadata dirties only the editor and clearing Category cannot produce a save value',()=>{
@@ -84,12 +85,12 @@ test('tampered metadata cannot be submitted as a valid enum',()=>{
 
 test('busy state and logout keep disabled controls from leaking another owner\'s metadata',async()=>{
  const f=fixture();f.sync();f.form.dataset.busy='1';f.notify();assert.equal(f.zip.disabled,true);assert.equal(f.saveValues().zip_code,'01234');delete f.form.dataset.busy;f.notify();assert.equal(f.zip.disabled,false);
- f.reset();await Promise.resolve();assert.equal(f.zip.disabled,true);assert.equal(f.zip.value,'');assert.deepEqual(f.saveValues(),{});assert.equal(f.details.open,false);
+ f.reset();await Promise.resolve();assert.equal(f.zip.disabled,true);assert.equal(f.zip.value,'');assert.deepEqual(f.saveValues(),{});assert.equal(f.details.open,true);
 });
 
 test('display-language changes relabel the ZIP and Category fields without changing values or creating a draft',()=>{
- const f=fixture();f.sync();f.change(f.zip,'04567');const count=f.inputCount;f.window.appI18n={t:key=>({'metadata.details':'Detay estasyon','metadata.zip':'Kòd ZIP','metadata.category.christian':'Relijyon','metadata.chooseCategory':'Chwazi kategori'}[key]||key)};f.event('app-language-changed');
- assert.equal(f.details.children[0].textContent,'Detay estasyon');assert.equal(f.zip.parent.children[0].textContent,'Kòd ZIP');assert.equal(f.zip.value,'04567');assert.equal(f.category.children.find(node=>node.value==='christian').textContent,'Relijyon');assert.equal(f.inputCount,count);assert.equal(f.saveValues().zip_code,'04567');
+ const f=fixture();f.sync();f.change(f.zip,'04567');const count=f.inputCount;f.window.appI18n={t:key=>({'metadata.requiredDetails':'Detay estasyon','metadata.zip':'Kòd ZIP','metadata.category.christian':'Relijyon','metadata.chooseCategory':'Chwazi kategori'}[key]||key)};f.event('app-language-changed');
+ assert.equal(f.details.children[0].textContent,'Detay estasyon');assert.equal(f.zip.parent.children[0].textContent,'Kòd ZIP *');assert.equal(f.zip.value,'04567');assert.equal(f.category.children.find(node=>node.value==='christian').textContent,'Relijyon');assert.equal(f.inputCount,count);assert.equal(f.saveValues().zip_code,'04567');
 });
 
 test('required owner ZIP preserves leading zeroes and rejects empty or non-five-ASCII-digit values',()=>{

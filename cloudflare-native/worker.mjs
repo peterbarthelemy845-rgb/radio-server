@@ -176,11 +176,11 @@ function transportSecurity(request,response){
 }
 export async function fetchHandler(request,env,ctx) {
   try{const response=await handle(request,env);
-    if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|support\/(?:ticket|status\/request)$)/.test(new URL(request.url).pathname)&&response.ok)
+    if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|support\/(?:ticket(?:\/(?:verify|resend))?|status\/request)$)/.test(new URL(request.url).pathname)&&response.ok)
       ctx.waitUntil(processMail(env));
     return transportSecurity(request,response);
   }catch(error){
-    if(error instanceof HttpError)return transportSecurity(request,json({message:error.message},error.status));
+    if(error instanceof HttpError){const details={message:error.message};if(Number.isInteger(error.retry_after)&&error.retry_after>0&&error.retry_after<=86400)details.retry_after=error.retry_after;if(['name','email','code','zip_code','category','stream_url','stream_host','stream_port','stream_protocol','stream_path','hostname','host','port','protocol','path','mount'].includes(error.field))details.field=error.field;if(['invalid_code','code_incorrect','code_expired','code_exhausted','request_denied','request_expired','verification_required','ticket_cooldown','abuse_blocked','duplicate_stream'].includes(error.code))details.code=error.code;return transportSecurity(request,json(details,error.status));}
     // Never log raw URLs, query strings, bodies, headers, exception messages or
     // stacks: any of those can contain contact details or private codes.
     const reference=randomHex(8),pathname=new URL(request.url).pathname;
@@ -206,6 +206,11 @@ export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
     env.DB.prepare('DELETE FROM share_events WHERE created_at<?').bind(now-93*86400),
     env.DB.prepare('DELETE FROM ad_receipts WHERE expires<?').bind(now-86400),
     env.DB.prepare('DELETE FROM listening_sessions WHERE last_seen<?').bind(now-86400),
+    env.DB.prepare('DELETE FROM support_sender_grants WHERE expires<?').bind(now),
+    env.DB.prepare('DELETE FROM support_pending_tickets WHERE expires<?').bind(now),
+    env.DB.prepare('DELETE FROM support_problem_keys WHERE expires<?').bind(now),
+    env.DB.prepare('DELETE FROM support_sender_activity WHERE last_ticket_at<?').bind(now-86400),
+    env.DB.prepare('DELETE FROM support_abuse_blocks WHERE expires<?').bind(now),
   ]);
 }
 export default {fetch:fetchHandler,async scheduled(event,env){await cleanup(env);await processMail(env);const now=Math.floor((event.scheduledTime||Date.now())/1000);await scheduledBackup(env,now);if(new Date(now*1000).getUTCMinutes()===10)await expireBackups(env,now);

@@ -36,7 +36,7 @@ test('native sharing succeeds without adding fallback controls or invoking the c
 });
 
 test('sharing a public station link never opens an add flow, checks a radio or claims a phone',async()=>{
- const f=fixture({native:async()=>{}});await f.click();assert.equal(f.nativeCalls.length,1);assert.equal(f.nativeCalls[0].url,'https://radiolocals.com/station/13');assert.equal(f.events.length,1);assert.equal(f.events[0].path,'/api/events');assert.equal(f.events.some(event=>event.path.startsWith('/api/phone/')),false);
+ const f=fixture({native:async()=>{}});await f.click();assert.equal(f.nativeCalls.length,1);assert.equal(f.nativeCalls[0].url,'https://radiolocals.com/station/13');assert.equal(f.events.length,2);assert.equal(f.events[0].path,'/api/events');assert.equal(f.events[1].body.outcome,'share_sheet_completed');assert.equal(f.events.some(event=>event.path.startsWith('/api/phone/')),false);
 });
 
 test('standalone sharing retains its copy fallback and ignores a late response after leaving Radio',async()=>{
@@ -52,18 +52,18 @@ test('a rendered station has one logo/name action and no persistent Share button
 
 test('cancelling the native share sheet stays quiet and does not copy without permission',async()=>{
  const f=fixture({native:async()=>{throw Object.assign(Error('Cancelled'),{name:'AbortError'});},clipboard:async()=>{}});await f.click();
- assert.equal(f.copies.length,0);assert.equal(f.feedback(),null);assert.equal(f.button.disabled,false);
+ assert.equal(f.copies.length,0);assert.equal(f.feedback(),null);assert.equal(f.button.disabled,false);assert.equal(f.events[0].body.phase,'attempt');assert.equal(f.events[1].body.phase,'outcome');assert.equal(f.events[1].body.outcome,'cancelled');assert.equal(f.events[1].body.event_id,f.events[0].body.event_id);
 });
 
 test('blocked native sharing falls back to clipboard and announces the copy',async()=>{
  const f=fixture({native:async()=>{throw Error('Blocked');},clipboard:async()=>{}});await f.click();
- assert.deepEqual(f.copies,['https://radiolocals.com/station/13']);assert.equal(f.feedback().attributes.role,'status');assert.equal(f.feedback().textContent,'Link copied');assert.equal(f.button.disabled,false);
+ assert.deepEqual(f.copies,['https://radiolocals.com/station/13']);assert.equal(f.feedback().attributes.role,'status');assert.equal(f.feedback().textContent,'Link copied');assert.equal(f.button.disabled,false);assert.equal(f.events[1].body.outcome,'link_copied');
 });
 
 test('missing or blocked sharing methods expose a selectable public station URL',async()=>{
  for(const options of [{},{clipboard:async()=>{throw Error('Denied');}},{native:async()=>{throw Error('Not supported');},clipboard:async()=>{throw Error('Denied');}}]){
   const f=fixture(options);await f.click();const feedback=f.feedback(),label=feedback.children[0],help=label.children[0],input=label.children[1];
-  assert.equal(help.attributes.role,'status');assert.equal(help.textContent,'Copy this link to share the station.');assert.equal(input.readOnly,true);assert.equal(input.value,'https://radiolocals.com/station/13');assert.equal(input.focused,true);assert.equal(input.selected,true);assert.equal(f.events.length,1);assert.equal(f.button.disabled,false);
+  assert.equal(help.attributes.role,'status');assert.equal(help.textContent,'Copy this link to share the station.');assert.equal(input.readOnly,true);assert.equal(input.value,'https://radiolocals.com/station/13');assert.equal(input.focused,true);assert.equal(input.selected,true);assert.equal(f.events.length,2);assert.equal(f.events[1].body.outcome,'manual_link_shown');assert.equal(f.button.disabled,false);
   await f.click();assert.equal(f.popup.children.filter(node=>node.className==='station-share-feedback').length,1,'Retry replaces the previous fallback');
  }
 });

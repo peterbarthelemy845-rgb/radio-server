@@ -24,7 +24,7 @@ export async function adminRoutes(request,env,now,deps={human}){
   return json({verification_id:id,message:'If this is the administrator email, a code will arrive shortly.'});
  }
  if(path==='/api/admin/verify'&&request.method==='POST'){
-  await limit(env.DB,'admin-verify-ip',ip,20,900,now);const body=await readJson(request),id=String(body.verification_id||''),code=String(body.code||'');
+  await limit(env.DB,'admin-verify-ip',ip,20,900,now);const body=await readJson(request),id=String(body.verification_id||''),code=String(body.code||'').replace(/\s/g,'');
   if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the six-digit email code.');
   const check=await env.DB.prepare(`UPDATE admin_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING code_hash`).bind(id,current.token_hash,now).first();
   if(!check||check.code_hash!==await mac(env,'admin:'+id+':'+code))throw new HttpError(400,'Incorrect or expired code.');
@@ -42,7 +42,7 @@ export async function adminRoutes(request,env,now,deps={human}){
   if(!/^[a-f0-9]{32}$/.test(id))throw new HttpError(400,'Start sign-in again.');
   const proof=await env.DB.prepare(`UPDATE admin_email_proofs SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING id`).bind(id,current.token_hash,now).first();
   if(!proof)throw new HttpError(400,'This sign-in expired. Start again.');
-  const match=await matchTotp(env,body.authenticator_code,now);
+  const match=await matchTotp(env,String(body.authenticator_code||'').replace(/\s/g,''),now);
   if(!match)throw new HttpError(400,'Incorrect or already-used authenticator code. Wait for the next code and try again.');
   // Only this attempt can see its random consumed-proof marker. Matching a
   // previously used TOTP step alone must never authorize a losing request.

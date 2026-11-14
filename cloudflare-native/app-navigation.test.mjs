@@ -22,8 +22,8 @@ function fixture({app=false,standalone=false,path='/',initial='myRadio',ownerLif
   page(id){for(const key of ['myRadio','support','wifiSetup','login','register','editor','ownerEntryLoading','shared','admin','legal','advertise','adReview','reports','backups'])nodes.get(key).hidden=key!==id;},list(){},loadMyRadios(){loads++;return Promise.resolve();},loadSupport(){supportLoads++;nodes.get('supportVideos').children.push(node());return Promise.resolve();},openStationPopup:async(code,options)=>{stationOpenings.push({code,options});stationPopup.open=true;nodes.get('shared').hidden=false;},setSharedStatus(text,kind='progress'){nodes.get('shareStatus').textContent=text;nodes.get('shareStatus').dataset.status=kind;},shareRunning:false,sharedOpenGeneration:0,stopWaitingForSharedStation(){context.shareRunning=false;context.sharedOpenGeneration++;},invalidateSharedView(){context.shareRunning=false;context.sharedOpenGeneration++;}});
  if(ownerLifecycle){
   const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
-  vm.runInContext('let sitePageGeneration=0,verificationId=null,verificationGeneration=0,verificationPageGeneration=0,verificationResendDeadline=0,verificationBusy=false;function setVerificationBusy(value){verificationBusy=value;}',context);
-  vm.runInContext(site.slice(site.indexOf('function currentVerification('),site.indexOf('function verify(result)')),context);
+  vm.runInContext('let sitePageGeneration=0,verificationId=null,verificationGeneration=0,verificationPageGeneration=0,verificationResendDeadline=0,verificationBusy=false;function setVerificationBusy(value){verificationBusy=value;}function renderVerificationResend(){}function renderPendingOwnerVerification(){}',context);
+  vm.runInContext(site.slice(site.indexOf('function currentVerification('),site.indexOf('function verify(')),context);
   vm.runInContext(site.slice(site.indexOf('function page('),site.indexOf('function message(')),context);
  }
  vm.runInContext(readFileSync(new URL('./public/assets/app-navigation.js',import.meta.url),'utf8'),context);

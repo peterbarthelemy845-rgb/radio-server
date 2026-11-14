@@ -13,7 +13,7 @@
  }
  function result(key,fallback,state){
   status(key,fallback,state);
-  try{notice.hidden=window.showStreamTestResult?.({source:'owner',key,fallback,state})===true;}catch{notice.hidden=false;}
+  try{const displayed=window.showStreamTestResult?.({source:'owner',key,fallback,state})===true;notice.hidden=state!=='success'&&displayed;}catch{notice.hidden=false;}
  }
  function saving(){return form.dataset.busy==='1'||form.getAttribute('aria-busy')==='true'||field.disabled;}
  function canonical(value){try{return typeof window.parsePublicStreamUrl==='function'?window.parsePublicStreamUrl(value).href:'';}catch{return '';}}
@@ -34,7 +34,7 @@
   expiryTimer=setTimeout(()=>{expiryTimer=undefined;const expired=passedUrl&&Date.now()>=passedUntil;if(expired){clearPass();if(!editor.hidden&&!allowed())status('owner.streamCheckExpired','Your stream check expired. Test your stream again before saving.','unconfirmed');}controls();},Math.max(1,passedUntil-Date.now()));
   expiryTimer?.unref?.();
  }
- function abandon(invalidate=false){const previous=active;active=null;generation++;if(previous){previous.controller.abort();previous.restoreLabel();}if(invalidate)clearPass();window.closeStreamTestResult?.('owner');status('');controls();}
+ function abandon(invalidate=false){const previous=active;active=null;generation++;if(previous){previous.controller.abort();previous.restoreLabel();}if(invalidate)clearPass();window.closeStreamTestResult?.('owner');if(passedUrl&&canonical(field.value)===passedUrl&&Date.now()<passedUntil)status('registration.streamReady','✓ Stream ready','success');else status('');controls();}
  window.ownerStreamSaveAllowed=(report=false)=>{
   const permit=allowed();controls();
   if(!permit&&report&&!active){status('owner.streamCheckRequired','Test your stream before saving.','unconfirmed');if(!button.disabled)button.focus();}
@@ -62,8 +62,8 @@
   try{
    const turnstile_token=await human(area,'stream-check',attempt.controller.signal);if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:attempt.value,turnstile_token});if(!current())return;
-   if(response.result==='audio_response'&&response.audio_response===true){passedUrl=attempt.value;passedUntil=Date.now()+PASS_LIFETIME;armExpiry();result('registration.audioResponse','Stream check passed','success');}
-   else result('registration.notConfirmed','Stream could not be confirmed. Check the details and test again before saving.','unconfirmed');
+   if(response?.result==='audio_response'&&response.audio_response===true){passedUrl=attempt.value;passedUntil=Date.now()+PASS_LIFETIME;armExpiry();result('registration.streamReady','✓ Stream ready','success');}
+   else{const failure=window.streamTestFailure?.(response)||{key:'registration.notConfirmed',message:'Stream could not be confirmed. Check the details and test again before saving.'},mount=document.getElementById('ownerStreamPath');if(response?.field==='stream_path'&&mount&&!mount.disabled){mount.setCustomValidity(failure.message);mount.focus();}result(failure.key,failure.message,'unconfirmed');}
   }catch(error){if(current())result('',String(error.message||'The stream check did not complete. Test again before saving.').slice(0,400),'error');}
   finally{if(active===attempt){active=null;attempt.restoreLabel();controls();}}
  };

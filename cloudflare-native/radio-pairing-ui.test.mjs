@@ -35,6 +35,22 @@ test('a pairing request failure preserves the code and restores controls for a r
  const f=fixture();f.answers.push(Error('Temporary failure'));await f.submit();assert.equal(f.form.elements.device_code.value,'3961');assert.equal(f.form.resetCount,undefined);assert.equal(f.form.button.disabled,false);assert.match(f.ids.get('radioConnectStatus').textContent,/Temporary failure/);f.answers.push({claim_id:'retry',confirmation_code:'1234'},{state:'denied'});await f.submit();assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim').length,2);
 });
 
+test('brief pairing poll failures reuse the same claim and never repeat a security check or claim POST',async()=>{
+ let checks=0;const f=fixture({human:async()=>{checks++;return 'checked';}});f.answers.push({claim_id:'same-claim',confirmation_code:'5831'},Error('Network changed'),{state:'waiting'},Object.assign(Error('Try later'),{status:503}),{state:'approved',radio_id:'one'},{radios:[]});await f.submit();
+ const polls=f.calls.filter(call=>call.path==='/api/phone/claim/status');assert.equal(polls.length,4);assert.ok(polls.every(call=>call.body.claim_id==='same-claim'));assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim').length,1);assert.equal(checks,1);assert.deepEqual(f.selections,['one']);
+});
+
+test('pairing stops after bounded consecutive network failures without creating another claim',async()=>{
+ const f=fixture();f.answers.push({claim_id:'claim',confirmation_code:'5831'},...Array.from({length:4},()=>Error('Network unavailable')));await f.submit();
+ assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim/status').length,4);assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim').length,1);assert.equal(f.dialogs.length,0);assert.equal(f.form.elements.device_code.value,'3961');assert.equal(f.form.button.disabled,false);assert.match(f.ids.get('radioConnectStatus').textContent,/Network unavailable/);
+});
+
+test('authorization failures and terminal denial or expiry are never retried and give different guidance',async()=>{
+ for(const [answer,expected] of [[Object.assign(Error('Session expired'),{status:401}),/Session expired/],[{state:'denied'},/denied on your radio.*tap Allow/],[{state:'expired'},/Connection expired.*current Device Code/]]){
+  const f=fixture();f.answers.push({claim_id:'claim',confirmation_code:'5831'},answer);await f.submit();assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim/status').length,1);assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim').length,1);assert.match(f.ids.get('radioConnectStatus').textContent,expected);assert.equal(f.selections.length,0);
+ }
+});
+
 test('explicit reconnect refreshes the expired session before bot verification and still needs radio approval',async()=>{
  const session=deferred();let botChecks=0;const f=fixture({loadSession:()=>session.promise,human:async()=>{botChecks++;return 'fresh-check';}});f.get('showRadioReconnect()');const pairing=f.submit();
  assert.equal(f.sessionLoads(),1);assert.equal(botChecks,0);assert.equal(f.calls.length,0);assert.equal(f.form.elements.device_code.disabled,true);f.answers.push({claim_id:'reconnect',confirmation_code:'2222'},{state:'denied'});session.resolve({csrf:'fresh'});await pairing;

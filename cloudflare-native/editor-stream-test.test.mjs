@@ -39,7 +39,7 @@ test('owner setup validation runs before a stream check and a mode change cancel
 test('owner stream checking gates Save, uses the protected endpoint once and never plays audio',async()=>{
  const f=fixture(),pending=deferred();f.result(pending.promise);const first=f.start(),duplicate=f.start();await settle();
  assert.equal(f.humanCalls.length,1);assert.equal(f.humanCalls[0].container,f.nodes.get('ownerStreamTestHuman'));assert.equal(f.humanCalls[0].action,'stream-check');assert.ok(f.humanCalls[0].signal);assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,'https://stream.example.com/live');assert.equal(f.apiCalls[0].body.turnstile_token,'checked-token');assert.equal(f.save.disabled,true);assert.equal(f.field.disabled,false);assert.equal(f.button.textContent,'Checking…');
- pending.resolve({result:'audio_response',audio_response:true,message:'Anything'});await Promise.all([first,duplicate]);assert.equal(f.nodes.get('ownerStreamTestStatus').dataset.state,'success');assert.equal(f.nodes.get('ownerStreamTestStatus').textContent,'Stream check passed');assert.equal(f.button.disabled,false);assert.equal(f.button.textContent,'Test stream');assert.equal(f.media(),0);
+ pending.resolve({result:'audio_response',audio_response:true,message:'Anything'});await Promise.all([first,duplicate]);assert.equal(f.nodes.get('ownerStreamTestStatus').dataset.state,'success');assert.equal(f.nodes.get('ownerStreamTestStatus').textContent,'✓ Stream ready');assert.equal(f.button.disabled,false);assert.equal(f.button.textContent,'Test stream');assert.equal(f.media(),0);
 });
 test('unsafe and malformed addresses are rejected locally and keep Save blocked',async()=>{
  for(const value of ['https://','not a url','http://127.0.0.1/live','http://10.0.0.1/live','http://stream.local/live','http://[2001:db8::1]/live','https://user:supersecret123@stream.example.com/live','https://stream.example.com/live?token=supersecret123','https://stream.example.com/live#supersecret123']){
@@ -54,7 +54,7 @@ test('playlist links remain unconfirmed without fetching and keep Save blocked',
 
 test('numeric public IP checks use the authenticated endpoint and retain normal success feedback',async()=>{
  for(const value of ['http://162.244.81.219:8020/live','http://8.8.8.8:8000/;?sid=1']){
-  const f=fixture(value),shown=[];f.window.showStreamTestResult=result=>{shown.push(result);return true;};f.result({result:'audio_response',audio_response:true});await f.start();assert.equal(f.humanCalls.length,1);assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,value);assert.equal(f.apiCalls[0].body.turnstile_token,'checked-token');assert.equal(shown.length,1);assert.equal(shown[0].key,'registration.audioResponse');assert.equal(f.save.disabled,false);assert.equal(f.media(),0);
+  const f=fixture(value),shown=[];f.window.showStreamTestResult=result=>{shown.push(result);return true;};f.result({result:'audio_response',audio_response:true});await f.start();assert.equal(f.humanCalls.length,1);assert.equal(f.apiCalls.length,1);assert.equal(f.apiCalls[0].path,'/api/owner/stream-check');assert.equal(f.apiCalls[0].body.stream_url,value);assert.equal(f.apiCalls[0].body.turnstile_token,'checked-token');assert.equal(shown.length,1);assert.equal(shown[0].key,'registration.streamReady');assert.equal(f.save.disabled,false);assert.equal(f.media(),0);
  }
 });
 test('editing the address aborts its security check and a late token cannot send the old URL',async()=>{
@@ -87,7 +87,7 @@ test('missing URL policy fails closed without network calls',async()=>{
 test('a current terminal owner result opens one result popup while checking and validation stay inline',async()=>{
  const f=fixture(),pending=deferred(),shown=[];f.window.showStreamTestResult=value=>{shown.push(value);return true;};f.result(pending.promise);const check=f.start();await settle();
  const notice=f.nodes.get('ownerStreamTestStatus');assert.equal(shown.length,0);assert.equal(notice.dataset.state,'checking');assert.equal(notice.hidden,false);
- pending.resolve({result:'audio_response',audio_response:true});await check;assert.equal(shown.length,1);assert.equal(shown[0].source,'owner');assert.equal(shown[0].key,'registration.audioResponse');assert.equal(shown[0].state,'success');assert.equal(shown[0].fallback,'Stream check passed');assert.equal(notice.hidden,true);assert.equal(f.save.disabled,false);assert.equal(f.button.disabled,false);
+ pending.resolve({result:'audio_response',audio_response:true});await check;assert.equal(shown.length,1);assert.equal(shown[0].source,'owner');assert.equal(shown[0].key,'registration.streamReady');assert.equal(shown[0].state,'success');assert.equal(shown[0].fallback,'✓ Stream ready');assert.equal(notice.hidden,false);assert.equal(f.save.disabled,false);assert.equal(f.button.disabled,false);
  f.input('https://');await f.start();assert.equal(shown.length,1);assert.equal(notice.dataset.state,'invalid');assert.equal(notice.hidden,false);
 });
 

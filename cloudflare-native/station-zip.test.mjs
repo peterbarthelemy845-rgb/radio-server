@@ -46,10 +46,20 @@ test('known ZIP search includes nearby ZIPs while excluding far-away and unclass
  const all=await page(f,'?zip_code=');assert.equal(all.stations.length,4);assert.equal(all.zip_location_known,null);assert.equal(all.zip_radius_miles,null);
 });
 
+test('nearby station pages use centroid distance before station code and retain a bound cursor',async()=>{
+ const f=await operationsFixture(),insert=f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at,zip_code) VALUES (?,'https://example.net/live','private@example.net','published',?,?,?) RETURNING code");
+ const far=insert.get('Near Nyack',f.now,f.now,'10960').code,near=insert.get('Nearby Manhattan',f.now,f.now,'10002').code,exact=insert.get('Exact one',f.now,f.now,'10001').code,exactTwo=insert.get('Exact two',f.now,f.now,'10001').code;
+ assert.ok(nearbyZipCodes('10001').includes('10960'));assert.ok(far<near&&near<exact);
+ const first=await page(f,'?limit=1&zip_code=10001');assert.deepEqual(first.stations.map(s=>Number(s.listener_code)),[exact]);assert.equal(first.stations[0].zip_rank,undefined);
+ f.sqlite.prepare('DELETE FROM stations WHERE code=?').run(exact);insert.get('Late exact',f.now,f.now,'10001');
+ const codes=[exact];let cursor=first.next_cursor;while(cursor){const result=await page(f,'?limit=1&zip_code=10001&cursor='+encodeURIComponent(cursor));codes.push(...result.stations.map(s=>Number(s.listener_code)));cursor=result.next_cursor;}
+ assert.deepEqual(codes,[exact,exactTwo,near,far]);assert.equal(new Set(codes).size,codes.length);
+});
+
 test('ZIP cursors bind the requested origin and fixed radius rather than only the nearby membership set',async()=>{
  const f=await operationsFixture();for(let i=0;i<4;i++)f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at,zip_code) VALUES (?,'https://example.com/live','owner@example.com','published',?,?,'10001')").run('Station '+i,f.now,f.now);
  const first=await page(f,'?limit=2&zip_code=10001'),cursor=encodeURIComponent(first.next_cursor);for(const query of ['?limit=2&zip_code=10002','?limit=2&zip_code=00501','?limit=2','?limit=3&zip_code=10001'])await assert.rejects(page(f,query+'&cursor='+cursor),error=>error.status===400);
- const data=JSON.parse(Buffer.from(first.next_cursor.split('.')[0],'base64url').toString());assert.equal(data.v,3);assert.equal(data.zip_radius_miles,25);data.zip_radius_miles=50;const encoded=Buffer.from(JSON.stringify(data)).toString('base64url'),modified=encoded+'.'+await mac(f.env,'public-directory:'+encoded);await assert.rejects(page(f,'?limit=2&zip_code=10001&cursor='+encodeURIComponent(modified)),error=>error.status===400);
+ const data=JSON.parse(Buffer.from(first.next_cursor.split('.')[0],'base64url').toString());assert.equal(data.v,4);assert.equal(data.zip_radius_miles,25);data.zip_radius_miles=50;const encoded=Buffer.from(JSON.stringify(data)).toString('base64url'),modified=encoded+'.'+await mac(f.env,'public-directory:'+encoded);await assert.rejects(page(f,'?limit=2&zip_code=10001&cursor='+encodeURIComponent(modified)),error=>error.status===400);
  for(const query of ['?zip_code=0050','?zip_code=005010','?zip_code=00501-1234','?zip_code=%EF%BC%90%EF%BC%90%EF%BC%95%EF%BC%90%EF%BC%91','?zip_code=00501&zip_code=10001','?zip_code='+('9'.repeat(10000))])await assert.rejects(page(f,query),error=>error.status===400);
 });
 

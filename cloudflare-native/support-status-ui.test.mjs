@@ -168,3 +168,6 @@ test('late recent-ticket lists cannot overwrite a later sheet visit and leaving 
 test('tracker inputs keep normal letter spacing and the sheet has bounded responsive scrolling',()=>{
  const css=readFileSync(new URL('./public/assets/support-status.css',import.meta.url),'utf8');assert.match(css,/dialog\.support-tickets-dialog input\{letter-spacing:normal\}/);assert.match(css,/max-height:86dvh/);assert.match(css,/overflow-y:auto/);assert.match(css,/@media\(max-width:600px\)/);assert.match(css,/safe-area-inset-bottom/);
 });
+test('pasting a formatted ticket-access code does not truncate digits or silently remove letters',async()=>{
+ const f=fixture();await beginVerification(f);const field=f.get('statusCode');assert.equal(field.maxLength,32);field.value='123 456';field.inputListener();assert.equal(field.value,'123456');field.value='12x 456';field.inputListener();assert.equal(field.value,'12x456');
+});

@@ -60,7 +60,7 @@ test('accepted saved data preserves the same station provider and updates fields
 });
 
 test('a different station resets provider and discards the old station partial draft safely',()=>{
- const f=fixture(),n=f.nodes;f.select('icecast');f.input('ownerStreamPort','99999');f.form.dataset.stationCode='14';f.url.value='https://different.example.com/live';delete f.form.dataset.dirty;f.sync();assert.equal(f.choices.find(choice=>choice.checked).value,'other');assert.equal(n.get('ownerStreamUrlRow').hidden,false);assert.equal(n.get('ownerStreamPort').value,'');assert.equal(f.url.value,'https://different.example.com/live');assert.equal(f.form.dataset.dirty,undefined);f.select('icecast');assert.equal(n.get('ownerStreamHost').value,'different.example.com');assert.equal(n.get('ownerStreamPort').value,'');assert.equal(f.prepare(),true);
+ const f=fixture(),n=f.nodes;f.select('icecast');f.input('ownerStreamPort','99999');f.form.dataset.stationCode='14';f.url.value='https://different.example.com/live';delete f.form.dataset.dirty;f.sync();assert.equal(f.choices.find(choice=>choice.checked).value,'other');assert.equal(n.get('ownerStreamUrlRow').hidden,false);assert.equal(n.get('ownerStreamPort').value,'');assert.equal(f.url.value,'https://different.example.com/live');assert.equal(f.form.dataset.dirty,undefined);f.select('icecast');assert.equal(n.get('ownerStreamHost').value,'different.example.com');assert.equal(n.get('ownerStreamPort').value,'443');assert.equal(f.prepare(),true);
 });
 
 test('public URL policy rejects private hosts, credentials and private tokens in both owner modes',()=>{
@@ -83,7 +83,7 @@ test('reset clears owner setup drafts and missing shared URL policy fails closed
 test('owner may enter the port first and retain it while completing the remaining server fields',()=>{
  const f=fixture(''),n=f.nodes;f.select('icecast');f.input('ownerStreamPort','8000');assert.equal(n.get('ownerStreamPort').disabled,false);assert.equal(n.get('ownerStreamPort').value,'8000');assert.equal(f.url.value,'');
  f.input('ownerStreamHost','stream.example.com');f.input('ownerStreamProtocol','http');f.input('ownerStreamPath','/live');assert.equal(n.get('ownerStreamPort').value,'8000');assert.equal(f.prepare(),true);assert.equal(f.url.value,'http://stream.example.com:8000/live');
- f.input('ownerStreamPort','');assert.equal(f.prepare(),true);assert.equal(f.url.value,'http://stream.example.com/live');
+ f.input('ownerStreamPort','');assert.equal(f.prepare(),false);assert.equal(f.document.activeElement,n.get('ownerStreamPort'));assert.equal(f.url.value,'');
 });
 
 test('a proof-blocked Save button does not freeze provider choices, server typing or Test preparation',()=>{

@@ -21,6 +21,14 @@ test('bounded server search reaches accented station names beyond1000 rows and a
  const first=await f.page('?limit=50&q=esperance');assert.deepEqual(first.stations,[]);assert.equal(first.has_more,true);assert.equal(first.scanned_count,1000);const next=await f.page('?limit=50&q=esp%C3%A9rance&cursor='+encodeURIComponent(first.next_cursor));assert.equal(next.stations.length,1);assert.equal(next.stations[0].name,'Radio Éspérance');assert.equal(next.has_more,false);
  const byCode=await f.page('?limit=50&q='+encodeURIComponent('#'+code));let found=byCode;while(found.has_more&&!found.stations.length)found=await f.page('?limit=50&q='+encodeURIComponent('#'+code)+'&cursor='+encodeURIComponent(found.next_cursor));assert.equal(found.stations[0].listener_code,String(code));
 });
+
+test('directory search accepts unordered accent-folded tokens and collapses repeated whitespace',async()=>{
+ const f=await fixture();f.sqlite.prepare('UPDATE stations SET name=? WHERE code=?').run('Radio La Voix Divine',f.station);
+ for(const query of ['Voix radio','  voix   RADIO  ','divine voix','VOÏX radio']){
+  const result=await f.page('?limit=20&q='+encodeURIComponent(query));assert.equal(result.stations.length,1,query);assert.equal(result.stations[0].name,'Radio La Voix Divine');assert.equal(result.stations[0].zip_rank,undefined);
+ }
+ assert.deepEqual((await f.page('?limit=20&q=voix%20missing')).stations,[]);
+});
 test('cursor tampering, query/limit changes and oversized parameters fail before expanding a search budget',async()=>{
  const f=await fixture(4),first=await f.page('?limit=2&q=community'),cursor=encodeURIComponent(first.next_cursor);
  for(const query of ['?limit=0','?limit=101','?limit=1e2','?limit=01','?limit=2&limit=3','?q='+('x'.repeat(97)),'?q=a&q=b','?cursor=bad','?limit=3&q=community&cursor='+cursor,'?limit=2&q=other&cursor='+cursor,'?limit=2&q=community&cursor='+encodeURIComponent(first.next_cursor.slice(0,-1)+(first.next_cursor.endsWith('a')?'b':'a'))])assert.equal((await fetchHandler(new Request('https://radiolocals.com/api/stations'+query),f.env)).status,400,query);

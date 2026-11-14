@@ -28,7 +28,11 @@ function validateConversation(value){
 }
 function fallback(language,kind,now){return {status:kind==='unknown'?'no_match':'unavailable',answer:messages[language][kind],sources:[],needs_support:true,language,generated_at:now,cache_hit:false};}
 export async function aiSupportRoutes(request,env,now,deps={human,runAI}){
- if(new URL(request.url).pathname!=='/api/support/chat')return null;
+ const url=new URL(request.url);
+ if(url.pathname==='/api/support/guides'){
+  if(request.method!=='GET')throw new HttpError(405,'Method not allowed.');const language=url.searchParams.get('language')||'en';if(!['en','ht'].includes(language))throw new HttpError(400,'Choose English or Haitian Creole.');return json({language,guides:approvedGuides.map(guide=>{const {id,title,steps}=getApprovedGuide(guide.id,language);return {id,title,steps};})});
+ }
+ if(url.pathname!=='/api/support/chat')return null;
  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
  const current=await browserWrite(request,env,now),ip=request.headers.get('CF-Connecting-IP')||'unknown';
  // Reject bounded attempts before parsing, Turnstile, or a paid model request.

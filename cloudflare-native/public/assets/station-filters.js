@@ -21,9 +21,9 @@
  const title=labelled(element('h2','stationFiltersTitle'),'filters.title','Filters'),help=labelled(element('p','stationFiltersHelp'),'filters.help','Filter available stations. Stations on your radio stay visible.');
  const empty=element('p','stationFiltersEmpty','station-filters-empty');empty.setAttribute('role','status');const groups=new Map();
  dialog.append(title,help);
- const zipGroup=element('div',null,'station-filter-field'),zipLabel=labelled(element('label'),'filters.zip','ZIP code'),zipInput=element('input','stationFilterZip');zipLabel.htmlFor=zipInput.id;
+ const zipGroup=element('div',null,'station-filter-field'),zipLabel=labelled(element('label'),'filters.zipOptional','ZIP code — optional'),zipInput=element('input','stationFilterZip');zipLabel.htmlFor=zipInput.id;
  zipInput.type='text';zipInput.inputMode='numeric';zipInput.maxLength=5;zipInput.pattern='[0-9]{5}';zipInput.autocomplete='postal-code';zipInput.placeholder='10960';
- const zipHelp=labelled(element('p','stationFilterZipHelp'),'filters.zipHelp','Stations within about 25 miles.'),zipError=element('p','stationFilterZipError','station-filter-error');zipError.hidden=true;zipError.setAttribute('role','alert');zipInput.setAttribute('aria-describedby',zipHelp.id);zipGroup.append(zipLabel,zipInput,zipHelp,zipError);dialog.append(zipGroup,empty);
+ const zipHelp=labelled(element('p','stationFilterZipHelp'),'filters.nearbyHelp','Closest first within about 25 miles. ZIP distances are approximate.'),zipError=element('p','stationFilterZipError','station-filter-error');zipError.hidden=true;zipError.setAttribute('role','alert');zipInput.setAttribute('aria-describedby',zipHelp.id);zipGroup.append(zipLabel,zipInput,zipHelp,zipError);dialog.append(zipGroup,empty);
  const attribution=element('p',null,'station-filter-attribution'),sourceLabel=labelled(element('span'),'filters.zipSource','ZIP locations:'),sourceLink=element('a');sourceLink.href='https://www.geonames.org/';sourceLink.target='_blank';sourceLink.rel='noopener noreferrer';sourceLink.textContent='GeoNames';attribution.append(sourceLabel,sourceLink);zipGroup.append(attribution);
  for(const dimension of dimensions){
   const group=element('div',null,'station-filter-field'),label=labelled(element('label'),'filters.'+dimension.key,dimension.title),select=element('select','stationFilter'+dimension.title);label.htmlFor=select.id;group.append(label,select);groups.set(dimension.key,{group,select});dialog.append(group);
@@ -59,7 +59,9 @@
   }
   empty.hidden=dimensions.some(dimension=>!groups.get(dimension.key).group.hidden);
   labelled(empty,!catalogReady?'filters.categoryUnavailable':useful?'filters.moreCategories':'filters.noCategories',!catalogReady?'Category filters are not available yet. You can still search by ZIP code.':useful?'More categories will appear as station owners add them.':'Station owners haven’t added categories yet.');
+  renderReset();
  }
+ function renderReset(){reset.hidden=!zipInput.value.trim()&&!dimensions.some(dimension=>groups.get(dimension.key).select.value);}
  function readDraft(){return {zip_code:zipInput.value.trim(),...Object.fromEntries(dimensions.map(dimension=>[dimension.key,groups.get(dimension.key).select.value]))};}
  function commit(selection){void applyStationDirectoryFilters(selection);renderChips();}
  function openDialog(){
@@ -67,7 +69,8 @@
  }
  open.onclick=openDialog;
  apply.onclick=()=>{if(!validateZip(true)){zipInput.focus({preventScroll:true});return;}const selection=readDraft();dialog.close('applied');commit(selection);};
- zipInput.oninput=()=>validateZip();zipInput.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();apply.onclick();}};
+ zipInput.oninput=()=>{validateZip();renderReset();};zipInput.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();apply.onclick();}};
+ for(const {select} of groups.values())select.addEventListener('change',renderReset);
  reset.onclick=()=>{renderDraft({zip_code:'',category:''},true);apply.focus({preventScroll:true});};
  close.onclick=()=>dialog.close('cancelled');
  dialog.addEventListener('click',event=>{if(event.target!==dialog)return;const rect=dialog.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dialog.close('cancelled');});

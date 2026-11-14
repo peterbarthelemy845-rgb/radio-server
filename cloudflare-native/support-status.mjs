@@ -56,16 +56,18 @@ export async function supportStatusRoutes(request,env,now,deps={human}){
  }
  if(path==='/api/support/status/verify'){
   await limit(env.DB,'support-status-verify-ip',ip,30,900,now);await limit(env.DB,'support-status-verify-session',current.token_hash,20,900,now);
-  const id=String(body.verification_id||''),code=String(body.code||'');
+  const id=String(body.verification_id||''),code=String(body.code||'').replace(/\s/g,'');
   if(!referencePattern.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the 6-digit email code.');
   const check=await env.DB.prepare(`UPDATE support_status_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *`).bind(id,current.token_hash,now).first();
   if(!check||!check.ticket_id||check.code_hash!==await mac(env,'support-status:'+id+':'+code))throw new HttpError(400,'Incorrect or expired support code.');
-  const operation=randomHex(16);
+  const proved=await env.DB.prepare("SELECT encrypted_payload FROM legal_requests WHERE id=? AND kind='support'").bind(check.ticket_id).first(),provedEmail=proved?String(JSON.parse(await decrypt(env,proved.encrypted_payload)).email||'').trim().toLowerCase():'';
+  if(!provedEmail||!emailPattern.test(provedEmail))throw new HttpError(400,'Incorrect or expired support code.');const emailHash=await mac(env,'support-email:'+provedEmail),operation=randomHex(16);
   await env.DB.batch([
    env.DB.prepare(`UPDATE support_status_verifications SET consumed_at=?,operation_token=? WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>?`).bind(now,operation,id,current.token_hash,now),
    env.DB.prepare(`INSERT INTO support_ticket_grants(session_hash,ticket_id,expires)
     SELECT session_hash,ticket_id,? FROM support_status_verifications WHERE id=? AND operation_token=?
-    ON CONFLICT(session_hash,ticket_id) DO UPDATE SET expires=excluded.expires`).bind(now+1800,id,operation)
+    ON CONFLICT(session_hash,ticket_id) DO UPDATE SET expires=excluded.expires`).bind(now+1800,id,operation),
+   env.DB.prepare(`INSERT INTO support_sender_grants(session_hash,email_hash,verified_at,expires) SELECT session_hash,?,?,? FROM support_status_verifications WHERE id=? AND operation_token=? ON CONFLICT(session_hash,email_hash) DO UPDATE SET verified_at=excluded.verified_at,expires=excluded.expires`).bind(emailHash,now,Math.min(current.expires,now+2592000),id,operation)
   ]);
   if(!await env.DB.prepare('SELECT 1 FROM support_status_verifications WHERE id=? AND operation_token=?').bind(id,operation).first())throw new HttpError(400,'Incorrect or expired support code.');
   return json({status:'verified',reference:check.ticket_id,expires_in:1800});

@@ -3,6 +3,7 @@
  const form=document.getElementById('editForm'),editor=document.getElementById('editor'),stream=document.getElementById('ownerStreamSettings'),options=document.getElementById('ownerAccountOptions'),notice=document.getElementById('ownerSaveState');
  const save=form?.querySelector('button[type="submit"]')||document.getElementById('ownerSave');
  if(!form||!editor||!save||!notice)return;
+ const bio=form.elements.bio,bioRemaining=document.createElement('small');bioRemaining.id='ownerBioRemaining';bioRemaining.className='owner-bio-remaining';bioRemaining.setAttribute('aria-live','polite');bio?.after(bioRemaining);
  let baseline=null,approvedUrl='',repair=false;
  const text=(key,fallback)=>{const value=window.appI18n?.t(key);return value&&value!==key?value:fallback;};
  const canonical=value=>{try{return window.parsePublicStreamUrl(value).href;}catch{return String(value||'').trim();}};
@@ -23,8 +24,9 @@
   save.disabled=!ready||editor.hidden||locked||!permit||!needsSave();
   notice.hidden=!ready;
   if(ready){
-   const key=locked?'saving':!modified&&!required?'owner.upToDate':permit?'owner.readyToSave':'owner.streamCheckRequired';
-   const fallback=locked?'Saving…':!modified&&!required?'Up to date':permit?'Ready to save':'Test your stream before saving.';
+   const port=document.getElementById('ownerStreamPort'),missingPort=port&&!port.disabled&&!port.value.trim();
+   const key=locked?'saving':!modified&&!required?'owner.upToDate':permit?'owner.readyToSave':missingPort?'registration.enterPort':'registration.testRequired';
+   const fallback=locked?'Saving…':!modified&&!required?'Up to date':permit?'Ready to save':missingPort?'Enter port number':'Test your stream';
    notice.dataset.i18n=key;notice.dataset.state=locked?'saving':!modified&&!required?'clean':permit?'ready':'needs-check';
    const label=text(key,fallback);if(notice.textContent!==label)notice.textContent=label;
   }
@@ -33,6 +35,8 @@
   const check=document.getElementById('ownerStreamTestStatus'),failed=['error','invalid','unconfirmed'].includes(check?.dataset.state);
   if(stream&&ready&&(!approvedUrl||canonical(form.elements.stream_url.value)!==approvedUrl||!permit||failed))stream.open=true;
   form.dataset.ownerChanged=modified?'true':'false';
+  if(ready&&!modified){delete form.dataset.dirty;window.resetFormDraftBaseline?.(form);}
+  if(bio){const left=Math.max(0,250-bio.value.length);bioRemaining.hidden=left>50;const translated=window.appI18n?.t('owner.bioRemaining',{count:left});bioRemaining.textContent=translated&&translated!=='owner.bioRemaining'?translated:left+(left===1?' character left':' characters left');bioRemaining.dataset.state=left<=10?'limit':'near';}
  }
  window.ownerEditorNeedsSave=needsSave;
  window.ownerEditorSaveAllowed=()=>{render();return needsSave()&&form.dataset.streamSaveAllowed==='true';};
@@ -50,12 +54,13 @@
   approvedUrl=record.approved?.status==='published'?canonical(record.approved.stream_url):'';
   if(stream&&(!same||!preserveDraft))stream.open=!approvedUrl||canonical(form.elements.stream_url.value)!==approvedUrl||form.dataset.streamSaveAllowed!=='true';
   if(options&&!same)options.open=false;
+  if(!same||!preserveDraft)window.resetFormDraftBaseline?.(form);
   render();
  };
  window.ownerEditorSaved=(captured,result={})=>{
   if(!bound()||String(captured?.code||'')!==baseline.code)return;
   baseline={...optionalValues(baseline),...values(captured),code:baseline.code,revision:String(captured.revision||baseline.revision)};
-  repair=result.stream_check_required===true;render();
+  repair=result.stream_check_required===true;window.resetFormDraftBaseline?.(form);render();
  };
  for(const type of ['input','change','owner-stream-mode-changed','owner-metadata-state-changed','form-busy-changed'])form.addEventListener(type,render);
  form.addEventListener('reset',()=>{baseline=null;approvedUrl='';repair=false;if(stream)stream.open=false;if(options)options.open=false;queueMicrotask(render);});

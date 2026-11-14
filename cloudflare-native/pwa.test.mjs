@@ -6,7 +6,7 @@ const source=path=>readFileSync(new URL('./public'+path,import.meta.url));
 function serviceWorker(){
  const events={},added=[],deleted=[],network=[],matches=[];let skip=0,claim=0,online=true;
  const stored=new Map(publicFiles.map(path=>[path,'public offline asset '+path]));
- const caches={async open(name){assert.equal(name,'radio-locals-public-v2');return {async addAll(paths){added.push(...paths);}};},async keys(){return ['radio-locals-public-v0','radio-locals-public-v1','radio-locals-public-v2','unrelated-cache'];},async delete(name){deleted.push(name);return true;},async match(path){matches.push(path);return stored.has(path)?new Response(stored.get(path)):undefined;}};
+ const caches={async open(name){assert.equal(name,'radio-locals-public-v3');return {async addAll(paths){added.push(...paths);}};},async keys(){return ['radio-locals-public-v0','radio-locals-public-v1','radio-locals-public-v3','unrelated-cache'];},async delete(name){deleted.push(name);return true;},async match(path){matches.push(path);return stored.has(path)?new Response(stored.get(path)):undefined;}};
  const self={location:{origin},addEventListener(name,fn){events[name]=fn;},async skipWaiting(){skip++;},clients:{async claim(){claim++;}}};
  runInNewContext(source('/sw.js').toString(),{self,caches,URL,Response,fetch:async request=>{network.push(request);if(!online)throw Error('offline');return new Response('private network response '+request.url);}});
  async function lifecycle(name){let done;events[name]({waitUntil(promise){done=promise;}});await done;}

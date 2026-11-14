@@ -77,3 +77,7 @@ test('owner logo and stream guidance uses the existing signed-in editor, require
  }
  assert.match(getApprovedGuide('station-logo').content,/registered email and Station code/);assert.match(getApprovedGuide('station-logo').content,/content review/);assert.match(getApprovedGuide('station-stream').content,/Test the exact public listening URL/);assert.match(getApprovedGuide('station-stream').content,/Never enter an encoder or administrator password/);
 });
+test('approved help articles remain public in English and Creole without session, bot, model credits or AI work',async()=>{
+ const f=await fixture();for(const language of ['en','ht']){const response=await aiSupportRoutes(new Request(origin+'/api/support/guides?language='+language),{},now,{human:()=>{throw Error('No bot provider needed');},runAI:()=>{throw Error('No model needed');}}),result=await response.json();assert.equal(result.language,language);assert.equal(result.guides.length,approvedGuides.length);assert.deepEqual(result.guides.find(guide=>guide.id==='no-sound').steps,getApprovedGuide('no-sound',language).steps);assert.equal(f.calls.length+f.checks.length,0);}
+ await assert.rejects(aiSupportRoutes(new Request(origin+'/api/support/guides?language=bad'),{},now),e=>e.status===400);
+});

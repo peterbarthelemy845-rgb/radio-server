@@ -6,6 +6,27 @@ const utc=text=>Date.parse(text)/1000;
 const days=f=>f.sqlite.prepare('SELECT day,reported_seconds FROM listening_daily ORDER BY day').all().map(row=>({...row}));
 const months=f=>f.sqlite.prepare('SELECT month FROM monthly_activity ORDER BY month').all().map(row=>row.month);
 
+test('share reports separate attempts and browser outcomes, preserve first outcome and include legacy unknowns',async()=>{
+ const f=await operationsFixture(),event={event_id:'a'.repeat(32),station_code:String(f.station),channel:'more'};
+ await reportsRoutes(f.request('/api/events',{...event,phase:'attempt'}),f.env,f.now);await reportsRoutes(f.request('/api/events',{...event,phase:'attempt'}),f.env,f.now);
+ for(const outcome of ['share_sheet_completed','cancelled','link_copied'])await reportsRoutes(f.request('/api/events',{...event,phase:'outcome',outcome}),f.env,f.now+1);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM share_events').get().n,1);assert.equal(f.sqlite.prepare('SELECT outcome FROM share_event_states').get().outcome,'share_sheet_completed');
+ f.sqlite.prepare('INSERT INTO share_events(id,station_code,channel,created_at) VALUES (?,?,?,?)').run('b'.repeat(32),f.station,'whatsapp',f.now);
+ f.owner();const result=await(await reportsRoutes(f.request('/api/owner/reports'),f.env,f.now+2)).json();assert.equal(result.stations[0].share_clicks,2);assert.deepEqual(result.share_outcomes.map(row=>({...row})).sort((a,b)=>a.outcome.localeCompare(b.outcome)),[{station_code:f.station,outcome:'attempted',count:1},{station_code:f.station,outcome:'share_sheet_completed',count:1}]);assert.match(result.note,/delivery or reading by a recipient is not verified/);
+ const bad={...event,event_id:'c'.repeat(32),phase:'outcome',outcome:'share_sheet_completed'};await assert.rejects(reportsRoutes(f.request('/api/events',bad),f.env,f.now+3),error=>error.status===404);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM share_events').get().n,2);
+ await assert.rejects(reportsRoutes(f.request('/api/events',{...event,phase:'outcome',outcome:'delivered_to_recipient'}),f.env,f.now+3),error=>error.status===400);
+ await assert.rejects(reportsRoutes(f.request('/api/events',{...event,phase:'outcome',outcome:'cancelled',station_code:'999'}),f.env,f.now+3),error=>error.status===409);
+});
+
+test('share outcomes are session-bound and station-scoped, and expire with their attempt records',async()=>{
+ const f=await operationsFixture(),event={event_id:'d'.repeat(32),station_code:String(f.station),channel:'more',phase:'attempt'};await reportsRoutes(f.request('/api/events',event),f.env,f.now);
+ const state=f.sqlite.prepare('SELECT session_hash FROM share_event_states').get();f.sqlite.prepare("UPDATE share_event_states SET session_hash='another-session'").run();
+ await assert.rejects(reportsRoutes(f.request('/api/events',{...event,phase:'outcome',outcome:'cancelled'}),f.env,f.now+1),error=>error.status===404);await assert.rejects(reportsRoutes(f.request('/api/events',event),f.env,f.now+1),error=>error.status===409);
+ f.sqlite.prepare('UPDATE share_event_states SET session_hash=?').run(state.session_hash);f.owner();const other=f.sqlite.prepare("INSERT INTO stations(name,stream_url,contact_email,status,created_at,updated_at) VALUES ('Other','https://example.org/live','other@example.org','published',?,?) RETURNING code").get(f.now,f.now).code;
+ f.sqlite.prepare('INSERT INTO share_events(id,station_code,channel,created_at) VALUES (?,?,?,?)').run('e'.repeat(32),other,'more',f.now);const report=await(await reportsRoutes(f.request('/api/owner/reports'),f.env,f.now)).json();assert.ok(report.share_outcomes.every(row=>row.station_code===f.station));
+ f.sqlite.prepare('DELETE FROM share_events WHERE id=?').run(event.event_id);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM share_event_states').get().n,0);
+});
+
 test('credited time crossing a UTC month boundary is split between the actual listening dates',async()=>{
  const f=await operationsFixture(),start=utc('2026-11-30T23:59:30Z');
  await recordListening(f.env,'radio-one',f.station,start);

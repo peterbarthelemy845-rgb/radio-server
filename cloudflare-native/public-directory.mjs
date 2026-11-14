@@ -6,6 +6,7 @@ const stationColumns=`CAST(code AS TEXT) AS listener_code,CAST(updated_at AS TEX
  'Internet Radio' AS subtitle,CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key END AS logo_url,
  CASE WHEN artwork_key IS NULL AND name='La Voix Divine' AND stream_url='https://icecast3.getstreamhosting.com/proxy/radiodivinessl/live' THEN '/assets/radiolavoixdivine.png' WHEN artwork_key IS NULL THEN '' ELSE '/artwork/'||artwork_key||'?size=192' END AS logo_thumb_url`;
 export function foldDirectorySearch(value){return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+export function matchesDirectorySearch(value,query){return foldDirectorySearch(query).trim().split(/\s+/).filter(Boolean).every(token=>foldDirectorySearch(value).includes(token));}
 export async function publicStation(db,code){return db.prepare(`SELECT ${stationColumns} FROM stations WHERE code=? AND status='published'`).bind(Number(code)).first();}
 export async function publicStationBatch(request,env){
  const params=new URL(request.url).searchParams,values=params.getAll('codes'),input=values[0]||'',codes=input.split(',');
@@ -25,34 +26,37 @@ export async function directoryResponse(request,env){
  if(zip_code){clauses.push('zip_code IN (SELECT value FROM json_each(?))');bindings.push(JSON.stringify(nearbyZipCodes(zip_code)));}
  const filters=clauses.length?' AND '+clauses.join(' AND '):'';
  const raw=params.get('q')||'';if(raw.length>96)throw new HttpError(400,'Search with 96 characters or fewer.');
- const query=foldDirectorySearch(raw.trim().replace(/^#\s*(?=\d)/,'')),explicit=params.has('limit'),limit=explicit?Number(params.get('limit')):params.has('q')||language||category||zip_code?50:1000;
+ const query=foldDirectorySearch(raw.trim().replace(/^#\s*(?=\d)/,'')).replace(/\s+/g,' '),explicit=params.has('limit'),limit=explicit?Number(params.get('limit')):params.has('q')||language||category||zip_code?50:1000;
  if(!Number.isInteger(limit)||limit<1||limit>(explicit?100:1000)||explicit&&!/^[1-9][0-9]{0,2}$/.test(params.get('limit')))throw new HttpError(400,'Choose a page size from 1 to 100.');
- let after=0,ceiling;
+ let after=0,afterRank=0,ceiling;
+ const zipOrder=zip_code?JSON.stringify(nearbyZipCodes(zip_code)):null;
  const cursor=params.get('cursor');
  if(cursor){
   if(cursor.length>1024||!/^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/.test(cursor))throw new HttpError(400,'Start this station search again.');
   const [data,signature]=cursor.split('.');if(!sameSignature(signature,await mac(env,'public-directory:'+data)))throw new HttpError(400,'Start this station search again.');
   let value;try{value=decode(data);}catch{throw new HttpError(400,'Start this station search again.');}
-  if(value.v!==3||value.q!==query||value.language!==language||value.category!==category||value.zip_code!==zip_code||value.zip_radius_miles!==zip_radius_miles||value.limit!==limit||!Number.isSafeInteger(value.after)||!Number.isSafeInteger(value.ceiling)||value.after<0||value.ceiling<value.after||value.ceiling>2147483647)throw new HttpError(400,'Start this station search again.');
-  after=value.after;ceiling=value.ceiling;
+  if(value.v!==4||value.q!==query||value.language!==language||value.category!==category||value.zip_code!==zip_code||value.zip_radius_miles!==zip_radius_miles||value.limit!==limit||!Number.isSafeInteger(value.after)||!Number.isSafeInteger(value.rank)||value.rank<0||value.rank>100000||!Number.isSafeInteger(value.ceiling)||value.after<0||value.ceiling<value.after||value.ceiling>2147483647)throw new HttpError(400,'Start this station search again.');
+  after=value.after;afterRank=value.rank;ceiling=value.ceiling;
  }else ceiling=Number((await env.DB.prepare("SELECT MAX(code) AS ceiling FROM stations WHERE status='published'"+filters).bind(...bindings).first())?.ceiling||0);
- const stations=[];let scanned=0,hasMore=false,last=after;
+ const stations=[];let scanned=0,hasMore=false,last=after,rank=afterRank;
  // A bounded scan preserves the browser's exact Unicode accent folding without
  // an unbounded table load or an incompatible SQLite-only approximation.
- while(last<ceiling&&scanned<1000){
+ while(scanned<1000){
   const batchSize=query?Math.min(200,1000-scanned):limit+1;
-  const rows=(await env.DB.prepare(`SELECT ${stationColumns} FROM stations WHERE status='published'${filters} AND code>? AND code<=? ORDER BY code LIMIT ?`).bind(...bindings,last,ceiling,batchSize).all()).results;
+  const source=zip_code?'stations JOIN json_each(?) nearest_zip ON stations.zip_code=nearest_zip.value':'stations',rankColumn=zip_code?'CAST(nearest_zip.key AS INTEGER)':'0';
+  const position=zip_code?`(${rankColumn}>? OR (${rankColumn}=? AND code>?))`:'code>?';
+  const rows=(await env.DB.prepare(`SELECT ${stationColumns},${rankColumn} AS zip_rank FROM ${source} WHERE status='published'${filters} AND ${position} AND code<=? ORDER BY ${zip_code?'zip_rank,':''}code LIMIT ?`).bind(...(zip_code?[zipOrder]:[]),...bindings,...(zip_code?[rank,rank,last]:[last]),ceiling,batchSize).all()).results;
   if(!rows.length)break;
   for(const station of rows){
-   const match=!query||foldDirectorySearch(station.name+' '+station.listener_code).includes(query);
+   const match=!query||matchesDirectorySearch(station.name+' '+station.listener_code,query);
    if(match&&stations.length===limit){hasMore=true;break;}
-   last=Number(station.listener_code);scanned++;if(match)stations.push(station);
+   last=Number(station.listener_code);rank=station.zip_rank;scanned++;if(match){const {zip_rank,...publicStation}=station;stations.push(publicStation);}
   }
   if(hasMore||rows.length<batchSize)break;
-  if(scanned>=1000&&last<ceiling)hasMore=true;
+  if(scanned>=1000)hasMore=true;
  }
  let next_cursor=null;
- if(hasMore){const data=encode({v:3,after:last,ceiling,q:query,language,category,zip_code,zip_radius_miles,limit});next_cursor=data+'.'+await mac(env,'public-directory:'+data);}
+ if(hasMore){const data=encode({v:4,after:last,rank,ceiling,q:query,language,category,zip_code,zip_radius_miles,limit});next_cursor=data+'.'+await mac(env,'public-directory:'+data);}
  const facets={};for(const [field,key] of [['language','languages'],['category','categories']]){const counts=(await env.DB.prepare(`SELECT ${field} AS value,count(*) AS count FROM stations WHERE status='published' AND ${field}!='' GROUP BY ${field}`).all()).results;facets[key]=metadataOptions[key].flatMap(option=>{const count=Number(counts.find(item=>item.value===option.value)?.count||0);return count?[{...option,count}]:[];});}
  return json({stations,has_more:hasMore,next_cursor,limit,query,language,category,zip_code,zip_radius_miles,zip_location_known,scanned_count:scanned,facets,metadata_options:metadataOptions});
 }

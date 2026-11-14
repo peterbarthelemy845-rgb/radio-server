@@ -14,3 +14,5 @@ dialog.support-tickets-dialog input{letter-spacing:normal}
 .support-tickets-dialog .support-ticket-tracker [hidden]{display:none!important}
 @media(max-width:600px){dialog.support-tickets-dialog{width:100%;max-width:none;margin:auto auto 0;border-bottom:0;border-radius:20px 20px 0 0}.support-tickets-dialog-body{padding-bottom:max(20px,env(safe-area-inset-bottom))}}
 @media(forced-colors:active){dialog.support-tickets-dialog{border:1px solid CanvasText}}
+#ticketForm .support-subject-summary{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;font-size:.9375rem}
+#ticketForm .support-subject-change{width:auto;min-height:44px;margin:0;padding:4px 8px;background:none;color:#1756a2;text-decoration:underline}

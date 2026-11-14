@@ -1,9 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {nearbyZipCodes,zipLocationKnown,ZIP_RADIUS_MILES} from './zip-locations.mjs';
+import {nearbyZipCodes,zipLocationKnown,zipDistanceMiles,ZIP_RADIUS_MILES} from './zip-locations.mjs';
 
 test('nearby ZIP search includes neighboring New York ZIPs and excludes distant California',()=>{
- const local=nearbyZipCodes('10001');assert.equal(ZIP_RADIUS_MILES,25);assert.ok(local.includes('10001'));assert.ok(local.includes('10002'));assert.ok(!local.includes('90210'));assert.deepEqual([...local].sort(),local);assert.equal(new Set(local).size,local.length);
+ const local=nearbyZipCodes('10001');assert.equal(ZIP_RADIUS_MILES,25);assert.ok(local.includes('10001'));assert.ok(local.includes('10002'));assert.ok(!local.includes('90210'));assert.equal(local[0],'10001');for(let i=1;i<local.length;i++)assert.ok(zipDistanceMiles('10001',local[i-1])<=zipDistanceMiles('10001',local[i]),'ZIP centroid distances stay ascending');assert.equal(new Set(local).size,local.length);
 });
 test('ZIP location data preserves leading zeroes and cached results cannot be mutated',()=>{
  assert.equal(zipLocationKnown('00501'),true);const result=nearbyZipCodes('00501');assert.ok(result.includes('00501'));assert.ok(Object.isFrozen(result));assert.throws(()=>result.push('99999'),TypeError);assert.equal(nearbyZipCodes('00501'),result);

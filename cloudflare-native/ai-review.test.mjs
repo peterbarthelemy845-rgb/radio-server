@@ -17,6 +17,13 @@ async function fixture(){
  return f;
 }
 const stub=(data=suggestion)=>{const calls=[];return {calls,runAI:async(_env,args)=>{calls.push(args);return {data,generated_at:1800000000,cache_hit:false};}};};
+test('Spam tickets are excluded from manual, label and scheduled AI assistance until an administrator restores them',async()=>{
+ const f=await fixture();f.admin();f.env.AI_ASSISTANTS_ENABLED='true';f.env.OPENAI_API_KEY='test-no-network';f.sqlite.prepare("INSERT INTO support_ticket_flags(ticket_id,folder,reason,updated_at) VALUES (?,'spam','many_links',?)").run(ticketId,f.now);const deps=stub();await assert.rejects(f.post('ticket',{ticket_id:ticketId},deps),error=>error.status===404);assert.equal((await scheduledReviewAI(f.env,f.now,deps)).processed,0);const labels=await(await aiReviewRoutes(f.request('/api/admin/ai/tickets?ids='+ticketId),f.env,f.now,deps)).json();assert.equal(labels.tickets.length,0);assert.equal(deps.calls.length,0);
+ f.sqlite.prepare("UPDATE support_ticket_flags SET folder='inbox',updated_at=? WHERE ticket_id=?").run(f.now+1,ticketId);assert.equal((await f.post('ticket',{ticket_id:ticketId},deps)).status,200);assert.equal(deps.calls.length,1);
+});
+test('moving a ticket to Spam during model work discards the queued result and cannot restore its cleared cache',async()=>{
+ const f=await fixture();f.admin();let calls=0;const deps={runAI:async()=>{calls++;f.sqlite.prepare("INSERT INTO support_ticket_flags(ticket_id,folder,reason,updated_at) VALUES (?,'spam','manual',?)").run(ticketId,f.now);return {data:suggestion,generated_at:f.now,cache_hit:false};}};await assert.rejects(f.post('ticket',{ticket_id:ticketId},deps),error=>error.status===404||error.status===409);assert.equal(calls,1);const queued=f.sqlite.prepare('SELECT * FROM ai_ticket_assistance WHERE ticket_id=?').get(ticketId);assert.equal(queued.dirty,0);assert.equal(queued.encrypted_result,'');assert.equal(queued.lease_token,'');assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);
+});
 function unchangedCounts(f){return Object.fromEntries(['mail_outbox','support_replies','legal_actions','admin_audit'].map(table=>[table,f.sqlite.prepare('SELECT count(*) n FROM '+table).get().n]));}
 
 test('AI admin assistants require MFA, same-origin CSRF and POST before any model request',async()=>{

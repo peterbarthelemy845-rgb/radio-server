@@ -4,8 +4,8 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('./public/assets/support-chat.js',import.meta.url),'utf8');
 const answer={status:'ok',answer:'Turn up the volume on your radio.',sources:[{id:'no-sound',title:'No sound',steps:['Turn up the volume on your radio.','Try another station.']}],needs_support:false};
-function fixture({missing=false,transport=true,flow=true,tracker=true,humanError=null,reply=answer}={}){
- const nodes=new Map(),events=new Map(),calls=[],checks=[],contacts=[],ticketOpens=[],draft={name:'Listener',email:'private@example.com',message:'Existing ticket draft',station_code:'13'};let document,language='en';
+function fixture({missing=false,transport=true,flow=true,tracker=true,humanError=null,reply=answer,currentCode=null,reportAccepted=true}={}){
+ const nodes=new Map(),events=new Map(),calls=[],checks=[],contacts=[],ticketOpens=[],reports=[],draft={name:'Listener',email:'private@example.com',message:'Existing ticket draft',station_code:'13'};let document,language='en';
  class Element{
   constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attrs={};this.dataset={};this.hidden=false;this.textContent='';this.disabled=false;this.value='';this.handlers=new Map();}
   set id(value){this._id=value;nodes.set(value,this);}get id(){return this._id;}
@@ -22,12 +22,13 @@ function fixture({missing=false,transport=true,flow=true,tracker=true,humanError
  const support=new Element('section');support.id='support';const guided=new Element('section');guided.id='supportGuidedFlow';const ticket=new Element('form');ticket.id='ticketForm';ticket.hidden=true;ticket.elements={};for(const [key,value] of Object.entries(draft)){const input=new Element('input');input.value=value;ticket.elements[key]=input;ticket.append(input);}support.append(guided,ticket);
  document={hidden:false,activeElement:null,getElementById:id=>missing&&id==='support'?null:nodes.get(id)||null,createElement:tag=>new Element(tag)};
  const window={appI18n:{get language(){return language;},t:key=>key},addEventListener(name,fn){events.set(name,fn);}};
+ window.currentStationTileCode=()=>currentCode;window.openStationProblemReport=options=>{reports.push(options);return reportAccepted;};
  if(tracker)window.supportTickets={open(){ticketOpens.push(true);}};
- if(flow)window.supportGuidedFlow={openContact(){contacts.push(true);ticket.hidden=false;ticket.elements.name.focus();}};
+ if(flow)window.supportGuidedFlow={openContact(options){contacts.push(options);ticket.hidden=false;if(options?.focus!==false)ticket.elements.name.focus();}};
  if(transport)window.supportChatTransport={async human(form,action,signal){checks.push({form,action,signal});if(humanError)throw humanError;return 'fresh-token-'+checks.length;},async api(path,body,options){calls.push({path,body,options});if(typeof reply==='function')return reply(path,body,options);if(reply instanceof Error)throw reply;return structuredClone(reply);}};
  vm.runInNewContext(source,{document,window,AbortController});
  const get=id=>nodes.get(id),input=get('supportChatQuestion'),form=get('supportChatForm');
- return {nodes,window,document,support,ticket,draft,calls,checks,contacts,ticketOpens,get,toggle:()=>get('supportChatToggle').onclick(),type(value){input.value=value;input.emit('input');},submit(){return form.onsubmit({preventDefault(){}});},buttons(){return get('supportChat').children[1].children.find(child=>child.className==='support-chat-actions').children;},changeLanguage(value){language=value;events.get('app-language-changed')?.();},hide(){events.get('pagehide')?.();}};
+ return {nodes,window,document,support,ticket,draft,calls,checks,contacts,ticketOpens,reports,get,toggle:()=>get('supportChatToggle').onclick(),type(value){input.value=value;input.emit('input');},submit(){return form.onsubmit({preventDefault(){}});},buttons(){return get('supportChat').children[1].children.find(child=>child.className==='support-chat-actions').children;},choose(index){form.children.find(child=>child.className==='support-chat-suggestions').children[index].onclick();},setCurrentCode(value){currentCode=value;events.get('radio-status-updated')?.();},changeLanguage(value){language=value;events.get('app-language-changed')?.();},hide(){events.get('pagehide')?.();}};
 }
 const settle=()=>new Promise(setImmediate);
 test('chat is Support-only, expanded by default, and makes no request just by opening or selecting a suggestion',()=>{
@@ -72,4 +73,25 @@ test('clearing chat removes conversation context and pagehide cancels work witho
 test('invalid questions and malformed responses never erase the draft or create false success',async()=>{
  const f=fixture();f.type('');await f.submit();assert.match(f.get('supportChatStatus').textContent,/Enter a question/);f.type('x'.repeat(1001));await f.submit();assert.equal(f.calls.length+f.checks.length,0);
  const malformed=fixture({reply:{answer:'A result',sources:[{id:'javascript:alert(1)',title:'Bad',steps:[]}]}});malformed.type('My question');await malformed.submit();assert.equal(malformed.get('supportChatQuestion').value,'My question');assert.equal(malformed.get('supportChatThread').children.length,0);assert.match(malformed.get('supportChatStatus').textContent,/could not answer/);
+});
+test('Wi-Fi choice passes its subject to Contact even when AI is limited, without resubmitting a question or changing the draft',async()=>{
+ const error=new Error('Allowance reached');error.status=429;const f=fixture({reply:error});f.choose(0);await f.submit();f.buttons()[0].onclick();assert.equal(f.contacts[0].subject,'Wi-Fi connection problem');assert.equal(f.calls.length,1);for(const [key,value] of Object.entries(f.draft))assert.equal(f.ticket.elements[key].value,value);
+});
+test('No sound can report only the fresh selected current station and rechecks it when clicked without calling AI',()=>{
+ const f=fixture({currentCode:'24'});assert.equal(f.get('supportChatReportStation').hidden,true);f.choose(2);assert.equal(f.get('supportChatReportStation').hidden,false);f.get('supportChatReportStation').onclick();assert.equal(f.reports.length,1);assert.deepEqual(Object.keys(f.reports[0]),['code']);assert.equal(f.reports[0].code,'24');assert.equal(f.contacts[0].subject,'Station problem');assert.equal(f.contacts[0].focus,false);assert.equal(f.calls.length+f.checks.length,0);
+ f.setCurrentCode(null);assert.equal(f.get('supportChatReportStation').hidden,true);f.get('supportChatReportStation').onclick();assert.equal(f.reports.length,1);assert.match(f.get('supportChatStatus').textContent,/current station is unavailable/);assert.equal(f.ticket.elements.station_code.value,'13');
+});
+test('No sound report never guesses a first station, accepts invalid current codes, or proceeds while the report flow is busy',()=>{
+ for(const code of [null,'0','1','0013','13,24','javascript:alert(1)']){const f=fixture({currentCode:code});f.choose(2);assert.equal(f.get('supportChatReportStation').hidden,true);f.get('supportChatReportStation').onclick();assert.equal(f.reports.length,0);}
+ const f=fixture({currentCode:'24',reportAccepted:false});f.choose(2);f.get('supportChatReportStation').onclick();assert.equal(f.contacts.length,0);assert.equal(f.calls.length,0);f.changeLanguage('ht');assert.equal(f.get('supportChatReportStation').textContent,'Rapòte estasyon sa a');
+});
+test('a no-sound guide answer exposes the report action for the fresh station without rewriting the chat question into a ticket',async()=>{
+ const f=fixture({currentCode:'24'});f.type('My speaker is quiet');await f.submit();assert.equal(f.get('supportChatReportStation').hidden,false);f.get('supportChatReportStation').onclick();assert.equal(f.reports[0].code,'24');assert.equal(f.ticket.elements.message.value,f.draft.message);
+});
+test('AI limits expose real help articles on demand without another AI call or bot check, and cache each language',async()=>{
+ const limited=new Error('Allowance reached');limited.status=429;const guides={guides:[{id:'no-sound',title:'No sound <script>safe</script>',steps:['Turn up the volume.','Try another station.']}]};const f=fixture({reply:async path=>{if(path.startsWith('/api/support/guides'))return guides;throw limited;}});assert.equal(f.get('supportChatGuides').hidden,true);f.type('No sound');await f.submit();const help=f.get('supportChatGuides');assert.equal(help.hidden,false);assert.equal(f.calls.length,1);help.open=true;help.emit('toggle');await settle();assert.equal(f.calls[1].path,'/api/support/guides?language=en');assert.equal(f.calls[1].body,undefined);assert.equal(f.checks.length,1);const list=help.children[2];assert.equal(list.children[0].children[0].textContent,guides.guides[0].title);assert.equal(list.children[0].children[1].children[0].textContent,'Turn up the volume.');help.open=false;help.emit('toggle');help.open=true;help.emit('toggle');await settle();assert.equal(f.calls.length,2);f.changeLanguage('ht');await settle();assert.equal(f.calls[2].path,'/api/support/guides?language=ht');assert.equal(help.children[0].textContent,'Li gid èd yo');assert.equal(f.checks.length,1);
+});
+test('unsupported questions expose help guides and guide failures leave Contact available without losing the draft',async()=>{
+ const f=fixture({reply:{status:'no_match',answer:'Contact support for help.',sources:[],needs_support:true}});f.type('Unknown issue');await f.submit();assert.equal(f.get('supportChatGuides').hidden,false);
+ const failure=new Error('Unavailable');const g=fixture({reply:failure});g.type('Keep my question');await g.submit();const help=g.get('supportChatGuides');help.open=true;help.emit('toggle');await settle();assert.match(help.children[1].textContent,/Help guides could not load/);assert.equal(g.get('supportChatQuestion').value,'Keep my question');g.buttons()[0].onclick();assert.equal(g.contacts.length,1);assert.equal(g.calls.filter(call=>call.path==='/api/support/chat').length,1);
 });

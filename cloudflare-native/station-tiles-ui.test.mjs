@@ -16,6 +16,7 @@ test('compact tiles request a small thumbnail and fall back to the full logo bef
  const render=runInNewContext(source.slice(source.indexOf('function renderStationSlider('),source.indexOf('list=function()'))+';renderStationSlider;',{document:{createElement:node}}),track=node();
  render(track,[{name:'Station',listener_code:'13',logo_url:'/artwork/logo.png',logo_thumb_url:'/artwork/logo.png?size=192'}],'No stations');const image=track.children[0].children[0].children[0];
  assert.equal(image.src,'/artwork/logo.png?size=192');image.onerror();assert.equal(image.src,'/artwork/logo.png');assert.equal(typeof image.onerror,'function');image.onerror();assert.equal(image.onerror,null);assert.deepEqual(image.srcWrites,['/artwork/logo.png?size=192','/artwork/logo.png','/assets/logo-placeholder.svg']);
+ image.retryArtwork();assert.equal(image.src,'/artwork/logo.png?size=192');assert.equal(typeof image.onerror,'function');image.onerror();image.onerror();assert.equal(image.onerror,null,'each explicit online retry still has a bounded fallback');assert.equal(image.srcWrites.length,6);
 });
 
 test('artwork and its visible name form one button and either tap starts one automatic add',()=>{
@@ -63,11 +64,11 @@ function searchFixture({known=true,codes=['13'],stations=[{name:'Local Radio',li
  return {$,openings,focusCalls,search(query){$('search').value=query;$('search').oninput();},names(id){return $(id).children.filter(item=>item.className==='station-slider-item').map(item=>item.children[0].children[1].textContent);}};
 }
 
-test('Clear search appears only when a real query matches neither saved nor available stations',()=>{
+test('Clear search stays visible for every typed value, including matching and blank-space queries',()=>{
  const f=searchFixture();
- for(const query of ['', '   ', 'LOCAL', 'News', '13', '14']){f.search(query);assert.equal(f.$('clearStationSearch').hidden,true,query);}
+ for(const query of ['', '   ', 'LOCAL', 'News', '13', '14']){f.search(query);assert.equal(f.$('clearStationSearch').hidden,!query.length,query);}
  f.search('missing station');assert.equal(f.$('clearStationSearch').hidden,false);assert.deepEqual(f.names('savedStations'),[]);assert.deepEqual(f.names('stations'),[]);
- f.search('news');assert.equal(f.$('clearStationSearch').hidden,true);assert.deepEqual(f.names('stations'),['Morning News']);
+ f.search('news');assert.equal(f.$('clearStationSearch').hidden,false);assert.deepEqual(f.names('stations'),['Morning News']);
  assert.deepEqual(f.openings,[],'searching never issues a station action');
 });
 
@@ -84,18 +85,24 @@ test('Clear search works before a radio has been linked',()=>{
 
 test('station search accepts pasted # codes and matches accents without changing visible names',()=>{
  const f=searchFixture({stations:[{name:'Radio Étoile',listener_code:'13'},{name:'Espérance FM',listener_code:'14'}]});
- for(const code of ['13','#13',' # 13 ']){f.search(code);assert.deepEqual(f.names('savedStations'),['Radio Étoile']);assert.equal(f.$('clearStationSearch').hidden,true);}
+ for(const code of ['13','#13',' # 13 ']){f.search(code);assert.deepEqual(f.names('savedStations'),['Radio Étoile']);assert.equal(f.$('clearStationSearch').hidden,false);}
  f.search('etoile');assert.deepEqual(f.names('savedStations'),['Radio Étoile']);f.search('ESPERANCE');assert.deepEqual(f.names('stations'),['Espérance FM']);f.search('espérance');assert.deepEqual(f.names('stations'),['Espérance FM']);assert.deepEqual(f.openings,[]);
+});
+
+test('local tile search accepts unordered words and aligns repeated spaces with the server query',()=>{
+ const directory={query:'voix radio',loadedQuery:'voix radio',loading:false,hasMore:false},f=searchFixture({known:false,stations:[{name:'Radio La Voix Divine',listener_code:'13'},{name:'Unrelated Radio',listener_code:'14'}],directory});
+ f.search('Voix   RADIO');assert.deepEqual(f.names('stations'),['Radio La Voix Divine']);assert.equal(f.$('clearStationSearch').hidden,false);
+ f.search('  voix radio  ');assert.deepEqual(f.names('stations'),['Radio La Voix Divine']);assert.equal(f.$('clearStationSearch').hidden,false);
 });
 
 test('known-empty saved stations do not consume a section and no-result searches still offer Clear search',()=>{
  const f=searchFixture({codes:[]});f.search('');assert.equal(f.$('savedStationsSection').hidden,true);assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);f.search('no match');assert.equal(f.$('savedStationsSection').hidden,true);assert.equal(f.$('clearStationSearch').hidden,false);f.$('clearStationSearch').onclick();assert.equal(f.$('savedStationsSection').hidden,true);assert.deepEqual(f.names('stations'),['Local Radio','Morning News']);
 });
 
-test('incomplete server searches never claim that no stations match or offer a misleading Clear search',()=>{
+test('incomplete server searches keep Clear search available without claiming that no stations match',()=>{
  const directory={query:'rare',loadedQuery:'rare',loading:true,hasMore:true},f=searchFixture({known:false,stations:[],directory});f.search('rare');
- assert.equal(f.$('clearStationSearch').hidden,true);assert.equal(f.$('stations').children[0].textContent,'Loading stations…');
- directory.loading=false;f.search('rare');assert.equal(f.$('clearStationSearch').hidden,true);assert.equal(f.$('stations').children[0].textContent,'More stations may match. Load more to continue.');
+ assert.equal(f.$('clearStationSearch').hidden,false);assert.equal(f.$('stations').children[0].textContent,'Loading stations…');
+ directory.loading=false;f.search('rare');assert.equal(f.$('clearStationSearch').hidden,false);assert.equal(f.$('stations').children[0].textContent,'More stations may match. Load more to continue.');
  directory.hasMore=false;f.search('rare');assert.equal(f.$('clearStationSearch').hidden,false);assert.equal(f.$('stations').children[0].textContent,'No matching available stations.');
 });
 

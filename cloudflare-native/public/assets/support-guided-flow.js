@@ -22,10 +22,12 @@
  const helpContact=button('supportFlow.contact','Contact support','support-contact-primary');helpContact.setAttribute('aria-controls','ticketForm');helpContact.onclick=()=>openContact({subject:topics[topicId]?.subject});
  const contactBack=button('supportFlow.back','Back to help','support-help-back');contactBack.hidden=true;contactBack.onclick=()=>{if(pending())return;contact=false;render();(topicId?helpTitle:document.getElementById('supportChatToggle'))?.focus({preventScroll:true});};
  const formHeading=form.querySelector('h2');if(formHeading){formHeading.dataset.i18n='supportFlow.contactTitle';formHeading.textContent=text('supportFlow.contactTitle','Contact support');}
+ const subjectField=form.elements.subject,subjectLabel=subjectField.closest?.('label')||(subjectField.parentElement?.tagName==='LABEL'?subjectField.parentElement:null),subjectSummary=node('div',null,null,'support-subject-summary');subjectSummary.id='supportSubjectSummary';subjectSummary.dataset.i18nSkip='1';subjectSummary.hidden=true;
+ const subjectValue=node('span'),subjectChange=button('supportFlow.changeSubject','Change','link support-subject-change');subjectChange.id='supportSubjectChange';subjectChange.setAttribute('aria-controls',subjectField.id||'supportSubject');if(!subjectField.id)subjectField.id='supportSubject';subjectSummary.append(subjectValue,subjectChange);(subjectLabel||subjectField).before(subjectSummary);
  // Keep existing tutorial nodes: no new media source or external request is
  // introduced. Ticket lookup stays available below either help or the form.
  videos.before(host);host.append(contactBack,questions,help,videos,helpContact);form.after(tickets);
- let topicId='',contact=!!form.dataset.dirty||!!form.elements.station_code?.value,autoSubject='';
+ let topicId='',contact=!!form.dataset.dirty||!!form.elements.station_code?.value,autoSubject='',subjectEditing=false;
  const pausedFrames=new WeakMap(),guideDescriptions=new WeakMap();
  function pending(){return form.dataset.busy==='1'||form.getAttribute('aria-busy')==='true';}
  function pauseCard(card){
@@ -52,21 +54,28 @@
  function render(){
   host.dataset.view=contact?'contact':topicId?'topic':'choose';questions.hidden=true;help.hidden=contact||!topicId;helpContact.hidden=contact||!topicId;contactBack.hidden=!contact;form.hidden=!contact;
   const disabled=pending();contactBack.disabled=disabled;chooseAgain.disabled=disabled;otherContact.disabled=disabled;helpContact.disabled=disabled;for(const choice of topicButtons.values())choice.disabled=disabled;
+  renderSubject();
   renderGuides();
  }
+ function renderSubject(){
+  const chosen=!!subjectField.value&&!subjectEditing,lang=window.appI18n?.language==='ht'?'ht':'en',labels={'Wi-Fi connection problem':'Pwoblèm koneksyon Wi-Fi','No sound or playback problem':'Pa gen son oswa pwoblèm lekti','Device keeps freezing':'Aparèy la kontinye bloke','Station login or email code problem':'Pwoblèm koneksyon kont oswa kòd imèl','Station problem':'Pwoblèm estasyon'};
+  subjectSummary.hidden=!contact||!chosen;(subjectLabel||subjectField).hidden=chosen;subjectChange.disabled=pending();subjectValue.textContent=(lang==='ht'?'Sijè: ':'Subject: ')+(lang==='ht'?(labels[subjectField.value]||subjectField.selectedOptions?.[0]?.textContent||subjectField.value):subjectField.value);subjectChange.textContent=text('supportFlow.changeSubject',lang==='ht'?'Chanje':'Change');
+ }
+ subjectChange.onclick=()=>{if(pending())return;subjectEditing=true;renderSubject();subjectField.focus({preventScroll:true});};
  function chooseTopic(id){
   const topic=topics[id];if(!topic||pending())return;topicId=id;contact=false;helpTitle.dataset.i18n=topic.key;helpTitle.textContent=text(topic.key,topic.label);steps.replaceChildren();for(const [key,fallback] of topic.steps)steps.append(node('li','supportFlow.'+key,fallback));videos.scrollLeft=0;render();helpTitle.focus({preventScroll:true});
  }
  function openContact({subject,focus=true}={}){
   if(pending()){contact=true;render();return false;}
-  const field=form.elements.subject;if(subject&&(!field.value||field.value===autoSubject)){field.value=subject;autoSubject=subject;}
+  const field=form.elements.subject;if(subject&&(!field.value||field.value===autoSubject)){field.value=subject;autoSubject=subject;subjectEditing=false;}
   contact=true;render();if(focus&&!support.hidden){const first=['name','email','subject','message'].map(key=>form.elements[key]).find(input=>input&&!String(input.value||'').trim())||form.elements.message;first?.focus({preventScroll:true});form.scrollIntoView?.({block:'start',behavior:'auto'});}return true;
  }
- form.elements.subject.addEventListener('input',()=>{autoSubject='';});form.elements.subject.addEventListener('change',()=>{autoSubject='';});
- form.addEventListener('reset',()=>queueMicrotask(()=>{topicId='';contact=false;autoSubject='';render();}));
+ form.elements.subject.addEventListener('input',()=>{autoSubject='';});form.elements.subject.addEventListener('change',()=>{autoSubject='';subjectEditing=!subjectField.value;renderSubject();if(contact&&subjectField.value&&!support.hidden)subjectChange.focus({preventScroll:true});});
+ form.addEventListener('reset',()=>queueMicrotask(()=>{topicId='';contact=false;autoSubject='';subjectEditing=false;render();}));
  form.addEventListener('form-busy-changed',render);
  new MutationObserver(render).observe(form,{attributes:true,attributeFilter:['data-busy','aria-busy']});
  new MutationObserver(renderGuides).observe(videos,{childList:true});
  window.addEventListener('support-guides-ready',renderGuides);document.addEventListener('visibilitychange',renderGuides);
+ window.addEventListener('app-language-changed',renderSubject);
  window.supportGuidedFlow={render,openContact};render();
 })();

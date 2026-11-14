@@ -13,6 +13,7 @@
  let registrationExpanded=!registrationPanel||registrationProviderFields.some(field=>field.checked);
  let registrationPassed=null,registrationProofTimer;
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
+ window.streamTestFailure=response=>{const messages={timeout:['registration.streamUnreachable','Server did not respond in time. Check that your broadcaster is running, then try again.'],connection_failed:['registration.streamConnection','Could not connect. Check the server, port and HTTP/HTTPS setting.'],http_error:['registration.streamMount','The listening address was unavailable. Check your stream path / mount point.'],not_audio:['registration.streamNotAudio','This address did not return supported audio. Check your stream path / mount point.'],not_confirmed:['registration.notConfirmed','Stream test failed. Check the details and try again.']},[key,fallback]=messages[response?.reason]||messages.not_confirmed;return {key,message:registrationText(key,fallback)};};
  const registrationIsManual=value=>['icecast','shoutcast'].includes(value);
  function registrationManualMode(){return registrationHasProviders&&registrationIsManual(registrationProvider);}
  function registrationBusy(){return ['1','true'].includes(registrationForm.dataset.busy)||registrationForm.getAttribute?.('aria-busy')==='true';}
@@ -29,7 +30,7 @@
   if(registrationUrlRow)registrationUrlRow.hidden=!active||manual;
   if(registrationUrlLabel){const key=manual?'registration.generated':'registration.streamUrl',fallback=manual?'Generated stream URL':'Stream URL';registrationUrlLabel.setAttribute('data-i18n',key);registrationUrlLabel.textContent=registrationText(key,fallback);}
   const placeholderKey=manual?'registration.generatedPlaceholder':'registration.directPlaceholder';registrationUrl.dataset.i18nPlaceholder=placeholderKey;registrationUrl.placeholder=registrationText(placeholderKey,manual?'Your stream URL appears here':'https://example.com/stream.mp3');
-  for(const field of registrationBuilder){field.required=false;field.disabled=!active||!manual||registrationBusy();field.setCustomValidity('');}
+  for(const field of registrationBuilder){field.required=active&&manual&&field===registrationNodes.streamPort;field.disabled=!active||!manual||registrationBusy();field.setCustomValidity('');}
   if(registrationPanel){registrationUrl.disabled=!active||registrationBusy();registrationUrl.required=active&&!manual;registrationNodes.copyGeneratedStream.hidden=true;}
  }
  // Each entry mode keeps its draft. Only a newly edited, valid direct URL
@@ -52,10 +53,10 @@
  function registrationTerminal(key,fallback,state){
   registrationStatus(key,fallback,state);let displayed=false;
   try{displayed=window.showStreamTestResult?.({source:'registration',key,fallback,state})===true;}catch{}
-  registrationNodes.streamTestStatus.hidden=displayed;
+  registrationNodes.streamTestStatus.hidden=state==='success'?false:displayed;
  }
- function registrationClearPass(){registrationPassed=null;if(typeof clearTimeout==='function')clearTimeout(registrationProofTimer);registrationProofTimer=undefined;}
- function registrationInvalidate(clearPass=true){registrationVersion++;registrationActiveTest=null;if(clearPass)registrationClearPass();try{window.closeStreamTestResult?.('registration');}catch{}registrationStatus('','');}
+ function registrationClearPass(){registrationPassed=null;if(typeof clearTimeout==='function')clearTimeout(registrationProofTimer);registrationProofTimer=undefined;if(registrationNodes.streamTestStatus.dataset.state==='success')registrationStatus('','');}
+ function registrationInvalidate(clearPass=true){registrationVersion++;registrationActiveTest=null;if(clearPass)registrationClearPass();try{window.closeStreamTestResult?.('registration');}catch{}if(!clearPass&&registrationProofReady())registrationStatus('registration.streamReady','✓ Stream ready','success');else registrationStatus('','');}
  function registrationProofReady(){
   if(!registrationPassed||registrationActiveTest)return false;
   if(registrationPassed.expires<=Date.now()){registrationClearPass();return false;}
@@ -109,7 +110,7 @@
   try{registrationUrl.dispatchEvent(new Event('input',{bubbles:true}));}finally{registrationInternalInput=false;}
  }
  function registrationSyncBuilder(parsed){
-  registrationNodes.streamHost.value=parsed?.hostname||'';registrationNodes.streamPort.value=parsed?.port||'';
+  registrationNodes.streamHost.value=parsed?.hostname||'';registrationNodes.streamPort.value=parsed?(parsed.port||(registrationHasProviders?(parsed.protocol==='https:'?'443':'80'):'')):'';
   registrationNodes.streamProtocol.value=parsed?parsed.protocol.slice(0,-1):'https';registrationNodes.streamPath.value=parsed?parsed.pathname+parsed.search:'';
  }
  function registrationControls(){
@@ -119,15 +120,17 @@
   registrationNodes.testStream.disabled=Boolean(registrationActiveTest)||!registrationValid||submitting||inactive;
   registrationNodes.copyGeneratedStream.disabled=!registrationValid||submitting||inactive;
   const save=registrationForm.querySelector('button[type="submit"]'),passed=registrationProofReady(),hint=document.getElementById('streamSaveHint');
-  if(save)save.disabled=submitting||inactive||!passed;
-  if(hint){hint.hidden=passed;hint.setAttribute('data-i18n','registration.passRequired');hint.textContent=registrationText('registration.passRequired','Test your stream before saving.');}
+  if(save){save.disabled=submitting||inactive||!passed;save.dataset.i18n='registration.continue';if(!submitting)save.textContent=registrationText('registration.continue','Continue');save.setAttribute('aria-describedby','streamSaveHint');}
+  if(hint){const missingPort=registrationExpanded&&registrationManualMode()&&!registrationNodes.streamPort.value.trim(),key=missingPort?'registration.enterPort':'registration.testRequired';hint.hidden=passed;hint.dataset.state='needed';hint.setAttribute('data-i18n',key);hint.textContent=registrationText(key,missingPort?'Enter port number':'Test your stream');}
  }
  function registrationCompose(){
   const host=registrationNodes.streamHost.value.trim(),port=registrationNodes.streamPort.value.trim(),protocol=registrationNodes.streamProtocol.value,path=registrationNodes.streamPath.value.trim()||'/';
   if(!host||/[\s\/:@?#\[\]\\]/.test(host))throw registrationIssue('registration.hostOnly','Enter only the public server hostname or IPv4 address.',registrationNodes.streamHost);
   if(!['https','http'].includes(protocol))throw registrationIssue('registration.chooseProtocol','Choose HTTP or HTTPS.',registrationNodes.streamProtocol);
-  if(registrationNodes.streamPort.validity?.badInput||port&&!/^\d{1,5}$/.test(port)||port&&(Number(port)<1||Number(port)>65535))throw registrationIssue('registration.validPort','Enter a port from 1 to 65535, or leave it blank.',registrationNodes.streamPort);
-  if(!path.startsWith('/')||path.startsWith('//')||/[\x00-\x1f\x7f\\#]/.test(path))throw registrationIssue('registration.validPath','Start the stream path with one / and do not include a fragment.',registrationNodes.streamPath);
+  try{registrationParse(protocol+'://'+host+'/');}catch(error){throw {...error,field:registrationNodes.streamHost};}
+  if(registrationHasProviders&&!port)throw registrationIssue('registration.enterPort','Enter port number',registrationNodes.streamPort);
+  if(registrationNodes.streamPort.validity?.badInput||port&&!/^\d{1,5}$/.test(port)||port&&(Number(port)<1||Number(port)>65535))throw registrationIssue('registration.portRange','Enter a port from 1 to 65535.',registrationNodes.streamPort);
+  if(!path.startsWith('/')||path.startsWith('//')||/[\x00-\x20\x7f\\#]/.test(path))throw registrationIssue('registration.validPath','Start the stream path with one / and do not include spaces or a fragment.',registrationNodes.streamPath);
   try{return registrationParse(protocol+'://'+host+(port?':'+port:'')+path);}catch(error){throw {...error,field:['registration.noTokens','registration.urlLength'].includes(error.key)?registrationNodes.streamPath:registrationNodes.streamHost};}
  }
  function registrationValidate(report=false,canonicalize=false){
@@ -176,8 +179,8 @@
   try{
    const turnstile_token=await human(registrationNodes.streamTestHuman,'stream-check');if(!current())return;
    const response=await api('/api/owner/stream-check',{stream_url:value,turnstile_token});if(!current())return;
-   if(response.result==='audio_response'&&response.audio_response===true){registrationPass(value);registrationTerminal('registration.audioResponse','Stream check passed','success');}
-   else registrationTerminal('registration.notConfirmed','Stream test failed. Check the details and try again.','unconfirmed');
+   if(response?.result==='audio_response'&&response.audio_response===true){registrationPass(value);registrationTerminal('registration.streamReady','✓ Stream ready','success');}
+   else{const failure=window.streamTestFailure(response);if(response?.field==='stream_path'&&registrationManualMode()){registrationNodes.streamPath.setCustomValidity(failure.message);registrationNodes.streamPath.focus();}registrationTerminal(failure.key,failure.message,'unconfirmed');}
   }catch(error){if(current())registrationTerminal('',String(error.message||'The stream check did not complete. Test again before saving.').slice(0,400),'error');}
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };

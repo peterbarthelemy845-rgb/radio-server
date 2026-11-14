@@ -4,12 +4,18 @@ import {operationsFixture} from './operations-fixture.mjs';
 import {supportStatusRoutes} from './support-status.mjs';
 import {communityRoutes} from './community.mjs';
 import {authRoutes} from './owner-auth.mjs';
-import {encrypt,decrypt} from './security.mjs';
+import {encrypt,decrypt,digest,mac} from './security.mjs';
 
 const human={human:async()=>{}};
+test('ticket-access email codes accept only whitespace formatting around six digits and still reject non-digits',async()=>{
+ const f=await setup(),reference=await f.insert(),challenge=await(await f.call('/api/support/status/request',{reference,email:ticketData.email})).json(),code=await f.code(challenge.verification_id);await assert.rejects(f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code:code.slice(0,3)+'x'+code.slice(3)}),error=>error.status===400);const result=await(await f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code:code.slice(0,3)+' \n '+code.slice(3)})).json();assert.equal(result.status,'verified');
+});
 const ticketData={name:'Listener',email:'listener@example.com',subject:'Wi-Fi help',message:'I need help connecting.',device_code:'3961'};
 async function setup(){
  const f=await operationsFixture();
+ // Status tests start after the submitting browser has proved its contact email.
+ const sessionHash=await digest(f.request('/api/session').headers.get('Cookie').split('=')[1]);
+ f.sqlite.prepare('INSERT INTO support_sender_grants(session_hash,email_hash,verified_at,expires) VALUES (?,?,?,?)').run(sessionHash,await mac(f.env,'support-email:'+ticketData.email),f.now,f.now+2592000);
  async function insert(id='b'.repeat(32),kind='support',payload=ticketData){f.sqlite.prepare('INSERT INTO legal_requests(id,kind,encrypted_payload,state,created_at) VALUES (?,?,?,?,?)').run(id,kind,await encrypt(f.env,JSON.stringify(payload)),'new',f.now);return id;}
  async function code(id){const row=f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox WHERE id=?').get('support-access:'+id);return JSON.parse(await decrypt(f.env,row.encrypted_payload)).text.match(/code is (\d{6})/)[1];}
  async function secondBrowser(){const response=await authRoutes(new Request('https://radiolocals.com/api/session'),f.env,f.now),data=await response.json(),cookie=response.headers.get('set-cookie').split(';')[0];return (path,body)=>new Request('https://radiolocals.com'+path,{method:body?'POST':'GET',headers:{Cookie:cookie,Origin:'https://radiolocals.com','Content-Type':'application/json','X-CSRF-Token':data.csrf},body:body?JSON.stringify(body):undefined});}

@@ -23,7 +23,7 @@ function fixture({draft={},missing=false}={}){
   focus(){document.activeElement=this;}scrollIntoView(options){this.lastScroll=options;}
  }
  const support=new Element('section','support'),videos=new Element('div','supportVideos'),tickets=new Element('section','supportTicketStatus'),form=new Element('form','ticketForm');form.append(new Element('h2'));form.elements={};
- for(const key of ['name','email','subject','message','device_code','station_code']){const input=new Element(key==='subject'?'select':'input');input.value=draft[key]||'';form.elements[key]=input;form.append(input);}
+ for(const key of ['name','email','subject','message','device_code','station_code']){const input=new Element(key==='subject'?'select':'input');input.value=draft[key]||'';form.elements[key]=input;if(key==='subject'){const label=new Element('label');label.append(input);form.append(label);}else form.append(input);}
  if(Object.keys(draft).length)form.dataset.dirty='1';support.append(videos,tickets,form);
  const listen=(map,name,fn)=>{const handlers=map.get(name)||[];handlers.push(fn);map.set(name,handlers);};
  document={hidden:false,activeElement:null,getElementById:id=>missing&&id==='support'?null:nodes.get(id),createElement:tag=>new Element(tag),addEventListener:(name,fn)=>listen(documentEvents,name,fn)};
@@ -109,4 +109,16 @@ test('hidden tabs pause tutorials and restore only the previously approved embed
 
 test('without the required host elements the module leaves the fallback form untouched',()=>{
  const f=fixture({missing:true});assert.equal(f.window.supportGuidedFlow,undefined);assert.equal(f.form.hidden,false);assert.equal(f.nodes.has('supportGuidedFlow'),false);
+});
+test('a chosen contact subject is shown once with a small Change control instead of asking for the problem again',()=>{
+ const f=fixture();f.contact({subject:'Wi-Fi connection problem'});const summary=f.nodes.get('supportSubjectSummary'),change=f.nodes.get('supportSubjectChange'),field=f.form.elements.subject;assert.equal(field.value,'Wi-Fi connection problem');assert.equal(summary.hidden,false);assert.equal(summary.children[0].textContent,'Subject: Wi-Fi connection problem');assert.equal(field.parentElement.hidden,true);assert.equal(field.disabled,false);change.onclick();assert.equal(field.parentElement.hidden,false);assert.equal(summary.hidden,true);assert.equal(f.document.activeElement,field);
+});
+test('changing the chosen subject keeps a manual selection through later topic changes and preserves other ticket fields',()=>{
+ const f=fixture({draft:{name:'Listener',message:'Keep this draft',station_code:'13'}});f.contact({subject:'Wi-Fi connection problem'});f.nodes.get('supportSubjectChange').onclick();f.form.elements.subject.value='Advertising question';f.form.elements.subject.dispatch('change');assert.equal(f.nodes.get('supportSubjectSummary').hidden,false);assert.equal(f.form.elements.subject.parentElement.hidden,true);f.back();f.contact({subject:'No sound or playback problem'});assert.equal(f.form.elements.subject.value,'Advertising question');assert.equal(f.form.elements.message.value,'Keep this draft');assert.equal(f.form.elements.station_code.value,'13');
+});
+test('Change is busy-protected and selected subject summaries translate without changing the submitted value',()=>{
+ const f=fixture();f.contact({subject:'Wi-Fi connection problem'});f.form.dataset.busy='1';f.render();const change=f.nodes.get('supportSubjectChange');assert.equal(change.disabled,true);change.onclick();assert.equal(f.form.elements.subject.parentElement.hidden,true);delete f.form.dataset.busy;f.render();assert.equal(change.disabled,false);f.window.appI18n={language:'ht',t:key=>key};f.emit('app-language-changed');assert.equal(change.textContent,'Chanje');assert.equal(f.nodes.get('supportSubjectSummary').children[0].textContent,'Sijè: Pwoblèm koneksyon Wi-Fi');assert.equal(f.form.elements.subject.value,'Wi-Fi connection problem');
+});
+test('successful reset restores the ordinary subject selector for the next blank ticket',()=>{
+ const f=fixture();f.contact({subject:'Wi-Fi connection problem'});f.reset();f.flush();f.contact();assert.equal(f.form.elements.subject.value,'');assert.equal(f.form.elements.subject.parentElement.hidden,false);assert.equal(f.nodes.get('supportSubjectSummary').hidden,true);
 });

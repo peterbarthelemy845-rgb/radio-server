@@ -46,7 +46,7 @@ const statusVerify=document.createElement('dialog');statusVerify.className='supp
 const statusVerifyTitle=supportStatusNode('h2','supportStatus.verifyTitle','Verify your email');statusVerifyTitle.id='supportStatusVerifyTitle';
 const statusVerifyHelp=supportStatusNode('p','supportStatus.verifyHelp','If the email and ticket reference match, a private code will arrive shortly. Enter the 6-digit code here. It expires in 15 minutes.');
 const statusVerifyForm=document.createElement('form'),statusCodeLabel=document.createElement('label');statusCodeLabel.append(supportStatusNode('span','supportStatus.emailCode','6-digit email code'));
-const statusCode=document.createElement('input');statusCode.name='code';statusCode.inputMode='numeric';statusCode.autocomplete='one-time-code';statusCode.pattern='[0-9]{6}';statusCode.maxLength=6;statusCode.required=true;statusCodeLabel.append(statusCode);statusVerifyForm.append(statusCodeLabel);
+const statusCode=document.createElement('input');statusCode.name='code';statusCode.inputMode='numeric';statusCode.autocomplete='one-time-code';statusCode.pattern='[0-9]{6}';statusCode.maxLength=32;statusCode.required=true;statusCode.addEventListener('input',()=>{statusCode.value=statusCode.value.replace(/\s/g,'');});statusCodeLabel.append(statusCode);statusVerifyForm.append(statusCodeLabel);
 const statusVerifyButton=supportStatusNode('button','supportStatus.verifyButton','Verify and open ticket');statusVerifyButton.type='submit';statusVerifyForm.append(statusVerifyButton);
 const statusVerifyNotice=document.createElement('p');statusVerifyNotice.setAttribute('role','status');
 const statusCancel=supportStatusNode('button','supportStatus.cancel','Cancel','secondary');statusCancel.type='button';statusCancel.onclick=()=>{invalidateSupportStatusChallenge();statusVerify.close();};
@@ -162,7 +162,7 @@ statusLookup.onsubmit=async event=>{
 };
 statusVerifyForm.onsubmit=async event=>{
  event.preventDefault();if(supportStatusVerifyBusy||!supportStatusVerification||!statusVerify.open)return;
- const generation=supportStatusChallengeGeneration,id=supportStatusVerification,code=statusCode.value;supportStatusVerifyBusy=true;busy(statusVerifyForm,true,true);
+ const generation=supportStatusChallengeGeneration,id=supportStatusVerification,code=statusCode.value.replace(/\s/g,'');supportStatusVerifyBusy=true;busy(statusVerifyForm,true,true);
  try{const result=await api('/api/support/status/verify',{verification_id:id,code});if(!currentSupportStatusChallenge(generation,id))return;invalidateSupportStatusChallenge();statusVerify.close();statusLookup.reset();await openSupportTicket(result.reference);}
  catch(e){if(currentSupportStatusChallenge(generation,id))statusVerifyNotice.textContent=e.message;}
  finally{if(generation===supportStatusChallengeGeneration){supportStatusVerifyBusy=false;busy(statusVerifyForm,false);}supportStatusChanged();}

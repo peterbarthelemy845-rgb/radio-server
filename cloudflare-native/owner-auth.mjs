@@ -8,6 +8,7 @@ const VERSION='radio-locals-native-2026-11-02';
 const RIGHTS='I represent this station and have streaming and artwork rights. I accept the station terms and privacy notice.';
 const emailPattern=/^[^\s@\r\n]{1,64}@[^\s@\r\n]+\.[^\s@\r\n]+$/;
 const mask=email=>email[0]+'***@'+email.split('@')[1];
+const emailCode=value=>String(value||'').replace(/\s/g,'');
 export function streamUrl(value){return publicStreamUrl(value);}
 export async function artwork(env,file,stableKey,beforePut){
   if(!env.IMAGES||!env.MEDIA)throw new HttpError(503,'Artwork processing is not ready.');
@@ -44,17 +45,22 @@ async function verificationValues(env,now,deletion=false){
 }
 async function verification(env,current,station,purpose,now,deletion=false){
   const {id,mail,expires,codeHash,payload}=await verificationValues(env,now,deletion);
-  await env.DB.batch([
-    env.DB.prepare("UPDATE email_verifications SET consumed_at=? WHERE session_hash=? AND purpose=? AND consumed_at IS NULL AND (purpose!='registration' OR station_code=?)")
-      .bind(now,current.token_hash,purpose,station.code),
-    env.DB.prepare('INSERT INTO email_verifications(id,session_hash,station_code,purpose,code_hash,expires,created_at) VALUES (?,?,?,?,?,?,?)')
-      .bind(id,current.token_hash,station.code,purpose,deletion?'delete:'+codeHash:codeHash,expires,now),
-    env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) VALUES (?,?,?,?,?,?)')
-      .bind(mail,station.contact_email,deletion?'Confirm Radio Locals station deletion':'Your Radio Locals verification code',payload,now,expires),
-    ...(purpose==='registration'?[env.DB.prepare("UPDATE registration_requests SET verification_id=? WHERE session_hash=? AND station_code=? AND state='complete'")
-      .bind(id,current.token_hash,station.code)]:[]),
+  // Bind the message's recipient to the still-current unverified email inside
+  // this transaction. A resend racing Change email must not create a usable
+  // proof sent to the old inbox for the newly stored contact address.
+  const guarded=purpose==='registration',guard=guarded?"EXISTS (SELECT 1 FROM stations WHERE code=? AND contact_email=? AND status='pending_email' AND email_verified_at IS NULL)":'1',args=guarded?[station.code,station.contact_email]:[];
+  const results=await env.DB.batch([
+    env.DB.prepare("UPDATE email_verifications SET consumed_at=? WHERE session_hash=? AND purpose=? AND consumed_at IS NULL AND (purpose!='registration' OR station_code=?) AND "+guard)
+      .bind(now,current.token_hash,purpose,station.code,...args),
+    env.DB.prepare('INSERT INTO email_verifications(id,session_hash,station_code,purpose,code_hash,expires,created_at) SELECT ?,?,?,?,?,?,? WHERE '+guard+' RETURNING id')
+      .bind(id,current.token_hash,station.code,purpose,deletion?'delete:'+codeHash:codeHash,expires,now,...args),
+    env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM email_verifications WHERE id=? AND consumed_at IS NULL)')
+      .bind(mail,station.contact_email,deletion?'Confirm Radio Locals station deletion':'Your Radio Locals verification code',payload,now,expires,id),
+    ...(purpose==='registration'?[env.DB.prepare("UPDATE registration_requests SET verification_id=? WHERE session_hash=? AND station_code=? AND state='complete' AND EXISTS (SELECT 1 FROM email_verifications WHERE id=? AND consumed_at IS NULL)")
+      .bind(id,current.token_hash,station.code,id)]:[]),
   ]);
-  return {verification_id:id,verification_email:mask(station.contact_email),expires_in:900};
+  if(!results[1]?.results?.[0])throw new HttpError(409,'This signup email changed. Continue with the newest email code.');
+  return {verification_id:id,verification_email:mask(station.contact_email),verification_purpose:purpose,expires_in:900};
 }
 async function registrationResponse(env,current,row,now){
   const saved=await env.DB.prepare(`SELECT v.id,v.expires,v.consumed_at,s.contact_email,s.email_verified_at,s.status,s.stream_url FROM email_verifications v
@@ -64,7 +70,7 @@ async function registrationResponse(env,current,row,now){
   if(saved.email_verified_at!==null)throw new HttpError(409,'This station is already registered. Sign in to edit it.');
   if(saved.consumed_at!==null)throw new HttpError(409,'This sign-in was cancelled. Reload the page and start again.');
   await attachStreamCheck(env,current.token_hash,row.station_code,saved.stream_url,'initial',now);
-  return json({status:'ok',verification_id:saved.id,verification_email:mask(saved.contact_email),expires_in:Math.max(0,saved.expires-now)});
+  return json({status:'ok',verification_id:saved.id,verification_email:mask(saved.contact_email),verification_purpose:'registration',expires_in:Math.max(0,saved.expires-now)});
 }
 export async function processMail(env,now=Math.floor(Date.now()/1000)){
   if(!env.EMAIL||!env.DATA_ENCRYPTION_KEY)return;
@@ -105,8 +111,15 @@ export async function authRoutes(request,env,now,deps={human}){
   const path=new URL(request.url).pathname;
   if(path==='/api/session'&&request.method==='GET'){
     await limit(env.DB,'session-create',request.headers.get('CF-Connecting-IP')||'unknown',60,60,now);
-    const current=await session(request,env,now,true),response=json({csrf:current.csrf,turnstile_site_key:env.TURNSTILE_SITE_KEY||'',agreement_version:VERSION,server_time:now,
-      owner_station:current.owner_expires>now?current.owner_station:null,owner_expires:current.owner_station&&current.owner_expires>now?current.owner_expires:null});
+    const current=await session(request,env,now,true);
+    // The browser may resume its own unfinished signup, but never reopen the
+    // dialog by itself or disclose another browser's challenge or full email.
+    const pending=await env.DB.prepare(`SELECT v.id,v.expires,s.contact_email FROM email_verifications v JOIN stations s ON s.code=v.station_code
+      WHERE v.session_hash=? AND v.purpose='registration' AND v.consumed_at IS NULL AND s.status='pending_email' AND s.email_verified_at IS NULL
+        AND v.created_at>? ORDER BY v.created_at DESC,v.id DESC LIMIT 1`).bind(current.token_hash,now-86400).first();
+    const response=json({csrf:current.csrf,turnstile_site_key:env.TURNSTILE_SITE_KEY||'',agreement_version:VERSION,server_time:now,
+      owner_station:current.owner_expires>now?current.owner_station:null,owner_expires:current.owner_station&&current.owner_expires>now?current.owner_expires:null,
+      pending_verification:pending?{verification_id:pending.id,verification_email:mask(pending.contact_email),verification_purpose:'registration',expires_in:Math.max(0,pending.expires-now)}:null});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);return response;
   }
   if(path==='/api/owner/artwork'&&request.method==='GET'){
@@ -118,7 +131,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!object||object.customMetadata?.sanitizer_version!=='1')throw new HttpError(404,'Artwork not found.');
     return new Response(object.body,{headers:{'Content-Type':'image/png','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"}});
   }
-  if(!['/api/owner/register','/api/owner/login','/api/owner/recover-code','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/delete','/api/owner/stream-review'].includes(path))return null;
+  if(!['/api/owner/register','/api/owner/login','/api/owner/recover-code','/api/owner/verify','/api/owner/station','/api/owner/logout','/api/owner/resend','/api/owner/change-email','/api/owner/delete','/api/owner/stream-review'].includes(path))return null;
   if(path==='/api/owner/station'&&request.method==='GET'){
     const current=await session(request,env,now);
     if(!current.owner_station||current.owner_expires<=now)throw new HttpError(401,'Please sign in.');
@@ -126,7 +139,7 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!station)return json({message:'Station not found.'},404);
     if(['deleted','suspended'].includes(station.status))throw new HttpError(403,'Station cannot be edited.');
     const draft=pending||station,revision=await ownerRevision(env,station,pending);
-    return json({owner_expires:current.owner_expires,server_time:now,metadata_options:metadataOptions,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,language:draft.language,category:draft.category,zip_code:draft.zip_code,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash),approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,language:station.language,category:station.category,zip_code:station.zip_code,status:station.status}}});
+    return json({owner_expires:current.owner_expires,server_time:now,metadata_options:metadataOptions,station:{code:station.code,name:draft.name,stream_url:draft.stream_url,bio:draft.bio,language:draft.language,category:draft.category,zip_code:draft.zip_code,contact_email:station.contact_email,status:station.status,artwork_url:draft.artwork_key?'/api/owner/artwork':'',revision,review_pending:!!pending,stream_check:await streamOwnerStatus(env,station,pending,now,current.token_hash),approved:{name:station.name,stream_url:station.stream_url,bio:station.bio,language:station.language,category:station.category,zip_code:station.zip_code,status:station.status}}});
   }
   if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
   const current=await browserWrite(request,env,now);
@@ -160,7 +173,7 @@ export async function authRoutes(request,env,now,deps={human}){
       return json({status:'verification_required',...result});
     }
     if(body.confirm!==true)throw new HttpError(400,'Confirm station removal.');
-    const id=String(body.verification_id),code=String(body.code||'');
+    const id=String(body.verification_id),code=emailCode(body.code);
     if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the 6-digit email code.');
     const check=await env.DB.prepare(`UPDATE email_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND station_code=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *`).bind(id,current.token_hash,current.owner_station,now).first();
     if(!check||check.code_hash!=='delete:'+await mac(env,'email:'+id+':'+code))throw new HttpError(400,'Incorrect or expired deletion code.');
@@ -192,6 +205,11 @@ export async function authRoutes(request,env,now,deps={human}){
     if(prior&&prior.payload_hash!==payloadHash)throw new HttpError(409,'Signup details changed. Please submit a new signup request.');
     if(prior?.expires<=now)throw new HttpError(409,'This signup request expired. Reload the page and start again.');
     if(prior?.state==='complete')return registrationResponse(env,current,prior,now);
+    // A public listening URL identifies an existing station, not ownership.
+    // Do not reveal its owner's email or block a URL merely claimed by an
+    // unverified signup. Completed retries above remain idempotent.
+    const duplicate=await env.DB.prepare("SELECT 1 FROM stations WHERE stream_url=? AND email_verified_at IS NOT NULL AND status NOT IN ('deleted','suspended') LIMIT 1").bind(url).first();
+    if(duplicate)throw new HttpError(409,'This stream already has a station. Sign in to update it.');
     const streamSave=await requireStreamSaveCheck(env,current.token_hash,url,now);
     await limit(env.DB,'register-ip',request.headers.get('CF-Connecting-IP')||'unknown',5,86400,now);
     await limit(env.DB,'register-global','all',100,86400,now);
@@ -211,8 +229,9 @@ export async function authRoutes(request,env,now,deps={human}){
       const owner=[current.token_hash,requestId,lease,now,...streamSave.values];
       await env.DB.batch([
         env.DB.prepare(`INSERT INTO stations(name,stream_url,bio,location,contact_email,artwork_key,created_at,updated_at,language,category,zip_code)
-          SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)`)
-          .bind(name,url,bio,location,email,key,now,now,metadata.language,metadata.category,metadata.zip_code,...owner),
+          SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM registration_requests WHERE ${guard} AND station_code IS NULL)
+            AND NOT EXISTS (SELECT 1 FROM stations WHERE stream_url=? AND email_verified_at IS NOT NULL AND status NOT IN ('deleted','suspended'))`)
+          .bind(name,url,bio,location,email,key,now,now,metadata.language,metadata.category,metadata.zip_code,...owner,url),
         env.DB.prepare(`UPDATE registration_requests SET station_code=last_insert_rowid() WHERE ${guard} AND station_code IS NULL AND changes()>0`).bind(...owner),
         env.DB.prepare(`INSERT INTO agreement_acceptances(station_code,agreement_version,agreement_hash,accepted_at)
           SELECT station_code,?,?,? FROM registration_requests WHERE ${guard} AND station_code IS NOT NULL`).bind(VERSION,agreementHash,now,...owner),
@@ -258,7 +277,10 @@ export async function authRoutes(request,env,now,deps={human}){
       // the public proof error when it expired; otherwise a lost lease is a
       // retryable signup conflict rather than an internal SQL error.
       try{await assertStreamSaveCheck(env,streamSave);}catch(proofError){if(proofError instanceof HttpError&&proofError.status===428)throw proofError;}
-      if(String(error?.message||'').includes("state IN ('pending','complete')"))throw new HttpError(409,'This signup changed while it was processing. Please try again.');
+      if(String(error?.message||'').includes("state IN ('pending','complete')")){
+        if(await env.DB.prepare("SELECT 1 FROM stations WHERE stream_url=? AND email_verified_at IS NOT NULL AND status NOT IN ('deleted','suspended') LIMIT 1").bind(url).first())throw new HttpError(409,'This stream already has a station. Sign in to update it.');
+        throw new HttpError(409,'This signup changed while it was processing. Please try again.');
+      }
       throw error;
     }
   }
@@ -304,14 +326,54 @@ export async function authRoutes(request,env,now,deps={human}){
     if(!station)throw new HttpError(400,'Please start again.');
     return json({status:'ok',...await verification(env,current,station,prior.purpose,now,prior.purpose==='edit'&&prior.code_hash.startsWith('delete:'))});
   }
+  if(path==='/api/owner/change-email'){
+    // This is correction of an unverified signup in its original browser,
+    // never a route for changing a verified owner's account email.
+    await limit(env.DB,'owner-change-email',current.token_hash,3,900,now);
+    await limit(env.DB,'owner-change-email-ip',request.headers.get('CF-Connecting-IP')||'unknown',5,900,now);
+    const id=String(body.verification_id||''),email=String(body.email||'').trim().toLowerCase();
+    if(!/^[a-f0-9]{32}$/.test(id)||email.length>254||!emailPattern.test(email))throw new HttpError(400,'Enter a valid contact email.');
+    await limit(env.DB,'owner-change-email-recipient',email,3,900,now);
+    await deps.human(request,env,body.turnstile_token,'verification-resend',now);
+    const prior=await env.DB.prepare(`SELECT v.*,s.contact_email FROM email_verifications v JOIN stations s ON s.code=v.station_code
+      JOIN registration_requests r ON r.verification_id=v.id AND r.station_code=s.code AND r.session_hash=v.session_hash
+      WHERE v.id=? AND v.session_hash=? AND v.purpose='registration' AND v.consumed_at IS NULL AND s.status='pending_email' AND s.email_verified_at IS NULL
+        AND r.state='complete' AND r.expires>?`).bind(id,current.token_hash,now).first();
+    if(!prior)throw new HttpError(409,'This signup can no longer change email. Start again or sign in.');
+    if(prior.contact_email===email)throw new HttpError(400,'This is already your contact email. Use Resend email for a new code.');
+    const values=await verificationValues(env,now),proof='changed:'+randomHex(16);
+    const guard=`EXISTS (SELECT 1 FROM email_verifications v JOIN stations s ON s.code=v.station_code WHERE v.id=? AND v.session_hash=?
+      AND v.station_code=? AND v.purpose='registration' AND v.consumed_at=? AND v.code_hash=? AND s.status='pending_email' AND s.email_verified_at IS NULL)`;
+    const args=[id,current.token_hash,prior.station_code,now,proof];
+    const results=await env.DB.batch([
+      env.DB.prepare(`UPDATE email_verifications SET consumed_at=?,code_hash=? WHERE id=? AND session_hash=? AND purpose='registration' AND consumed_at IS NULL
+        AND EXISTS (SELECT 1 FROM stations WHERE code=email_verifications.station_code AND status='pending_email' AND email_verified_at IS NULL AND contact_email=?) RETURNING id`)
+        .bind(now,proof,id,current.token_hash,prior.contact_email),
+      env.DB.prepare(`UPDATE stations SET contact_email=?,updated_at=? WHERE code=? AND ${guard}`).bind(email,now,prior.station_code,...args),
+      env.DB.prepare(`INSERT INTO email_verifications(id,session_hash,station_code,purpose,code_hash,expires,created_at)
+        SELECT ?,?,?,'registration',?,?,? WHERE ${guard}`).bind(values.id,current.token_hash,prior.station_code,values.codeHash,values.expires,now,...args),
+      env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires)
+        SELECT ?,?,'Your Radio Locals verification code',?,?,? WHERE ${guard}`).bind(values.mail,email,values.payload,now,values.expires,...args),
+      env.DB.prepare(`UPDATE registration_requests SET verification_id=? WHERE session_hash=? AND station_code=? AND verification_id=? AND state='complete' AND ${guard}`)
+        .bind(values.id,current.token_hash,prior.station_code,id,...args)
+    ]);
+    if(!results[0]?.results?.[0])throw new HttpError(409,'This signup changed. Request a new email code.');
+    return json({status:'ok',verification_id:values.id,verification_email:mask(email),verification_purpose:'registration',expires_in:900});
+  }
   if(path==='/api/owner/verify'){
     await limit(env.DB,'email-verify-ip',request.headers.get('CF-Connecting-IP')||'unknown',30,900,now);
-    const id=String(body.verification_id||''),code=String(body.code||'');
+    const id=String(body.verification_id||''),code=emailCode(body.code);
     if(!/^[a-f0-9]{32}$/.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the 6-digit email code.');
     // Count every attempt atomically before comparing; an email code permits at most five guesses.
     const check=await env.DB.prepare(`UPDATE email_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=?
       AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *`).bind(id,current.token_hash,now).first();
-    if(!check||check.code_hash!==await mac(env,'email:'+id+':'+code))throw new HttpError(400,'Incorrect or expired code.');
+    if(!check){
+      const prior=await env.DB.prepare('SELECT expires,attempts,consumed_at FROM email_verifications WHERE id=? AND session_hash=?').bind(id,current.token_hash).first();
+      if(prior?.consumed_at===null&&prior.expires<=now)throw new HttpError(400,'This code expired. Resend email for a new code.');
+      if(prior?.consumed_at===null&&prior.attempts>=5)throw new HttpError(400,'Too many incorrect codes. Resend email for a new code.');
+      throw new HttpError(400,'Incorrect or expired code. Request a new email code if needed.');
+    }
+    if(check.code_hash!==await mac(env,'email:'+id+':'+code))throw new HttpError(400,check.attempts>=5?'Too many incorrect codes. Resend email for a new code.':'Incorrect code. Use the newest private email code.');
     const proof=check.code_hash+':'+randomHex(16);
     const consumedGuard='EXISTS (SELECT 1 FROM email_verifications WHERE id=? AND session_hash=? AND consumed_at=? AND code_hash=?)';
     const proofArgs=[id,current.token_hash,now,proof];

@@ -12,19 +12,19 @@ function fixture(record=original){
  class UiEvent{constructor(type,options={}){this.type=type;this.bubbles=!!options.bubbles;this.detail=options.detail;}}
  function node(id){const handlers=new Map(),element={id,hidden:false,open:false,disabled:false,textContent:'',value:'',dataset:{},attrs:{},files:[],elements:{},parent:null,
   addEventListener(type,fn){const group=handlers.get(type)||[];group.push(fn);handlers.set(type,group);},dispatchEvent(event){event.target??=this;for(const fn of handlers.get(event.type)||[])fn(event);if(event.bubbles)this.parent?.dispatchEvent(event);},
-  getAttribute(name){return this.attrs[name]??null;},setAttribute(name,value){this.attrs[name]=value;},removeAttribute(name){delete this.attrs[name];},focus(){},querySelector(selector){return selector==='button[type="submit"]'?nodes.get('ownerSave'):null;}
+  getAttribute(name){return this.attrs[name]??null;},setAttribute(name,value){this.attrs[name]=value;},removeAttribute(name){delete this.attrs[name];},focus(){},after(){},querySelector(selector){return selector==='button[type="submit"]'?nodes.get('ownerSave'):null;}
  };nodes.set(id,element);return element;}
  for(const id of ['editor','editForm','ownerSave','ownerSaveState','ownerStreamSettings','ownerAccountOptions','testOwnerStream','ownerStreamTestHuman','ownerStreamTestStatus','name','stream_url','bio','artwork','zip_code','category'])node(id);
  const form=nodes.get('editForm');for(const key of ['name','stream_url','bio','artwork','zip_code','category']){form.elements[key]=nodes.get(key);nodes.get(key).parent=form;}
  const window={appI18n:{t:key=>key},parsePublicStreamUrl:value=>new URL(value),addEventListener(type,fn){const group=events.get(type)||[];group.push(fn);events.set(type,group);},dispatchEvent(event){for(const fn of events.get(event.type)||[])fn(event);}};
- const context=vm.createContext({window,document:{getElementById:id=>nodes.get(id)},Event:UiEvent,URL,AbortController,Date:{now:()=>clock},queueMicrotask,
+ const context=vm.createContext({window,document:{getElementById:id=>nodes.get(id),createElement:tag=>node('created-'+nodes.size)},Event:UiEvent,URL,AbortController,Date:{now:()=>clock},queueMicrotask,
   setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,at:clock+delay});return id;},clearTimeout:id=>timers.delete(id),MutationObserver:class{constructor(fn){this.fn=fn;}observe(target,options){observers.push({target,options,fn:this.fn});}},
   human:async()=> 'checked-token',api:async(path,body)=>{calls.push({path,body});if(result instanceof Error)throw result;return result;},setBusyButtonLabel:button=>{const old=button.textContent;return ()=>{button.textContent=old;};}
  });
  vm.runInContext(streamGate,context);vm.runInContext(simplicity,context);
  function sync(next,options={}){if(!options.preserveDraft){const same=form.dataset.stationCode===String(next.code);form.dataset.stationCode=String(next.code);form.dataset.revision=next.revision||'';for(const key of ['name','stream_url','bio'])form.elements[key].value=next[key]||'';for(const key of ['zip_code','category'])if(!same||Object.hasOwn(next,key))form.elements[key].value=next[key]||'';form.elements.artwork.files=[];}window.syncOwnerStreamSaveGate(next);window.syncOwnerEditorState(next,options);}
  sync(record);
- return {nodes,form,window,calls,sync,save:nodes.get('ownerSave'),status:nodes.get('ownerSaveState'),stream:nodes.get('ownerStreamSettings'),options:nodes.get('ownerAccountOptions'),
+ return {nodes,form,window,context,calls,sync,save:nodes.get('ownerSave'),status:nodes.get('ownerSaveState'),stream:nodes.get('ownerStreamSettings'),options:nodes.get('ownerAccountOptions'),
   input(key,value){form.elements[key].value=value;form.elements[key].dispatchEvent(new UiEvent('input',{bubbles:true}));},
   file(file){form.elements.artwork.files=file?[file]:[];form.elements.artwork.dispatchEvent(new UiEvent('change',{bubbles:true}));},
   testStream:()=>nodes.get('testOwnerStream').onclick(),result(value){result=value;},
@@ -47,6 +47,20 @@ test('Save follows actual normalized values or selected artwork, and disables wh
  f.input('name','New station');assert.equal(f.save.disabled,false);assert.equal(f.status.textContent,'Ready to save');f.input('name',original.name);assert.equal(f.save.disabled,true);
  f.input('bio','New bio');assert.equal(f.save.disabled,false);f.input('bio',' Local news ');assert.equal(f.save.disabled,true);
  f.file({name:'new-logo.png'});assert.equal(f.save.disabled,false);f.file(null);assert.equal(f.save.disabled,true);assert.equal(f.status.textContent,'Up to date');
+});
+test('Bio remaining appears only near 250 characters and reverting the accepted fields clears the dirty flag',()=>{
+ const f=fixture();
+ const remaining=[...f.nodes.values()].find(node=>node.id==='ownerBioRemaining');assert.ok(remaining);assert.equal(remaining.hidden,true);
+ f.input('bio','x'.repeat(200));assert.equal(remaining.hidden,false);assert.equal(remaining.textContent,'50 characters left');f.input('bio','x'.repeat(249));assert.equal(remaining.textContent,'1 character left');assert.equal(remaining.dataset.state,'limit');f.form.dataset.dirty='1';f.input('bio',original.bio);assert.equal(f.form.dataset.dirty,undefined);assert.equal(f.form.dataset.ownerChanged,'false');assert.equal(f.save.disabled,true);
+});
+test('real global draft snapshots ignore unchanged provider hydration but retain partial server edits until reverted',()=>{
+ const f=fixture(),global=readFileSync(new URL('./public/assets/listener-usability.js',import.meta.url),'utf8');
+ f.form.querySelectorAll=()=>Object.values(f.form.elements);vm.runInContext(global.slice(global.indexOf('const draftForms='),global.indexOf('for(const id of draftForms)')),f.context);f.window.resetFormDraftBaseline(f.form);
+ for(const [id,value] of [['ownerStreamHost','stream.example'],['ownerStreamPort','443'],['ownerStreamPath','/live']])f.form.elements[id]={id,value,type:'text'};
+ f.window.renderOwnerEditorState();assert.equal(vm.runInContext('refreshFormDraftState(document.getElementById("editForm"))',f.context),false,'unchanged provider setup is guidance, not a content edit');
+ f.form.elements.ownerStreamHost.value='partial';f.input('stream_url','');assert.equal(vm.runInContext('refreshFormDraftState(document.getElementById("editForm"))',f.context),true);assert.equal(f.form.dataset.dirty,'1');
+ f.form.elements.ownerStreamHost.value='stream.example';f.input('stream_url',original.stream_url);assert.equal(vm.runInContext('refreshFormDraftState(document.getElementById("editForm"))',f.context),false);assert.equal(f.form.dataset.dirty,undefined);
+ f.input('bio','A real unsaved change');f.form.elements.ownerStreamPort.value='443';f.window.renderOwnerEditorState();assert.equal(vm.runInContext('refreshFormDraftState(document.getElementById("editForm"))',f.context),true,'guidance cannot clear another real text edit');
 });
 
 test('changed streams expand their controls and still require the real stream-pass gate',async()=>{

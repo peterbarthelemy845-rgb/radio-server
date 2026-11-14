@@ -44,8 +44,16 @@ test('search keeps a visible Filters entry and optional ZIP input even when no s
  assert.equal(f.$('openStationFilters').hidden,false);assert.equal(f.search.parentElement.id,'stationSearchControls');assert.equal(f.$('openStationFilters').getAttribute('aria-haspopup'),'dialog');
  assert.equal(f.dialog.getAttribute('aria-labelledby'),'stationFiltersTitle');assert.equal(f.dialog.getAttribute('aria-describedby'),'stationFiltersHelp');
  assert.equal(f.$('stationFiltersEmpty').textContent,'Station owners haven’t added categories yet.');assert.equal(f.$('stationFilterLanguage'),undefined);assert.equal(f.$('stationFilterCategory').parentElement.hidden,true);
- const zip=f.$('stationFilterZip');assert.equal(zip.parentElement.hidden,false);assert.equal(zip.type,'text');assert.equal(zip.inputMode,'numeric');assert.equal(zip.maxLength,5);assert.equal(zip.pattern,'[0-9]{5}');assert.equal(f.$('stationFilterZipHelp').textContent,'Stations within about 25 miles.');
+ const zip=f.$('stationFilterZip');assert.equal(zip.parentElement.hidden,false);assert.equal(zip.type,'text');assert.equal(zip.inputMode,'numeric');assert.equal(zip.maxLength,5);assert.equal(zip.pattern,'[0-9]{5}');assert.equal(f.$('stationFilterZipHelp').textContent,'Closest first within about 25 miles. ZIP distances are approximate.');
  f.reset();assert.equal(f.document.activeElement,f.$('applyStationFilters'));assert.equal(f.commits.length,0);f.apply();assert.deepEqual(f.commits,[{zip_code:'',category:''}]);
+});
+
+test('filter Reset is visible only for an active draft and ZIP is explicitly optional',()=>{
+ const f=fixture();f.update(catalog());f.open();const reset=f.$('resetStationFilterDraft'),zip=f.$('stationFilterZip'),category=f.$('stationFilterCategory');
+ assert.equal(reset.hidden,true);assert.equal(zip.parentElement.children[0].textContent,'ZIP code — optional');
+ zip.value='10';zip.oninput();assert.equal(reset.hidden,false);zip.value='';zip.oninput();assert.equal(reset.hidden,true);
+ category.value='music';category.dispatch('change');assert.equal(reset.hidden,false);category.value='';category.dispatch('change');assert.equal(reset.hidden,true);
+ category.value='news_talk';category.dispatch('change');f.reset();assert.equal(reset.hidden,true);assert.equal(f.commits.length,0);
 });
 
 test('only dimensions with multiple populated values appear, without invented options',()=>{
