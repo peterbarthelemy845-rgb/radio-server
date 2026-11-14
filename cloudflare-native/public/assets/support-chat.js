@@ -11,7 +11,7 @@
  function node(tag,className,text){const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element;}
  function labelled(tag,key,className){const element=node(tag,className);labels.push([element,key]);return element;}
  function button(key,className='secondary'){const element=labelled('button',key,className);element.type='button';return element;}
- const card=node('section','support-chat-card');card.id='supportChat';
+ const card=node('section','support-chat-card');card.id='supportChat';card.dataset.i18nSkip='1';
  const toggle=button('title','support-chat-toggle');toggle.id='supportChatToggle';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','supportChatPanel');
  const panel=node('div','support-chat-panel');panel.id='supportChatPanel';panel.hidden=true;
  const disclosure=labelled('p','intro','support-chat-disclosure'),privacy=labelled('p','privacy','support-chat-disclosure');
