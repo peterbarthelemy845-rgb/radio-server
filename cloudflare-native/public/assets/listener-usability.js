@@ -103,9 +103,10 @@ function draftSnapshot(form){
 function refreshFormDraftState(form){
  const saved=draftBaselines.get(form),next=draftSnapshot(form);
  if(saved===null||next===null)return !!form.dataset.dirty;
- const changed=next!==saved;if(changed)form.dataset.dirty='1';else delete form.dataset.dirty;return changed;
+ const changed=next!==saved;if(changed){if(form.dataset.dirty!=='1')form.dataset.dirty='1';}else if(form.dataset.dirty)delete form.dataset.dirty;return changed;
 }
 window.resetFormDraftBaseline=function(form){if(!form)return;draftBaselines.set(form,draftSnapshot(form));delete form.dataset.dirty;};
+window.formHasUnsavedChanges=form=>draftBaselines.has(form)?refreshFormDraftState(form):undefined;
 for(const id of draftForms){
  const form=$(id);window.resetFormDraftBaseline(form);
  const changed=event=>{if(id==='registerForm'&&event?.target?.name==='stream_provider'||id==='editForm'&&event?.target?.name==='owner_stream_provider')return;if(draftBaselines.get(form)===null)form.dataset.dirty='1';else refreshFormDraftState(form);};

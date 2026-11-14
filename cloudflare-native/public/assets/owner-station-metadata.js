@@ -50,7 +50,7 @@
  function render(){
   const available=categoryReady();form.dataset.ownerMetadataReady=available?'true':'false';form.dataset.ownerZipReady=bound()?'true':'false';
   details.open=true;summary.textContent=text('metadata.requiredDetails','Station details · Required');
-  for(const definition of definitions)captions.get(definition.name).textContent=text(definition.key,definition.label)+' *';
+  for(const definition of definitions){const caption=captions.get(definition.name);caption.dataset.i18nSkip='1';caption.textContent=text(definition.key,definition.label)+' *';}
   controls.get('zip_code').disabled=!bound()||busy();controls.get('category').disabled=!available||busy();
   notice.hidden=available||!stationCode;notice.dataset.i18n='metadata.requiredUnavailable';notice.textContent=notice.hidden?'':text('metadata.requiredUnavailable','Required station details could not load. Refresh the editor before saving.');
  }

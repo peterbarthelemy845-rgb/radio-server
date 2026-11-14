@@ -1,5 +1,5 @@
 'use strict';
-const APP_RELEASE='2026.11.14.6';
+const APP_RELEASE='2026.11.14.7';
 let appAvailableRelease='',appDismissedRelease='',appReleaseChecking=false,appUpdateConfirming=false;
 const appUpdateBanner=document.createElement('aside');appUpdateBanner.id='appUpdateBanner';appUpdateBanner.className='app-update-banner';appUpdateBanner.hidden=true;appUpdateBanner.setAttribute('aria-label','Website update');
 const appUpdateTitle=document.createElement('strong'),appUpdateNote=document.createElement('p'),appUpdateActions=document.createElement('div'),appUpdateRefresh=document.createElement('button'),appUpdateLater=document.createElement('button');
@@ -14,9 +14,10 @@ function appHasUnfinishedWork(){
  if(typeof shareRunning!=='undefined'&&shareRunning||typeof pairingCleanupPending!=='undefined'&&pairingCleanupPending>0||window.radioControlsBusy||appStationDeliveryState().pending)return true;
  if(document.querySelector('dialog[open]'))return true;
  for(const form of document.querySelectorAll('form')){
-  if(form.dataset.dirty)return true;
-  if(form.getClientRects().length&&form.dataset.appUpdateDirty)return true;
-  if(form.getClientRects().length&&form.querySelector('button[type="submit"]:disabled,button:not([type]):disabled'))return true;
+  const tracked=window.formHasUnsavedChanges?.(form);
+  if(tracked===true||tracked===undefined&&form.dataset.dirty)return true;
+  if(tracked===undefined&&form.getClientRects().length&&form.dataset.appUpdateDirty)return true;
+  if(form.dataset.busy==='1'||form.getAttribute?.('aria-busy')==='true')return true;
  }
  return false;
 }

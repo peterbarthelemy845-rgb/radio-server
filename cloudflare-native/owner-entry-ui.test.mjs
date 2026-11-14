@@ -197,7 +197,7 @@ test('registration reset clears retry identity including metadata, while a cance
 test('signup required station details start expanded with empty reset defaults and the server category catalog',()=>{
  const html=readFileSync(new URL('./public/index.html',import.meta.url),'utf8'),registration=html.match(/<form\b[^>]*id="registerForm"[^>]*>([\s\S]*?)<\/form>/)?.[1];assert.ok(registration);
  const details=registration.match(/<details\b([^>]*\bid="registrationStationDetails"[^>]*)>([\s\S]*?)<\/details>/);assert.ok(details);assert.match(details[1],/\bopen(?:\s|=|$)/);
- assert.match(details[2],/>Station details<\/summary>/);assert.doesNotMatch(details[2],/optional/);
+ assert.match(details[2],/>Station details · Required<\/summary>/);assert.doesNotMatch(details[2],/optional/);assert.equal((details[2].match(/class="metadata-required" aria-hidden="true" data-i18n-skip="1"/g)||[]).length,2);
  const zip=details[2].match(/<input\b([^>]*\bid="registrationStationZip"[^>]*)>/);assert.ok(zip);for(const attribute of ['name="zip_code"','type="text"','inputmode="numeric"','maxlength="5"','pattern="[0-9]{5}"','autocomplete="postal-code"'])assert.ok(zip[1].includes(attribute),attribute);assert.match(zip[1],/\brequired(?:\s|=|$)/);assert.doesNotMatch(zip[1],/\b(?:disabled|value)(?:\s|=|$)/);assert.doesNotMatch(registration,/\bname="language"/);
  for(const [name,id,catalog] of [['category','registrationStationCategory',metadataOptions.categories]]){
   const select=details[2].match(new RegExp('<select\\b([^>]*\\bid="'+id+'"[^>]*)>([\\s\\S]*?)<\\/select>'));assert.ok(select,name);assert.match(select[1],new RegExp('\\bname="'+name+'"'));assert.match(select[1],/\brequired(?:\s|=|$)/);assert.doesNotMatch(select[1],/\bdisabled(?:\s|=|$)/);
