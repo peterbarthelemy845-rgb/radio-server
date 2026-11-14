@@ -8,7 +8,7 @@ function setup(){return operationsFixture().then(f=>({...f,env:{...f.env,AI_ASSI
 function options(f,extra={}){return {kind:'test-help',instructions:'Use approved guide.',input:'Question',schema,now:f.now,...extra};}
 test('AI request is fixed-model, tool-free, storage-disabled and bounded; cache is private and idempotent',async()=>{
  const f=await setup();let calls=0;
- const fetcher=async(url,request)=>{calls++;assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(request.redirect,'error');const body=JSON.parse(request.body);assert.equal(body.model,'gpt-6-luna');assert.equal(body.store,false);assert.equal(body.reasoning.effort,'none');assert.equal(body.text.format.strict,true);assert.ok(body.max_output_tokens<=1000);assert.equal(body.tools,undefined);return response();};
+ const fetcher=async(url,request)=>{calls++;assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(request.redirect,'manual');const body=JSON.parse(request.body);assert.equal(body.model,'gpt-6-luna');assert.equal(body.store,false);assert.equal(body.reasoning.effort,'none');assert.equal(body.text.format.strict,true);assert.ok(body.max_output_tokens<=1000);assert.equal(body.tools,undefined);return response();};
  assert.equal((await runAI(f.env,options(f,{fetcher,maxOutputTokens:99999}))).data.answer,'Approved help');
  const cached=await runAI(f.env,options(f,{fetcher,maxOutputTokens:99999}));assert.equal(cached.cache_hit,true);assert.equal(calls,1);
  const row=f.sqlite.prepare('SELECT * FROM ai_results').get();assert.ok(!JSON.stringify(row).includes('Approved help'));assert.ok(!JSON.stringify(row).includes('Question'));assert.equal(f.sqlite.prepare('SELECT count(*) n FROM ai_usage').get().n,1);
@@ -27,6 +27,14 @@ test('a corrupt cached result can be safely regenerated',async()=>{
  const f=await setup();let calls=0;const fetcher=async()=>{calls++;return response();};
  await runAI(f.env,options(f,{fetcher}));f.sqlite.exec("UPDATE ai_results SET encrypted_payload='invalid'");
  const result=await runAI(f.env,options(f,{fetcher}));assert.equal(result.data.answer,'Approved help');assert.equal(result.cache_hit,false);assert.equal(calls,2);
+});
+test('Workers-compatible requests reject redirects without forwarding the private credential',async()=>{
+ let calls=0;
+ await assert.rejects(providerRequest('{}','fake',async(url,request)=>{
+  calls++;assert.equal(request.redirect,'manual');
+  return new Response('',{status:302,headers:{Location:'https://untrusted.example'}});
+ }),error=>error.httpStatus===302);
+ assert.equal(calls,1);
 });
 test('provider diagnostics store only allowlisted codes, status and field names, never error messages or credentials',async()=>{
  const f=await setup();const fetcher=async()=>new Response(JSON.stringify({error:{code:'insufficient_quota',type:'insufficient_quota',param:'private-secret-field',message:'PRIVATE SECRET test-private-key'}}),{status:429});

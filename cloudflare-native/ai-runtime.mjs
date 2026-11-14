@@ -35,7 +35,9 @@ async function boundedResponse(response){
 export async function providerRequest(body,key,fetcher=fetch,timeout=14000){
  const controller=new AbortController();let timer;
  const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('provider_timeout'));},timeout);});
- const work=(async()=>{const response=await fetcher('https://api.openai.com/v1/responses',{method:'POST',redirect:'error',signal:controller.signal,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body});
+ // Workers supports manual/follow only. Manual returns redirects for rejection
+ // below, ensuring Authorization never follows a redirect to another host.
+ const work=(async()=>{const response=await fetcher('https://api.openai.com/v1/responses',{method:'POST',redirect:'manual',signal:controller.signal,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body});
   if(!response.ok){let failure;try{failure=await boundedResponse(response);}catch{}
    const error=Error('provider_unavailable');error.httpStatus=response.status;
    error.issueCode=issueCodes.has(failure?.error?.code)?failure.error.code:issueCodes.has(failure?.error?.type)?failure.error.type:'provider_error';
