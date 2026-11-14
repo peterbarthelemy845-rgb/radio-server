@@ -47,6 +47,14 @@ test('AI stays unavailable without enabled configuration or key; oversized reque
  for(const env of [{...f.env,AI_ASSISTANTS_ENABLED:'false'},{...f.env,OPENAI_API_KEY:''}])await assert.rejects(runAI(env,options(f,{fetcher})),e=>e.status===503);
  await assert.rejects(runAI(f.env,options(f,{fetcher,input:'x'.repeat(24000)})),e=>e.status===413);assert.equal(calls,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM ai_usage').get().n,0);
 });
+test('billing errors pause new requests across assistants without spending more allowance and recover after ten minutes',async()=>{
+ const f=await setup();let calls=0;
+ await assert.rejects(runAI(f.env,options(f,{fetcher:async()=>{calls++;return new Response(JSON.stringify({error:{code:'credit_balance_exhausted'}}),{status:429});}})),e=>e.status===503);
+ await assert.rejects(runAI(f.env,options(f,{kind:'other-assistant',input:'Different request',now:f.now+1,fetcher:async()=>{calls++;return response();}})),e=>e.status===503);
+ assert.equal(calls,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM ai_usage').get().n,1);
+ assert.equal((await runAI(f.env,options(f,{now:f.now+601,fetcher:async()=>{calls++;return response();}}))).data.answer,'Approved help');
+ assert.equal(calls,2);assert.equal(f.sqlite.prepare('SELECT code FROM ai_service_health').get().code,'ok');
+});
 test('daily and monthly allowances are reserved before provider execution, including failed calls',async()=>{
  for(const [period,limit] of [['day',AI_DAILY_LIMIT],['month',AI_MONTHLY_LIMIT]]){
   const f=await setup(),day=new Date(f.now*1000).toISOString().slice(0,10),month=day.slice(0,7);

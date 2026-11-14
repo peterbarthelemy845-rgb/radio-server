@@ -86,6 +86,10 @@ there, so there is no Wrangler migration ledger to assume.
 Release 2026.11.14.2 also applies `0030_ai_diagnostics.sql`: the admin operations
 panel records only allowlisted provider error codes, HTTP status and field names,
 without provider error messages, prompts or credentials.
+Billing errors pause new generation across assistants for ten minutes before a
+retry. Existing valid cached answers and measured reports remain available.
+OpenAI returned `credit_balance_exhausted` during live validation: add API credit
+in the OpenAI account before expecting generated answers or summaries.
 
 The existing minute cron runs mail and backups first. AI task failures are
 isolated. Response caches are transient; draft queue and health/report caches
