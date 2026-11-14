@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 function fixture({human,clipboard,receipt=false}={}){
- const events={},calls=[],answers=[],ids=new Map(),observers=[];
+ const events={},documentEvents={},calls=[],answers=[],ids=new Map(),observers=[],timers=new Map();let nextTimer=0;
  function element(tag='div'){
   const node={tag,nodeType:1,children:[],dataset:{},hidden:false,attributes:{},textContent:'',value:'',isConnected:true,replacements:0,
    setAttribute(k,v){this.attributes[k]=v;},
@@ -14,20 +14,20 @@ function fixture({human,clipboard,receipt=false}={}){
    contains(child){return child===this||this.children.some(node=>node.contains?.(child));},
    querySelectorAll(selector){const tags=selector.split(',');return this.children.flatMap(child=>[...(tags.includes(child.tag)?[child]:[]),...(child.querySelectorAll?.(selector)||[])]);},
    getBoundingClientRect(){return {top:0,bottom:0,height:0};},
-   after(...siblings){this.afterNodes=siblings;},select(){this.selected=true;},addEventListener(name,fn){this[name+'Listener']=fn;},showModal(){this.open=true;},close(){this.open=false;this.closeListener?.();},focus(){this.focused=true;document.activeElement=this;},reset(){this.resetCalled=true;}};
+   after(...siblings){this.afterNodes=siblings;},select(){this.selected=true;},addEventListener(name,fn){this[name+'Listener']=fn;},showModal(){this.showCount=(this.showCount||0)+1;this.open=true;},close(){this.open=false;this.closeListener?.();},focus(){this.focused=true;document.activeElement=this;},reset(){this.resetCalled=true;}};
   Object.defineProperty(node,'innerHTML',{set(){throw Error('Untrusted HTML insertion');}});return node;
  }
- const document={hidden:false,activeElement:null,selection:null,getSelection(){return this.selection;},createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(){}};ids.set('supportTicketStatus',element());ids.set('support',element());if(receipt){ids.set('ticketReference',element());ids.set('ticketSuccess',element('dialog'));}
+ const document={hidden:false,activeElement:null,selection:null,getSelection(){return this.selection;},createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(name,fn){documentEvents[name]=fn;}};ids.set('supportTicketStatus',element());ids.set('support',element());ids.set('supportChatTicket',element('button'));if(receipt){ids.set('ticketReference',element());ids.set('ticketSuccess',element('dialog'));}
  const window={innerHeight:720,scrollX:0,scrollY:0,scrolls:[],scrollTo(x,y){this.scrolls.push({x,y});this.scrollX=x;this.scrollY=y;},addEventListener(name,fn){events[name]=fn;},dispatchEvent(){},appI18n:{language:'en'}};
- const ctx={document,window,navigator:{clipboard},$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(){return 1;},clearTimeout(){},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
+ const ctx={document,window,navigator:{clipboard},$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(fn,delay){const id=++nextTimer;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
  runInNewContext(readFileSync(new URL('./public/assets/support-status.js',import.meta.url),'utf8'),ctx);
- return {events,calls,answers,document,window,ids,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
+ return {events,calls,answers,document,window,ids,timers,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),show:runInNewContext('showSupportTicketSheet',ctx),close:runInNewContext('closeSupportTicketSheet',ctx),visibility(hidden){document.hidden=hidden;documentEvents.visibilitychange?.();},leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
 }
 function text(node){return node.textContent+(node.children||[]).map(text).join('');}
 const reference='b'.repeat(32);
 const result={ticket:{reference,state:'review',subject:'Wi-Fi help',message:'<img src=x onerror=alert(1)>'},replies:[{created_at:1800000000,body:'<script>secret()</script>'}],history:[]};
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
-async function beginVerification(f,id='c'.repeat(32)){f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push({verification_id:id});await f.get('statusLookup').onsubmit({preventDefault(){}});f.get('statusCode').value='123456';}
+async function beginVerification(f,id='c'.repeat(32)){f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push({verification_id:id});await f.get('statusLookup').onsubmit({preventDefault(){}});f.get('statusCode').value='123456';}
 test('private ticket content is rendered as untranslated text, never executable markup',async()=>{
  const f=fixture();f.answers.push(result);await f.open(reference);const panel=f.get('statusPrivate');assert.equal(panel.hidden,false);assert.equal(f.get('statusLookup').hidden,true);assert.match(text(panel),/<img src=x onerror=alert\(1\)>/);assert.match(text(panel),/<script>secret\(\)<\/script>/);
  const protectedNodes=[];function walk(node){if(node.dataset?.i18nSkip)protectedNodes.push(node);for(const child of node.children||[])walk(child);}walk(panel);assert.ok(protectedNodes.some(node=>node.textContent===result.ticket.message));assert.ok(protectedNodes.some(node=>node.textContent===result.replies[0].body));assert.equal(f.calls[0].path,'/api/support/status/ticket?reference='+reference);
@@ -44,11 +44,11 @@ test('unchanged automatic ticket checks preserve content and focused controls wi
 });
 
 test('new ticket replies and status patch in place while preserving focused actions, selected text and the reading position',async()=>{
- const f=fixture();f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView'),oldReply=[...view.replyViews.values()][0];view.close.focus();f.window.scrollY=200;
+ const f=fixture();f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView'),oldReply=[...view.replyViews.values()][0],sheet=f.get('statusSheet');view.close.focus();sheet.scrollTop=200;
  const selection={rangeCount:1,isCollapsed:false,anchorNode:oldReply.body,anchorOffset:0,focusNode:oldReply.body,focusOffset:0,restored:[],setBaseAndExtent(...values){this.restored.push(values);}};f.document.selection=selection;
- oldReply.body.getBoundingClientRect=()=>{const top=300+(view.state.dataset.i18n==='supportStatus.closed'?24:0)-f.window.scrollY;return {top,bottom:top+80,height:80};};
+ oldReply.body.getBoundingClientRect=()=>{const top=300+(view.state.dataset.i18n==='supportStatus.closed'?24:0)-sheet.scrollTop;return {top,bottom:top+80,height:80};};
  const next={...result,ticket:{...result.ticket,state:'closed'},replies:[...result.replies,{created_at:1800000030,body:'Try the updated radio software.'}]};f.answers.push(next);await f.open(reference,true);
- assert.equal(f.get('supportTicketView'),view);assert.equal(view.state.textContent,'Closed');assert.equal(view.replyViews.size,2);assert.equal([...view.replyViews.values()][0],oldReply);assert.equal(f.document.activeElement,view.close);assert.equal(selection.restored.length,1);assert.deepEqual(selection.restored[0],[oldReply.body,0,oldReply.body,0]);assert.equal(oldReply.body.getBoundingClientRect().top,100);assert.equal(f.window.scrollY,224);assert.match(text(view.replies),/Try the updated radio software/);
+ assert.equal(f.get('supportTicketView'),view);assert.equal(view.state.textContent,'Closed');assert.equal(view.replyViews.size,2);assert.equal([...view.replyViews.values()][0],oldReply);assert.equal(f.document.activeElement,view.close);assert.equal(selection.restored.length,1);assert.deepEqual(selection.restored[0],[oldReply.body,0,oldReply.body,0]);assert.equal(oldReply.body.getBoundingClientRect().top,100);assert.equal(sheet.scrollTop,224);assert.equal(f.window.scrolls.length,0);assert.match(text(view.replies),/Try the updated radio software/);
 });
 
 test('a rolling reply list removes old entries without detaching surviving replies or replacing its buttons',async()=>{
@@ -63,17 +63,17 @@ test('language refresh updates ticket dates while retaining the same private con
 });
 
 test('temporary automatic-check errors and recovery keep the focused ticket at its reading position',async()=>{
- const f=fixture();f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView'),notice=f.get('statusNotice');f.window.scrollY=200;view.refresh.focus();
- view.refresh.getBoundingClientRect=()=>{const top=300+(notice.textContent?48:0)-f.window.scrollY;return {top,bottom:top+48,height:48};};
+ const f=fixture();f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView'),notice=f.get('statusNotice'),sheet=f.get('statusSheet');sheet.scrollTop=200;view.refresh.focus();
+ view.refresh.getBoundingClientRect=()=>{const top=300+(notice.textContent?48:0)-sheet.scrollTop;return {top,bottom:top+48,height:48};};
  f.answers.push(Error('Connection interrupted'));await f.open(reference,true);assert.equal(view.refresh.getBoundingClientRect().top,100);assert.equal(f.document.activeElement,view.refresh);assert.match(notice.textContent,/Connection interrupted/);
- f.answers.push(result);await f.open(reference,true);assert.equal(view.refresh.getBoundingClientRect().top,100);assert.equal(f.document.activeElement,view.refresh);assert.equal(notice.textContent,'');assert.equal(f.window.scrollY,200);
+ f.answers.push(result);await f.open(reference,true);assert.equal(view.refresh.getBoundingClientRect().top,100);assert.equal(f.document.activeElement,view.refresh);assert.equal(notice.textContent,'');assert.equal(sheet.scrollTop,200);assert.equal(f.window.scrolls.length,0);
 });
 test('email lookup requires its private challenge and verification before displaying a ticket',async()=>{
- const f=fixture();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push({verification_id:'c'.repeat(32)});await f.get('statusLookup').onsubmit({preventDefault(){}});assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.calls[0].body.turnstile_token,'bot-proof');
+ const f=fixture();f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push({verification_id:'c'.repeat(32)});await f.get('statusLookup').onsubmit({preventDefault(){}});assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.calls[0].body.turnstile_token,'bot-proof');
  f.get('statusCode').value='123456';f.answers.push({reference},result);await f.get('statusVerifyForm').onsubmit({preventDefault(){}});assert.equal(f.calls[1].path,'/api/support/status/verify');assert.equal(f.calls[1].body.code,'123456');assert.equal(f.get('statusVerify').open,false);assert.equal(f.get('statusCode').value,'');assert.equal(f.get('statusPrivate').hidden,false);
 });
 test('expired ticket access removes private content and returns to email verification',async()=>{
- const f=fixture();f.answers.push(result);await f.open(reference);const error=Object.assign(Error('Verify your email to open this support ticket.'),{status:403});f.answers.push(error);await f.open(reference,true);assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.get('statusPrivate').children.length,0);assert.equal(f.get('statusLookup').hidden,false);assert.equal(f.get('supportStatusReference'),'');assert.match(f.get('statusNotice').textContent,/Verify your email/);
+ const f=fixture();f.answers.push(result);await f.open(reference);const error=Object.assign(Error('Verify your email to open this support ticket.'),{status:403});f.answers.push(error);await f.open(reference,true);assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.get('statusPrivate').children.length,0);assert.equal(f.get('statusLookup').hidden,false);assert.equal(f.get('supportStatusReference'),'');assert.equal(f.get('statusReference').value,reference);assert.match(f.get('statusNotice').textContent,/Verify your email/);
 });
 test('cancelling an in-flight verification cannot open a private ticket afterward',async()=>{
  const f=fixture();await beginVerification(f);const pending=deferred();f.answers.push(pending.promise);const verification=f.get('statusVerifyForm').onsubmit({preventDefault(){}});
@@ -87,25 +87,25 @@ test('an old verification response cannot close or unlock a newer challenge',asy
  f.answers.push(result);next.resolve({reference});await nextVerify;assert.equal(f.get('statusVerify').open,false);assert.equal(f.get('statusPrivate').hidden,false);
 });
 test('repeated submits send only one lookup and one verification request',async()=>{
- const f=fixture(),pending=deferred();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);
+ const f=fixture(),pending=deferred();f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);
  const first=f.get('statusLookup').onsubmit({preventDefault(){}});await f.get('statusLookup').onsubmit({preventDefault(){}});await Promise.resolve();assert.equal(f.calls.length,1);
  pending.resolve({verification_id:'c'.repeat(32)});await first;const checked=deferred();f.answers.push(checked.promise);f.get('statusCode').value='123456';const verifying=f.get('statusVerifyForm').onsubmit({preventDefault(){}});await f.get('statusVerifyForm').onsubmit({preventDefault(){}});assert.equal(f.calls.filter(call=>call.path==='/api/support/status/verify').length,1);
  f.get('statusCancel').onclick();checked.resolve({reference});await verifying;
 });
 test('lookup retains the ticket and email captured before a delayed bot check',async()=>{
- const bot=deferred(),f=fixture({human:()=>bot.promise}),pending=deferred();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});
+ const bot=deferred(),f=fixture({human:()=>bot.promise}),pending=deferred();f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});
  f.get('statusReference').value='a'.repeat(32);f.get('statusEmail').value='other@example.com';bot.resolve('bot-proof');await new Promise(setImmediate);assert.equal(f.calls[0].body.reference,reference);assert.equal(f.calls[0].body.email,'listener@example.com');pending.resolve({verification_id:'c'.repeat(32)});await lookup;
 });
 test('leaving Support during a bot check abandons the request before sending email',async()=>{
- const bot=deferred(),f=fixture({human:()=>bot.promise});f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});
+ const bot=deferred(),f=fixture({human:()=>bot.promise});f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});
  f.leave();bot.resolve('bot-proof');await lookup;assert.equal(f.calls.length,0);assert.notEqual(f.get('statusVerify').open,true);assert.equal(f.get('supportStatusLookupBusy'),false);
 });
 test('late lookup responses cannot open the verification dialog over another page',async()=>{
- const f=fixture(),pending=deferred();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ const f=fixture(),pending=deferred();f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(pending.promise);const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  f.leave();pending.resolve({verification_id:'c'.repeat(32)});await lookup;assert.notEqual(f.get('statusVerify').open,true);assert.equal(f.get('supportStatusVerification'),'');
 });
 test('a navigation-cancelled lookup cannot unlock a new request after returning to Support',async()=>{
- const f=fixture(),old=deferred(),next=deferred();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(old.promise);const first=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);f.leave();f.returnToSupport();f.answers.push(next.promise);const second=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);
+ const f=fixture(),old=deferred(),next=deferred();f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(old.promise);const first=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);f.leave();f.returnToSupport();f.show();f.answers.push(next.promise);const second=f.get('statusLookup').onsubmit({preventDefault(){}});await new Promise(setImmediate);
  assert.equal(f.calls.length,2);old.resolve({verification_id:'c'.repeat(32)});await first;assert.equal(f.get('supportStatusLookupBusy'),true);assert.notEqual(f.get('statusVerify').open,true);next.resolve({verification_id:'d'.repeat(32)});await second;assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('supportStatusVerification'),'d'.repeat(32));
 });
 test('leaving Support dismisses its challenge and ignores a late verification result',async()=>{
@@ -134,4 +134,37 @@ test('the receipt copies its event reference rather than reading translated rece
  const copied=[],f=fixture({receipt:true,clipboard:{async writeText(value){copied.push(value);}}});f.ids.get('ticketReference').textContent='Translated private receipt text';f.answers.push({tickets:[]},result);
  f.events['support-ticket-created']({detail:{reference}});await new Promise(setImmediate);f.ids.get('ticketSuccess').open=true;
  const host=f.get('receiptReferenceCopy'),copy=host.querySelectorAll('button')[0];assert.equal(host.hidden,false);await copy.onclick();assert.deepEqual(copied,[reference]);assert.match(text(host),/Reference copied/);
+});
+test('the tracker has no standalone card and opens as an explicitly named modal without opening a mobile keyboard or emailing',async()=>{
+ const f=fixture(),sheet=f.get('statusSheet'),host=f.ids.get('supportTicketStatus');assert.equal(host.hidden,true);assert.equal(host.children.length,0);assert.equal(sheet.id,'supportTicketsDialog');assert.notEqual(sheet.open,true);assert.equal(f.calls.length,0);f.events['radio-locals-ready']();assert.equal(f.calls.length,0);
+ f.ids.get('supportChatTicket').focus();f.answers.push({tickets:[]});assert.equal(f.window.supportTickets.open(),true);await new Promise(setImmediate);assert.equal(sheet.open,true);assert.equal(sheet.attributes['aria-labelledby'],'supportTicketsTitle');assert.equal(f.document.activeElement,f.get('statusSheetTitle'));assert.notEqual(f.document.activeElement,f.get('statusReference'));assert.deepEqual(f.calls.map(call=>call.path),['/api/support/status/recent']);
+});
+test('closing the sheet clears private rendering, stops refresh, restores the My ticket pill, and preserves lookup drafts without logging out',async()=>{
+ const f=fixture();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';f.answers.push(result);await f.open(reference);assert.equal(f.timers.size,1);f.get('statusSheetClose').onclick();assert.equal(f.get('statusSheet').open,false);assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.get('statusPrivate').children.length,0);assert.equal(f.timers.size,0);assert.equal(f.document.activeElement,f.ids.get('supportChatTicket'));assert.equal(f.get('statusEmail').value,'listener@example.com');assert.equal(f.get('statusReference').value,reference);assert.equal(f.calls.some(call=>call.body),false);
+ f.answers.push(result);f.window.supportTickets.open();await new Promise(setImmediate);assert.equal(f.get('statusPrivate').hidden,false);assert.equal(f.calls.at(-1).path,'/api/support/status/ticket?reference='+reference);
+});
+test('Escape and backdrop close the sheet while an inner click leaves it open',()=>{
+ const f=fixture(),sheet=f.get('statusSheet');f.show();sheet.clickListener({target:f.get('statusDetails')});assert.equal(sheet.open,true);sheet.clickListener({target:sheet});assert.equal(sheet.open,false);f.show();let prevented=false;sheet.cancelListener({preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.equal(sheet.open,false);assert.equal(f.document.activeElement,f.ids.get('supportChatTicket'));
+});
+test('a closed sheet cannot be repopulated by a stale ticket read or a delayed native close event after reopening',async()=>{
+ const f=fixture(),old=deferred();f.answers.push(old.promise);const reading=f.open(reference);f.close();assert.equal(f.get('statusPrivate').children.length,0);const nextReference='d'.repeat(32),next={...result,ticket:{...result.ticket,reference:nextReference,subject:'Newer ticket'}};f.answers.push(next);await f.open(nextReference);f.get('statusSheet').closeListener();assert.equal(f.get('statusPrivate').hidden,false);old.resolve(result);await reading;assert.equal(f.get('supportTicketView').reference,nextReference);assert.match(text(f.get('statusPrivate')),/Newer ticket/);assert.doesNotMatch(text(f.get('statusPrivate')),/Wi-Fi help/);
+});
+test('closing during a bot check prevents lookup email and closing during email verification ignores a late grant',async()=>{
+ const bot=deferred(),f=fixture({human:()=>bot.promise});f.show();f.get('statusReference').value=reference;f.get('statusEmail').value='listener@example.com';const lookup=f.get('statusLookup').onsubmit({preventDefault(){}});f.close();bot.resolve('bot-proof');await lookup;assert.equal(f.calls.length,0);assert.notEqual(f.get('statusVerify').open,true);
+ const g=fixture();await beginVerification(g);const pending=deferred();g.answers.push(pending.promise);const verifying=g.get('statusVerifyForm').onsubmit({preventDefault(){}});g.close();assert.equal(g.get('statusVerify').open,false);assert.equal(g.get('statusCode').value,'');pending.resolve({reference});await verifying;assert.equal(g.calls.filter(call=>call.path.startsWith('/api/support/status/ticket')).length,0);assert.equal(g.get('statusPrivate').children.length,0);
+});
+test('refresh runs only while the sheet and page are visible and resumes after closing a nested verification challenge',async()=>{
+ const f=fixture();f.answers.push(result);await f.open(reference);assert.equal(f.timers.size,1);assert.equal([...f.timers.values()][0].delay,30000);const oldTimer=[...f.timers.values()][0].fn;f.visibility(true);assert.equal(f.timers.size,0);f.visibility(false);assert.equal(f.timers.size,1);
+ await beginVerification(f);assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('statusSheet').open,true);assert.equal(f.timers.size,0);f.get('statusCancel').onclick();assert.equal(f.get('statusSheet').open,true);assert.equal(f.timers.size,1);
+ const calls=f.calls.length;f.close();oldTimer();f.events['app-language-changed']();assert.equal(f.calls.length,calls);assert.equal(f.timers.size,0);
+});
+test('the success receipt never stacks the tracker modal and the next My ticket opens the existing grant without another code email',async()=>{
+ const f=fixture({receipt:true});f.events['support-ticket-created']({detail:{reference}});assert.equal(f.calls.length,0);assert.notEqual(f.get('statusSheet').open,true);assert.equal(f.get('supportStatusReference'),reference);f.ids.get('ticketSuccess').open=true;assert.equal(f.window.supportTickets.open(),false);assert.equal(f.calls.length,0);
+ f.ids.get('ticketSuccess').open=false;f.answers.push(result);assert.equal(f.window.supportTickets.open(),true);await new Promise(setImmediate);assert.equal(f.get('statusPrivate').hidden,false);assert.deepEqual(f.calls.map(call=>call.path),['/api/support/status/ticket?reference='+reference]);
+});
+test('late recent-ticket lists cannot overwrite a later sheet visit and leaving Support clears the private modal',async()=>{
+ const f=fixture(),old=deferred();f.answers.push(old.promise);f.window.supportTickets.open();f.close();f.answers.push({tickets:[{reference,subject:'Current recent ticket',state:'new'}]});f.window.supportTickets.open();await new Promise(setImmediate);old.resolve({tickets:[{reference:'e'.repeat(32),subject:'Obsolete recent ticket',state:'closed'}]});await new Promise(setImmediate);assert.match(text(f.get('statusRecent')),/Current recent ticket/);assert.doesNotMatch(text(f.get('statusRecent')),/Obsolete/);f.leave();assert.equal(f.get('statusSheet').open,false);assert.equal(f.get('statusRecent').children.length,0);assert.equal(f.window.supportTickets.open(),false);
+});
+test('tracker inputs keep normal letter spacing and the sheet has bounded responsive scrolling',()=>{
+ const css=readFileSync(new URL('./public/assets/support-status.css',import.meta.url),'utf8');assert.match(css,/dialog\.support-tickets-dialog input\{letter-spacing:normal\}/);assert.match(css,/max-height:86dvh/);assert.match(css,/overflow-y:auto/);assert.match(css,/@media\(max-width:600px\)/);assert.match(css,/safe-area-inset-bottom/);
 });
