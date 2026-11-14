@@ -69,7 +69,18 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
  if(env.STREAM_CHECK_PUBLIC_FETCH!=='true')throw new HttpError(503,'Stream checking is temporarily unavailable.');
  const checkId=await beginStreamCheck(env,current.token_hash,validated,now);
  const finish=async passed=>{const stored=await completeStreamCheck(env,current.token_hash,validated,checkId,passed,now);return passed&&stored?positive():negative();};
- let url;try{url=target(validated,request,env);}catch{return finish(false);}
+ const result=await probePublicStream(env,validated,{request,fetch:deps.fetch,connect:deps.connect});
+ return finish(result.audio_response);
+}
+
+// The scheduled health monitor uses exactly the same bounded public-network
+// probe as registration. It never creates publication proofs or changes a
+// station's publication state.
+export async function probePublicStream(env,value,deps={}){
+ if(env.STREAM_CHECK_PUBLIC_FETCH!=='true')return {audio_response:false,reason:'configuration'};
+ let request=deps.request;
+ try{request=request||new Request(env.PUBLIC_ORIGIN||'https://radiolocals.com/');}catch{return {audio_response:false,reason:'configuration'};}
+ let url;try{url=target(value,request,env);}catch{return {audio_response:false,reason:'unsafe_target'};}
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT_MS);
  let reader;
  try{
@@ -78,30 +89,30 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
     method:'GET',redirect:'manual',cache:'no-store',signal:controller.signal,
     headers:{Accept:'audio/*, application/ogg;q=0.9, application/octet-stream;q=0.5','Range':'bytes=0-8191','Icy-MetaData':'0'}
    }),controller.signal);
-   if(response.redirected){cancel(response.body);return await finish(false);}
+   if(response.redirected){cancel(response.body);return {audio_response:false,reason:'unsafe_redirect'};}
    if([301,302,303,307,308].includes(response.status)){
-    cancel(response.body);const location=response.headers.get('Location');if(!location||hop===MAX_REDIRECTS)return await finish(false);
+    cancel(response.body);const location=response.headers.get('Location');if(!location||hop===MAX_REDIRECTS)return {audio_response:false,reason:'unsafe_redirect'};
     const next=target(new URL(location,url).href,request,env);
-    if(url.protocol==='https:'&&next.protocol!=='https:')return await finish(false);
+    if(url.protocol==='https:'&&next.protocol!=='https:')return {audio_response:false,reason:'unsafe_redirect'};
     url=next;continue;
    }
-   if(!response.ok||!response.body){cancel(response.body);return await finish(false);}
+   if(!response.ok||!response.body){cancel(response.body);return {audio_response:false,reason:'http_error'};}
    const type=(response.headers.get('Content-Type')||'').split(';',1)[0].trim().toLowerCase();
-   if(!/^(?:audio\/(?:mpeg|mp3|aac|aacp|ogg|wav|wave|x-wav|flac|x-flac)|application\/(?:ogg|octet-stream))$/.test(type)){cancel(response.body);return await finish(false);}
+   if(!/^(?:audio\/(?:mpeg|mp3|aac|aacp|ogg|wav|wave|x-wav|flac|x-flac)|application\/(?:ogg|octet-stream))$/.test(type)){cancel(response.body);return {audio_response:false,reason:'not_audio'};}
    reader=response.body.getReader();const sample=new Uint8Array(MAX_SAMPLE);let size=0,reads=0;
    while(size<MAX_SAMPLE&&reads++<64){
     const {done,value}=await abortable(reader.read(),controller.signal);if(done)break;
     if(!value?.byteLength)continue;const take=Math.min(value.byteLength,MAX_SAMPLE-size);sample.set(value.subarray(0,take),size);size+=take;
-    if(audioSample(sample.subarray(0,size),type))return await finish(true);
+    if(audioSample(sample.subarray(0,size),type))return {audio_response:true,reason:'audio_response'};
    }
-   return await finish(false);
+   return {audio_response:false,reason:'not_confirmed'};
   }
- }catch{return await finish(false);}
+ }catch{return {audio_response:false,reason:controller.signal.aborted?'timeout':'connection_failed'};}
  finally{
   clearTimeout(timer);controller.abort();
   // Do not await an upstream's cancellation promise: cancellation itself must
   // never extend the overall deadline or retain the audio stream indefinitely.
   cancel(reader);try{reader?.releaseLock();}catch{}
  }
- return finish(false);
+ return {audio_response:false,reason:'not_confirmed'};
 }

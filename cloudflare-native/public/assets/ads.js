@@ -25,7 +25,7 @@ async function showAds(administrator){
      catch(e){if(actionGeneration===adReviewGeneration&&generation===adReviewViewGeneration)$('adsReviewMessage').textContent=e.message;}
      finally{actionPending=false;button.disabled=false;}
     };box.append(button);
-   }$('adsRecords').append(box);
+   }if(administrator)window.aiAdmin?.mountReview({host:box,type:'ad',id:ad.id,isActive:()=>generation===adReviewViewGeneration&&!$('adReview').hidden});$('adsRecords').append(box);
   }if(!result.ads.length)$('adsRecords').textContent='No advertisements yet.';return true;
  }catch(e){if(generation===adReviewGeneration)message(e.message);return false;}
  finally{if(generation===adReviewGeneration)adReviewLoading=false;}

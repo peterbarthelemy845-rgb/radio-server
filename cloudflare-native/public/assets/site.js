@@ -61,6 +61,7 @@ function busy(form,on,freezeFields=false,label){
 function formIsBusy(form){return formBusyStates.has(form);}
 
 function loadHuman(){if(window.turnstile)return Promise.resolve();if(!humanLoading)humanLoading=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';let timer;const failed=()=>{clearTimeout(timer);script.remove();humanLoading=null;reject(new Error('Security check could not load. Refresh and try again.'));};script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=failed;document.head.append(script);timer=setTimeout(failed,15000);});return humanLoading;}
+window.supportChatTransport={api,human};
 function humanCancelled(){const error=new Error('Security check cancelled.');error.name='AbortError';return error;}
 function humanStep(promise,signal){
  if(!signal)return promise;
@@ -362,6 +363,7 @@ async function adminList(){
     }catch(e){if(view===sitePageGeneration&&!$('admin').hidden)$('adminMessage').textContent=e.message;}finally{button.disabled=false;}
    };card.append(button);
   }
+  window.aiAdmin?.mountReview({host:card,type:'station',id:station.code,isActive:()=>!$('admin').hidden&&card.isConnected});
   $('adminStations').append(card);
  }
  if(!result.stations.length)$('adminStations').textContent='No stations yet.';

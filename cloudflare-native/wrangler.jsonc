@@ -16,6 +16,6 @@
   "r2_buckets": [{"binding": "MEDIA", "bucket_name": "radio-locals-private-media"}],
   "images": {"binding": "IMAGES"},
   "assets": {"directory": "public", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none"},
-  "vars": {"STREAM_CHECK_PUBLIC_FETCH": "true", "PUBLIC_ORIGIN": "https://radiolocals.com", "MIGRATION_PREVIEW": "false", "TURNSTILE_SITE_KEY": "0x4AAAAAAFuFAAOfKstrRUVF", "ADMIN_EMAIL": "peterbarthelemy.mbmc@icloud.com"},
+  "vars": {"AI_ASSISTANTS_ENABLED": "true", "STREAM_CHECK_PUBLIC_FETCH": "true", "PUBLIC_ORIGIN": "https://radiolocals.com", "MIGRATION_PREVIEW": "false", "TURNSTILE_SITE_KEY": "0x4AAAAAAFuFAAOfKstrRUVF", "ADMIN_EMAIL": "peterbarthelemy.mbmc@icloud.com"},
   "triggers": {"crons": ["* * * * *"]}
 }

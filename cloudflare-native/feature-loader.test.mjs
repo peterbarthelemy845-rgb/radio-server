@@ -14,11 +14,17 @@ test('simultaneous overlapping features fetch each application-owned asset only 
  const f=fixture(),requests=[f.load('admin'),f.load('advertise'),f.load('owner')];await f.finish();await Promise.all(requests);const paths=f.appended.map(f.path);for(const path of new Set(paths))assert.equal(paths.filter(value=>value===path).length,1,path);assert.equal(paths.filter(path=>path==='/assets/ads.js').length,1);assert.equal(paths.filter(path=>path==='/assets/operations.css').length,1);assert.equal(f.events.length,3);
 });
 test('a failed specialized script can retry without rerunning already loaded scripts or stylesheet requests',async()=>{
- const f=fixture(),first=f.load('support');f.appended[0].completed=true;f.appended[0].onload();await f.tick();const failed=f.appended[1];failed.onerror();await assert.rejects(first,/could not load/);await f.tick();assert.equal(failed.removed,true);const retry=f.load('support');await f.finish();await retry;assert.equal(f.appended.filter(element=>element.tag==='link').length,1);assert.equal(f.appended.filter(element=>element.src==='/assets/support-status.js').length,2);assert.deepEqual(f.events,['app-content-changed']);
+ const f=fixture(),first=f.load('support');for(const style of f.appended.slice()){style.completed=true;style.onload();}await f.tick();const failed=f.appended.find(element=>element.tag==='script');failed.onerror();await assert.rejects(first,/could not load/);await f.tick();assert.equal(failed.removed,true);const retry=f.load('support');await f.finish();await retry;assert.equal(f.appended.filter(element=>element.tag==='link').length,2);assert.equal(f.appended.filter(element=>element.src==='/assets/support-status.js').length,2);assert.deepEqual(f.events,['app-content-changed']);
 });
 test('a failed stylesheet retries only that file and blocks specialized script execution until styles recover',async()=>{
  const f=fixture(),first=f.load('owner');f.appended[0].onerror();await assert.rejects(first,/could not load/);await f.tick();const retry=f.load('owner');await f.tick();assert.equal(f.appended.filter(element=>element.tag==='script').length,0);assert.equal(f.appended.filter(element=>element.tag==='link').length,6);await f.finish();await retry;assert.equal(f.events.length,1);
 });
 test('unknown and prototype feature names cannot inject a URL or trigger network activity',async()=>{
  const f=fixture();for(const name of ['https://attacker.example/script.js','../admin','__proto__','constructor','toString','owner.js',null])await assert.rejects(f.load(name),/Unknown website feature/);assert.equal(f.appended.length,0);assert.equal(f.events.length,0);
+});
+test('optional AI assets cannot prevent the ordinary support tools from loading',async()=>{
+ const f=fixture(),request=f.load('support');
+ for(const element of f.appended.slice()){element.completed=true;if(f.path(element).includes('support-chat'))element.onerror();else element.onload();}
+ await f.tick();const status=f.appended.find(element=>element.src==='/assets/support-status.js');status.completed=true;status.onload();await f.tick();
+ const chat=f.appended.find(element=>element.src==='/assets/support-chat.js');chat.completed=true;chat.onerror();await f.finish();await request;assert.deepEqual(f.events,['app-content-changed']);
 });

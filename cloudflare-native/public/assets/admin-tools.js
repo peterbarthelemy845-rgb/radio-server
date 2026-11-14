@@ -39,6 +39,7 @@ function renderSupportTicket(thread,view,draft='',notice=''){
  const send=supportText('button','Send reply');send.type='submit';
  const feedback=supportText('p',notice,'support-feedback');feedback.setAttribute('role','status');
  form.append(statusLabel,save,replyLabel,counter,supportText('p','Replies go to the email address submitted with this ticket. Sending queues an email; delivery status appears above.','support-meta'),send,feedback);box.append(form);
+ window.aiAdmin?.mountTicket({host:box,ticketId:record.id,replyInput:textarea,isActive:()=>supportViewActive(view)});
  let writing=false;
  async function update(withReply){
   if(writing)return;
@@ -72,7 +73,7 @@ async function loadAdminRequests(supportOnly,more=false){
   if(!more){$('toolRecords').replaceChildren();$('toolRecords').append(supportText('h3',supportOnly?'Support tickets':'Legal & other requests'));}else previousMore?.remove();
   const records=result.requests;
   for(const record of records){
-   const box=document.createElement('article');box.className='support-ticket-summary';
+   const box=document.createElement('article');box.className='support-ticket-summary';if(supportOnly)box.dataset.aiTicketId=record.id;
    box.append(supportText('h4',(supportOnly?(record.payload.subject||'Support ticket'):record.kind)+' · '+supportStateLabel(record.state)),supportText('p','Reference: '+record.id+' · '+supportTime(record.created_at),'support-meta'));
    if(supportOnly){
     box.append(supportText('p',[record.payload.name,record.payload.email].filter(Boolean).join(' · '),'support-meta'));
@@ -83,6 +84,7 @@ async function loadAdminRequests(supportOnly,more=false){
    }
    $('toolRecords').append(box);
   }
+  if(supportOnly)void window.aiAdmin?.decorateTickets({records,host:$('toolRecords'),isActive:()=>supportViewActive(view)});
   if(!records.length&&!more)$('toolRecords').append(supportText('p',supportOnly?'No support tickets.':'No legal or other requests.'));
   adminRequestCursor=result.has_more?result.next_cursor||'':'';
   if(adminRequestCursor){const button=supportText('button',supportOnly?'Load more tickets':'Load more requests','secondary');button.id='adminRequestsMore';button.type='button';button.onclick=()=>loadAdminRequests(supportOnly,true);$('toolRecords').append(button);}

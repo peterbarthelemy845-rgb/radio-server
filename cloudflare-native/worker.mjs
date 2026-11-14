@@ -1,4 +1,8 @@
 import {streamCheckRoutes} from './stream-check.mjs';
+import {aiSupportRoutes} from './ai-support.mjs';
+import {aiReviewRoutes,scheduledReviewAI} from './ai-review.mjs';
+import {aiOperationsRoutes,scheduledAI} from './ai-operations.mjs';
+import {aiRuntimeRoutes,cleanupAI} from './ai-runtime.mjs';
 import {supportStatusRoutes} from './support-status.mjs';
 import {controlRoutes,telemetryStatements,approvalStatements,pollControls,revokeControlStatements} from './radio-controls.mjs';
 import {supportRoutes} from './admin-support.mjs';
@@ -24,6 +28,7 @@ import {publicStaticPath,publicHeadPath,rewritePublicHtml} from './public-pages.
 import {publicArtworkResponse} from './public-artwork.mjs';
 export async function handle(request,env,now=Math.floor(Date.now()/1000)) {
   const url=new URL(request.url), path=url.pathname;
+  for(const routes of [aiSupportRoutes,aiRuntimeRoutes,aiReviewRoutes,aiOperationsRoutes]){const result=await routes(request,env,now);if(result)return result;}
   if(request.method==='HEAD'&&publicHeadPath(path)){
     const response=await handle(new Request(request,{method:'GET'}),env,now);void response.body?.cancel().catch(()=>{});return new Response(null,response);
   }
@@ -203,4 +208,7 @@ export async function cleanup(env,now=Math.floor(Date.now()/1000)) {
     env.DB.prepare('DELETE FROM listening_sessions WHERE last_seen<?').bind(now-86400),
   ]);
 }
-export default {fetch:fetchHandler,async scheduled(event,env){await cleanup(env);await processMail(env);const now=Math.floor((event.scheduledTime||Date.now())/1000);await scheduledBackup(env,now);if(new Date(now*1000).getUTCMinutes()===10)await expireBackups(env,now);}};
+export default {fetch:fetchHandler,async scheduled(event,env){await cleanup(env);await processMail(env);const now=Math.floor((event.scheduledTime||Date.now())/1000);await scheduledBackup(env,now);if(new Date(now*1000).getUTCMinutes()===10)await expireBackups(env,now);
+  // AI is non-critical: provider/quota failures cannot stop mail or backups.
+  for(const [task,run] of [['cleanup',cleanupAI],['tickets',scheduledReviewAI],['operations',scheduledAI]])try{await run(env,now);}catch{console.error(JSON.stringify({event:'ai_background_unavailable',task}));}
+}};
