@@ -45,12 +45,13 @@ function fixture({draft={},missing=false}={}){
  };
 }
 
-test('Support begins with four plain problem choices and keeps private ticket lookup accessible',()=>{
+test('Support hides the retired problem chooser and keeps private ticket lookup accessible',()=>{
  const f=fixture(),host=f.nodes.get('supportGuidedFlow');
  assert.deepEqual(['wifi','sound','freezing','account'].map(id=>f.topic(id).textContent),['Wi-Fi','No sound','Radio freezing','Station account']);
  assert.equal(f.nodes.get('supportFlowTitle').textContent,'What’s wrong?');assert.equal(host.dataset.view,'choose');assert.equal(f.form.hidden,true);assert.equal(f.tickets.hidden,false);assert.equal(f.videos.hidden,true);
  assert.equal(f.tickets.parentElement,f.support);assert.ok(f.support.children.indexOf(f.tickets)>f.support.children.indexOf(f.form));
  assert.equal(f.form.querySelector('h2').textContent,'Contact support');assert.equal(f.nodes.get('supportFlowTitle').tabIndex,-1);
+ assert.equal(f.nodes.get('supportFlowTitle').parentElement.hidden,true);
 });
 
 test('Wi-Fi shows relevant existing tutorials, hides unrelated guides, and opens a preselected contact form',()=>{

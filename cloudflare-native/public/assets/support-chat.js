@@ -12,8 +12,8 @@
  function labelled(tag,key,className){const element=node(tag,className);labels.push([element,key]);return element;}
  function button(key,className='secondary'){const element=labelled('button',key,className);element.type='button';return element;}
  const card=node('section','support-chat-card');card.id='supportChat';card.dataset.i18nSkip='1';
- const toggle=button('title','support-chat-toggle');toggle.id='supportChatToggle';toggle.setAttribute('aria-expanded','false');toggle.setAttribute('aria-controls','supportChatPanel');
- const panel=node('div','support-chat-panel');panel.id='supportChatPanel';panel.hidden=true;
+ const toggle=button('title','support-chat-toggle');toggle.id='supportChatToggle';toggle.setAttribute('aria-expanded','true');toggle.setAttribute('aria-controls','supportChatPanel');
+ const panel=node('div','support-chat-panel');panel.id='supportChatPanel';panel.hidden=false;
  const disclosure=labelled('p','intro','support-chat-disclosure'),privacy=labelled('p','privacy','support-chat-disclosure');
  const thread=node('div','support-chat-thread');thread.id='supportChatThread';thread.setAttribute('role','log');thread.setAttribute('aria-live','polite');thread.setAttribute('aria-relevant','additions');
  const form=node('form','support-chat-form');form.id='supportChatForm';
@@ -37,7 +37,6 @@
  toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)input.focus({preventScroll:true});};
  contact.onclick=()=>{
   if(pending){generation++;controller?.abort();setBusy(false);}
-  panel.hidden=true;toggle.setAttribute('aria-expanded','false');
   if(typeof window.supportGuidedFlow?.openContact==='function')window.supportGuidedFlow.openContact();
   else{ticketForm.hidden=false;(ticketForm.elements?.name||ticketForm.querySelector('input'))?.focus({preventScroll:true});ticketForm.scrollIntoView?.({block:'start',behavior:'auto'});}
  };

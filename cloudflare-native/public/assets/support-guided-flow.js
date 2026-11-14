@@ -20,7 +20,7 @@
  const chooseAgain=button('supportFlow.chooseAgain','Choose another problem','support-help-back');chooseAgain.onclick=()=>{if(pending())return;topicId='';contact=false;videos.scrollLeft=0;render();heading.focus({preventScroll:true});};
  const helpTitle=node('h2');helpTitle.id='supportTopicTitle';helpTitle.tabIndex=-1;help.setAttribute('aria-labelledby',helpTitle.id);const steps=node('ol');help.append(chooseAgain,helpTitle,steps);
  const helpContact=button('supportFlow.contact','Contact support','support-contact-primary');helpContact.setAttribute('aria-controls','ticketForm');helpContact.onclick=()=>openContact({subject:topics[topicId]?.subject});
- const contactBack=button('supportFlow.back','Back to help','support-help-back');contactBack.hidden=true;contactBack.onclick=()=>{if(pending())return;contact=false;render();(topicId?helpTitle:heading).focus({preventScroll:true});};
+ const contactBack=button('supportFlow.back','Back to help','support-help-back');contactBack.hidden=true;contactBack.onclick=()=>{if(pending())return;contact=false;render();(topicId?helpTitle:document.getElementById('supportChatToggle'))?.focus({preventScroll:true});};
  const formHeading=form.querySelector('h2');if(formHeading){formHeading.dataset.i18n='supportFlow.contactTitle';formHeading.textContent=text('supportFlow.contactTitle','Contact support');}
  // Keep existing tutorial nodes: no new media source or external request is
  // introduced. Ticket lookup stays available below either help or the form.
@@ -50,7 +50,7 @@
   videos.hidden=!count;window.dispatchEvent(new Event('support-guided-flow-updated'));
  }
  function render(){
-  host.dataset.view=contact?'contact':topicId?'topic':'choose';questions.hidden=contact||!!topicId;help.hidden=contact||!topicId;helpContact.hidden=contact||!topicId;contactBack.hidden=!contact;form.hidden=!contact;
+  host.dataset.view=contact?'contact':topicId?'topic':'choose';questions.hidden=true;help.hidden=contact||!topicId;helpContact.hidden=contact||!topicId;contactBack.hidden=!contact;form.hidden=!contact;
   const disabled=pending();contactBack.disabled=disabled;chooseAgain.disabled=disabled;otherContact.disabled=disabled;helpContact.disabled=disabled;for(const choice of topicButtons.values())choice.disabled=disabled;
   renderGuides();
  }
