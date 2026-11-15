@@ -478,6 +478,8 @@ function requestStationDelivery(radioId,stationCode,name){
 }
 window.addEventListener('radio-selection-changed',renderStationDeliveryStatus);
 let sharedOfflineRadios=new Set(),sharedLinkedRadios=[];
+function setSharedAdvertising(station){const link=$('shareAdvertise');if(!link)return;const code=String(station?.listener_code||''),valid=/^[1-9][0-9]{1,5}$/.test(code);link.hidden=!valid;if(valid)link.setAttribute('href','/advertise/'+code);else link.removeAttribute('href');}
+if($('shareAdvertise'))$('shareAdvertise').onclick=event=>{if(shareRunning||$('shared').dataset.adding==='1'||$('shared').hidden||$('shareAdvertise').hidden)event.preventDefault();};
 function renderSharedRadioDestination(){
  const enteringCode=!$('deviceLabel').hidden,single=!enteringCode&&sharedLinkedRadios.length===1;
  $('radioLabel').hidden=enteringCode||sharedLinkedRadios.length<2;
@@ -488,10 +490,12 @@ function invalidateSharedView(){sharedOpenGeneration++;abandonSharedPairing(shar
 function stopWaitingForSharedStation(){invalidateSharedView();renderStationDeliveryStatus();}
 async function openShared(code,inPopup=false,autoAdd=false,onStationLoaded){
  const generation=++sharedOpenGeneration;
+ setSharedAdvertising(null);
  abandonSharedPairing(generation);
  try{
  const station=await api('/api/stations/'+code);if(generation!==sharedOpenGeneration)return;sharedCode=code;
  if(!inPopup)page('shared');$('shared').hidden=false;$('shareForm').hidden=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
+ setSharedAdvertising(station);
  if(station.logo_url){$('shareArt').src=station.logo_url;$('shareArt').hidden=false;}
  if(typeof onStationLoaded==='function')onStationLoaded(station);
  const result=await api('/api/phone/radios');if(generation!==sharedOpenGeneration)return;

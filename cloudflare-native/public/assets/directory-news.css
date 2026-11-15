@@ -88,6 +88,9 @@ nav #navLibrary[hidden]{display:none!important}
 #stationAddPopup #shared h1{font-size:23px;margin:8px 0}
 #stationAddPopup .station-popup-share{display:block;margin:10px 6px 0;min-height:40px;padding:8px 12px;font-size:13px}
 #shared #reportStationProblem{display:block;min-height:44px;margin:6px 0 0;padding:8px;color:#52677f;font-size:13px;text-align:center;width:100%}
+#shared .station-advertise-link{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;min-height:44px;margin:12px 0 6px;padding:10px 12px;border:1px solid transparent;border-radius:10px;background:linear-gradient(135deg,#e43838,#bd2020);color:#fff;text-decoration:none;text-align:center;font-size:14px;font-weight:700;line-height:1.4}
+#shared .station-advertise-link:focus-visible{outline:3px solid #159df8;outline-offset:3px}
+#shared .station-advertise-link[hidden],#shared[data-adding="1"] .station-advertise-link{display:none}
 #shared[data-adding="1"] #reportStationProblem{display:none}
 #shared:has(#shareForm[hidden]) #reportStationProblem{display:none}
 #ticketStationContext{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0;padding:9px 10px;border-radius:10px;background:#edf4ff;color:#1b3c65}
