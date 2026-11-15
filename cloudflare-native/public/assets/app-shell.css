@@ -12,6 +12,10 @@ body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:min
 body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{width:100%;max-width:none;padding:16px;background:#fff;border:1px solid #d9e4f5;border-radius:15px;box-shadow:0 14px 36px #0002;margin:0}
 body.app-listener-page #myRadio.card,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{display:flow-root;border-top:0;border-radius:0 0 15px 15px;padding-top:0}
 body.app-listener-page #support>h1{display:none}
+/* Support starts directly with help; its own card keeps the rounded accent. */
+body.app-listener-page:has(#support:not([hidden])) #listenerAppHeader{display:none}
+body.app-listener-page #support.card{border-top:1px solid #d9e4f5;border-radius:15px;padding-top:16px}
+body.app-listener-page #support.card::before{content:""}
 body.app-listener-page #myRadio .linked-radio-card{grid-template-columns:minmax(0,1fr) auto;background:transparent;border:0;box-shadow:none;border-radius:0;padding:0;margin:0 0 8px;gap:8px 12px}
 body.app-listener-page #myRadio .radio-device-row{display:flex;grid-column:1;grid-row:1;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0}
 body.app-listener-page #myRadio .device-code-label{font-size:.875rem;font-weight:500;line-height:1.4;margin:0;overflow-wrap:anywhere}

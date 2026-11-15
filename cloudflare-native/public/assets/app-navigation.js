@@ -211,7 +211,7 @@ window.addEventListener('click',event=>{
  // The visible Back button always returns to Radio, even when a browser has
  // no usable previous history entry. Keep in-memory drafts and positions.
  if(backToRadio||continueConnection){appShowPage('myRadio',{replace:true,focus:guidedReturn?null:$('openWifiSetup').hidden?$('navRadio'):$('openWifiSetup')});if(guidedReturn)appResumeRadioConnection(continueConnection);return;}
- appShowPage(next,{push:!backToRadio,replace:backToRadio,focus:guidedReturn?null:next==='myRadio'?$('navRadio'):$('listenerAppTitle')});
+ appShowPage(next,{push:!backToRadio,replace:backToRadio,focus:guidedReturn?null:next==='myRadio'?$('navRadio'):next==='support'?$('support'):$('listenerAppTitle')});
  if(guidedReturn)appResumeRadioConnection();
 },true);
 if('scrollRestoration' in history)history.scrollRestoration='manual';
