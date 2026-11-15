@@ -3,8 +3,7 @@
 body.app-listener-page{color:#172b4d;background:radial-gradient(ellipse at top,#203b9a,#060c25 75%);min-height:100dvh;padding:calc(24px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(100px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));font-size:1rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 body.app-listener-page input,body.app-listener-page select,body.app-listener-page textarea,body.app-listener-page button{font-family:inherit}
 body.app-listener-page main{max-width:460px}
-body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:8px 16px;background:#fff;border:1px solid #d9e4f5;border-bottom:0;border-radius:15px 15px 0 0;margin:8px 0 0}
-#listenerAppHeader>img{display:block;grid-column:1/-1;justify-self:center;width:64px;height:64px;max-width:100%;object-fit:contain;margin:0 auto;padding:6px;border:3px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 5px 12px #1675e72b}
+body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:8px 16px;background:#fff;border:1px solid #d9e4f5;border-bottom:0;border-radius:15px 15px 0 0;margin:0}
 #listenerAppHeader>div{min-width:0}
 #listenerAppHeader p{display:none}
 #listenerAppHeader h1{font-size:23px;line-height:1.2;margin:0;color:#152b50}
@@ -12,7 +11,7 @@ body.app-listener-page #listenerAppHeader{display:grid;grid-template-columns:min
 #listenerTextSize[aria-pressed=true]{background:#174f9a;color:#fff}
 body.app-listener-page #myRadio.card,body.app-listener-page #library.radio-library,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{width:100%;max-width:none;padding:16px;background:#fff;border:1px solid #d9e4f5;border-radius:15px;box-shadow:0 14px 36px #0002;margin:0}
 body.app-listener-page #myRadio.card,body.app-listener-page #support.card,body.app-listener-page #wifiSetup.card{display:flow-root;border-top:0;border-radius:0 0 15px 15px;padding-top:0}
-body.app-listener-page #myRadio>.radio-page-logo,body.app-listener-page #support>.radio-page-logo,body.app-listener-page #support>h1{display:none}
+body.app-listener-page #support>h1{display:none}
 body.app-listener-page #myRadio .linked-radio-card{grid-template-columns:minmax(0,1fr) auto;background:transparent;border:0;box-shadow:none;border-radius:0;padding:0;margin:0 0 8px;gap:8px 12px}
 body.app-listener-page #myRadio .radio-device-row{display:flex;grid-column:1;grid-row:1;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0}
 body.app-listener-page #myRadio .device-code-label{font-size:.875rem;font-weight:500;line-height:1.4;margin:0;overflow-wrap:anywhere}

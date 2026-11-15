@@ -6,14 +6,14 @@ const source=path=>readFileSync(new URL('./public'+path,import.meta.url));
 function serviceWorker(){
  const events={},added=[],deleted=[],network=[],matches=[];let skip=0,claim=0,online=true;
  const stored=new Map(publicFiles.map(path=>[path,'public offline asset '+path]));
- const caches={async open(name){assert.equal(name,'radio-locals-public-v3');return {async addAll(paths){added.push(...paths);}};},async keys(){return ['radio-locals-public-v0','radio-locals-public-v1','radio-locals-public-v3','unrelated-cache'];},async delete(name){deleted.push(name);return true;},async match(path){matches.push(path);return stored.has(path)?new Response(stored.get(path)):undefined;}};
+ const caches={async open(name){assert.equal(name,'radio-locals-public-v4');return {async addAll(paths){added.push(...paths);}};},async keys(){return ['radio-locals-public-v0','radio-locals-public-v1','radio-locals-public-v3','radio-locals-public-v4','unrelated-cache'];},async delete(name){deleted.push(name);return true;},async match(path){matches.push(path);return stored.has(path)?new Response(stored.get(path)):undefined;}};
  const self={location:{origin},addEventListener(name,fn){events[name]=fn;},async skipWaiting(){skip++;},clients:{async claim(){claim++;}}};
  runInNewContext(source('/sw.js').toString(),{self,caches,URL,Response,fetch:async request=>{network.push(request);if(!online)throw Error('offline');return new Response('private network response '+request.url);}});
  async function lifecycle(name){let done;events[name]({waitUntil(promise){done=promise;}});await done;}
  function fetchEvent(path,options={}){let response;const request={url:path.startsWith('http')?path:origin+path,method:'GET',mode:'cors',...options};events.fetch({request,respondWith(promise){assert.equal(response,undefined);response=Promise.resolve(promise);}});return {request,response};}
  return {events,added,deleted,network,matches,stored,lifecycle,fetchEvent,offline(){online=false;},skip:()=>skip,claim:()=>claim};
 }
-test('service-worker install stores only public offline resources and activation retires only its old cache',async()=>{const f=serviceWorker();await f.lifecycle('install');assert.deepEqual(f.added,publicFiles);assert.equal(f.skip(),1);await f.lifecycle('activate');assert.deepEqual(f.deleted,['radio-locals-public-v0','radio-locals-public-v1']);assert.equal(f.claim(),1);assert.equal(f.network.length,0);});
+test('service-worker install stores only public offline resources and activation retires only its old cache',async()=>{const f=serviceWorker();await f.lifecycle('install');assert.deepEqual(f.added,publicFiles);assert.equal(f.skip(),1);await f.lifecycle('activate');assert.deepEqual(f.deleted,['radio-locals-public-v0','radio-locals-public-v1','radio-locals-public-v3']);assert.equal(f.claim(),1);assert.equal(f.network.length,0);});
 test('service worker leaves API calls, private artwork, writes and other origins untouched',()=>{const f=serviceWorker();
  for(const [path,options] of [
   ['/api/admin/stations',{}],['/api/owner/artwork',{}],['/api/radio/poll',{method:'POST'}],['/api/admin/legal?private=1',{mode:'navigate'}],

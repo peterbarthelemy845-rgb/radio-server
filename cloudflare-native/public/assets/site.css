@@ -7,3 +7,6 @@ main>.card,body.app-listener-page #listenerAppHeader{position:relative}
 main>.card::before,body.app-listener-page #listenerAppHeader::before{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(100deg,#17c5f3,#0566e5,#2746cf) left top/100% 5px no-repeat;pointer-events:none}
 /* Listener headers and their content panels form one continuous white card. */
 body.app-listener-page :is(#myRadio,#support,#wifiSetup).card::before{content:none}
+
+/* One centered brand header sits above every page card. */
+.app-brand-logo{display:block;width:80px;height:80px;max-width:100%;object-fit:contain;margin:0 auto 12px;padding:10px;border:5px solid transparent;border-radius:50%;background:linear-gradient(145deg,#fff,#e1f1fb) padding-box,linear-gradient(145deg,#04c6ee,#0766f7 55%,#073ad6) border-box;box-shadow:0 6px 14px #1675e725}
