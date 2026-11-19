@@ -1,9 +1,9 @@
-import {json,encrypt,decrypt,randomHex,readJson,limit,HttpError} from './security.mjs';import {administrator} from './access.mjs';
+import {json,encrypt,decrypt,randomHex,readJson,limit,mac,HttpError} from './security.mjs';import {administrator} from './access.mjs';
 import {publicStreamUrl} from './public-stream-url.mjs';
 import {stationName} from './station-edits.mjs';
 import {stationMetadata} from './station-metadata.mjs';
 import {STREAM_CHECK_LIFETIME} from './stream-verification.mjs';
-export const BACKUP_TABLES=['stations','station_edits','station_stream_checks','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies','support_ticket_flags','support_folder_actions','share_event_states'];
+export const BACKUP_TABLES=['stations','station_edits','station_stream_checks','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_update_preferences','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies','support_ticket_flags','support_folder_actions','share_event_states'];
 const MAX_RECORDS=50000,MAX_MEDIA=250,MAX_MANIFEST_BYTES=8*1024*1024,MAX_MEDIA_BYTES=50*1024*1024;
 // AES-GCM adds a 16-byte tag; the existing envelope hex-encodes ciphertext
 // plus its 12-byte IV and one separator. Every accepted manifest must restore.
@@ -126,7 +126,7 @@ export async function restoreBackup(env,id,now,actor=null){
  for(const table of BACKUP_TABLES){
   // Older snapshots omit tables added in migrations 0010 and 0011. Preserve
   // newer inventory reports and support correspondence during a legacy restore.
-  const rows=['radio_station_inventory','support_replies','station_edits','station_stream_checks','support_ticket_flags','support_folder_actions','share_event_states'].includes(table)&&!Object.hasOwn(snapshot.tables,table)?[]:snapshot.tables[table];
+  const rows=['radio_station_inventory','support_replies','station_edits','station_stream_checks','support_ticket_flags','support_folder_actions','share_event_states','ad_update_preferences'].includes(table)&&!Object.hasOwn(snapshot.tables,table)?[]:snapshot.tables[table];
   if(!Array.isArray(rows)||rows.length>MAX_RECORDS)throw new HttpError(400,'Invalid backup table.');const schema=(await env.DB.prepare('PRAGMA table_info('+table+')').all()).results,columns=schema.map(c=>c.name),primary=schema.filter(c=>c.pk).map(c=>c.name),updates=columns.filter(c=>!primary.includes(c)).map(c=>c+'=excluded.'+c).join(','),sql='INSERT INTO '+table+'('+columns.join(',')+') VALUES ('+columns.map(()=>'?').join(',')+') ON CONFLICT DO UPDATE SET '+updates;for(let row of rows){count++;
   // Snapshots made before migration 0009 cannot recover a display code from its
   // HMAC. Only this newly added nullable column may be absent in older rows.
@@ -135,6 +135,8 @@ export async function restoreBackup(env,id,now,actor=null){
  const edits=snapshot.tables.station_edits||[];validateStationEditSnapshot(snapshot.tables.stations,edits,new Set(snapshot.media));
  validateStationStreamChecks(snapshot.tables.stations,edits,snapshot.tables.station_stream_checks||[],snapshot.created_at);
  validateListenerSupportSnapshot(snapshot.tables,snapshot.created_at);
+ const advertisements=new Map(snapshot.tables.local_ads.map(ad=>[ad.id,ad]));for(const preference of snapshot.tables.ad_update_preferences||[]){const ad=advertisements.get(preference.ad_id);if(!ad||typeof ad.contact_email!=='string'||preference.email_hash!==await mac(env,'ad-email:'+ad.contact_email.trim().toLowerCase())||!Number.isSafeInteger(preference.verified_at)||preference.verified_at<ad.created_at||preference.verified_at>snapshot.created_at)throw new HttpError(400,'Invalid advertiser email preference in backup.');}
+ statements.push(env.DB.prepare('DELETE FROM phone_station_requests'),env.DB.prepare('DELETE FROM ad_requests'),env.DB.prepare('DELETE FROM ad_status_grants'),env.DB.prepare('DELETE FROM ad_status_verifications'));
  // The approved station row and its proposals are one snapshot. In particular,
  // a legacy snapshot must not leave a newer proposal attached to restored data.
  statements.unshift(env.DB.prepare('DELETE FROM station_edits WHERE station_code IN (SELECT value FROM json_each(?))').bind(JSON.stringify(snapshot.tables.stations.map(row=>row.code))));

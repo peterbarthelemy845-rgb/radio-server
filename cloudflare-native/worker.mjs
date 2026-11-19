@@ -176,7 +176,7 @@ function transportSecurity(request,response){
 }
 export async function fetchHandler(request,env,ctx) {
   try{const response=await handle(request,env);
-    if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|support\/(?:ticket(?:\/(?:verify|resend))?|status\/request)$)/.test(new URL(request.url).pathname)&&response.ok)
+    if(ctx&&request.method==='POST'&&/^\/api\/(?:(?:owner|admin)\/|ads\/(?:submit|updates\/(?:request|verify))$|support\/(?:ticket(?:\/(?:verify|resend))?|status\/(?:request|reply))$)/.test(new URL(request.url).pathname)&&response.ok)
       ctx.waitUntil(processMail(env));
     return transportSecurity(request,response);
   }catch(error){

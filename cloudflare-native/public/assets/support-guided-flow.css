@@ -18,3 +18,4 @@
 body.app-large-text #supportGuidedFlow :is(button,li){font-size:1.125rem}
 @media(max-width:340px){#supportGuidedFlow .support-topic-choices{gap:8px}#supportGuidedFlow .support-topic-choice{padding:12px 7px}}
 @media(forced-colors:active){#supportGuidedFlow .support-topic-choice{border:1px solid ButtonText}}
+.support-contact-fallback{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.support-contact-fallback>button{flex:1;min-height:44px;margin:0}.support-contact-fallback>p{flex-basis:100%;margin:0}.support-contact-fallback>p:empty{display:none}

@@ -4,8 +4,10 @@
  if(!editor||!form||!field||!button||!area||!notice)return;
  const save=form.querySelector?.('button[type="submit"]')||document.getElementById('ownerSave');
  const PASS_LIFETIME=55*60*1000;
- let active=null,generation=0,statusKey='',statusFallback='',station='',loaded=false,approvedUrl='',passedUrl='',passedUntil=0,expiryTimer;
+ let active=null,generation=0,statusKey='',statusFallback='',station='',loaded=false,approvedUrl='',passedUrl='',passedUntil=0,expiryTimer,retryTimer,retryVisible=false;
  function text(key,fallback){const value=window.appI18n?.t(key);return value&&value!==key?value:fallback;}
+ function retrySeconds(){return Math.max(0,Math.ceil(((window.streamTestRetryUntil||0)-Date.now())/1000));}
+ function retryText(seconds){const time=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');return text('registration.retryStreamIn','Try again in {time}').replace('{time}',time);}
  function status(key,fallback='',state=''){
   statusKey=key;statusFallback=fallback;notice.dataset.state=state;notice.hidden=false;
   if(key)notice.dataset.i18n=key;else delete notice.dataset.i18n;
@@ -23,7 +25,10 @@
   return value===approvedUrl||value===passedUrl&&Date.now()<passedUntil;
  }
  function controls(){
-  button.disabled=!!active||saving()||editor.hidden||!field.value.trim();
+  if(retryTimer!==undefined){clearTimeout(retryTimer);retryTimer=undefined;}const remaining=retrySeconds();
+  button.disabled=!!active||saving()||editor.hidden||!field.value.trim()||remaining>0;
+  if(remaining){button.dataset.i18nSkip='1';button.textContent=retryText(remaining);retryVisible=true;if(!editor.hidden)status('',retryText(remaining),'cooldown');retryTimer=setTimeout(controls,1000);retryTimer?.unref?.();}
+  else if(retryVisible){delete button.dataset.i18nSkip;button.textContent=text('registration.test','Test stream');retryVisible=false;if(notice.dataset.state==='cooldown')status('owner.streamCheckRequired','Test your stream before saving.','unconfirmed');}
   const permit=allowed(),changedContent=typeof window.ownerEditorNeedsSave!=='function'||window.ownerEditorNeedsSave();if(save){save.disabled=saving()||editor.hidden||!permit||!changedContent;if(permit)save.removeAttribute?.('aria-describedby');else save.setAttribute?.('aria-describedby','ownerStreamPublicationHelp');}
   const next=permit?'true':'false',changed=form.dataset.streamSaveAllowed!==next;form.dataset.streamSaveAllowed=next;
   if(changed&&typeof Event==='function')window.dispatchEvent?.(new Event('owner-stream-save-state-changed'));
@@ -51,7 +56,7 @@
   if(passedUrl&&canonical(field.value)!==passedUrl)clearPass();armExpiry();controls();
  };
  button.onclick=async()=>{
-  if(active||saving()||editor.hidden)return;
+  if(active||saving()||editor.hidden||retrySeconds())return;
   if(window.prepareOwnerStreamSetup&&!window.prepareOwnerStreamSetup())return;
   clearPass();controls();const raw=field.value;let target;
   try{if(typeof window.parsePublicStreamUrl!=='function')throw new Error(text('registration.setupUnavailable','Stream address validation is unavailable. Refresh and try again.'));target=window.parsePublicStreamUrl(raw);}
@@ -64,7 +69,7 @@
    const response=await api('/api/owner/stream-check',{stream_url:attempt.value,turnstile_token});if(!current())return;
    if(response?.result==='audio_response'&&response.audio_response===true){passedUrl=attempt.value;passedUntil=Date.now()+PASS_LIFETIME;armExpiry();result('registration.streamReady','✓ Stream ready','success');}
    else{const failure=window.streamTestFailure?.(response)||{key:'registration.notConfirmed',message:'Stream could not be confirmed. Check the details and test again before saving.'},mount=document.getElementById('ownerStreamPath');if(response?.field==='stream_path'&&mount&&!mount.disabled){mount.setCustomValidity(failure.message);mount.focus();}result(failure.key,failure.message,'unconfirmed');}
-  }catch(error){if(current())result('',String(error.message||'The stream check did not complete. Test again before saving.').slice(0,400),'error');}
+  }catch(error){if(current()){if(error.status===429&&Number.isInteger(error.retry_after)&&error.retry_after>0&&error.retry_after<=86400){window.streamTestRetryUntil=Date.now()+error.retry_after*1000;window.dispatchEvent?.(new Event('stream-test-cooldown-changed'));status('',retryText(retrySeconds()),'cooldown');}else result('',String(error.message||'The stream check did not complete. Test again before saving.').slice(0,400),'error');}}
   finally{if(active===attempt){active=null;attempt.restoreLabel();controls();}}
  };
  field.addEventListener('input',()=>abandon(true));field.addEventListener('change',()=>abandon(true));
@@ -74,6 +79,7 @@
  new MutationObserver(()=>{if(saving())abandon();else controls();}).observe(form,{attributes:true,attributeFilter:['data-busy','aria-busy']});
  new MutationObserver(()=>{if(String(form.dataset.stationCode||'')!==station){loaded=false;approvedUrl='';abandon(true);}else controls();}).observe(form,{attributes:true,attributeFilter:['data-station-code']});
  new MutationObserver(()=>{abandon();}).observe(editor,{attributes:true,attributeFilter:['hidden']});
- window.addEventListener('app-language-changed',()=>{if(statusKey){const hidden=notice.hidden;status(statusKey,statusFallback,notice.dataset.state);notice.hidden=hidden;}});
+ window.addEventListener('stream-test-cooldown-changed',controls);
+ window.addEventListener('app-language-changed',()=>{controls();if(statusKey){const hidden=notice.hidden;status(statusKey,statusFallback,notice.dataset.state);notice.hidden=hidden;}});
  window.addEventListener('pagehide',()=>abandon());controls();
 })();

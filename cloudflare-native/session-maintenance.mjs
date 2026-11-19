@@ -7,8 +7,11 @@ export function sessionCleanupStatements(env,now){
   db.prepare('DELETE FROM registration_requests WHERE rowid IN (SELECT rowid FROM registration_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM support_ticket_grants WHERE rowid IN (SELECT rowid FROM support_ticket_grants WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM ad_requests WHERE rowid IN (SELECT rowid FROM ad_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
+  db.prepare('DELETE FROM ad_status_grants WHERE rowid IN (SELECT rowid FROM ad_status_grants WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
+  db.prepare('DELETE FROM ad_status_verifications WHERE id IN (SELECT id FROM ad_status_verifications WHERE expires<=? ORDER BY expires LIMIT 200)').bind(cutoff),
   db.prepare('DELETE FROM support_ticket_requests WHERE rowid IN (SELECT rowid FROM support_ticket_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM phone_pair_requests WHERE rowid IN (SELECT rowid FROM phone_pair_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
+  db.prepare('DELETE FROM phone_station_requests WHERE rowid IN (SELECT rowid FROM phone_station_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare(`DELETE FROM phone_pair_grant_sources WHERE rowid IN (SELECT s.rowid FROM phone_pair_grant_sources s WHERE s.expires<=?
    OR NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.session_hash=s.session_hash AND p.radio_id=s.radio_id AND p.expires>?) ORDER BY s.expires LIMIT 200)`).bind(now,now),
   db.prepare('DELETE FROM support_status_verifications WHERE id IN (SELECT id FROM support_status_verifications WHERE expires<=? ORDER BY expires LIMIT 200)').bind(cutoff),
@@ -36,10 +39,13 @@ export function sessionCleanupStatements(env,now){
    AND NOT EXISTS(SELECT 1 FROM support_grants g WHERE g.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM support_ticket_grants g WHERE g.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM ad_requests r WHERE r.session_hash=s.token_hash)
+   AND NOT EXISTS(SELECT 1 FROM ad_status_grants r WHERE r.session_hash=s.token_hash)
+   AND NOT EXISTS(SELECT 1 FROM ad_status_verifications r WHERE r.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM support_ticket_requests r WHERE r.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM support_status_verifications v WHERE v.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM pair_claims c WHERE c.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM phone_pair_requests r WHERE r.session_hash=s.token_hash)
+   AND NOT EXISTS(SELECT 1 FROM phone_station_requests r WHERE r.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM phone_pair_grant_sources g WHERE g.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM radio_commands c WHERE c.session_hash=s.token_hash)

@@ -1,6 +1,7 @@
 import {json,readJson,session,browserWrite,limit,human,randomHex,digest,mac,HttpError} from './security.mjs';
 import {artwork} from './owner-auth.mjs';import {scanCreative} from './moderation.mjs';import {adPixels} from './ad-pixels.mjs';import {authenticate} from './devices.mjs';
 import {decisionReason,ownerNotification,commitOwnerNotification} from './notifications.mjs';
+import {advertiserStatusRoutes,advertiserNotice} from './advertiser-status.mjs';
 const RIGHTS='I am authorized to advertise this business and have rights to the submitted text and artwork. I permit screening and display on compatible radios.';
 const VERSION='local-business-submissions-2026-11-03';
 const activeAds="a.status IN ('pending_review','approved') AND (p.end_at IS NULL OR p.end_at>?)";
@@ -8,6 +9,7 @@ function adSubmissionResponse(row){return json({status:'ok',reference:row.ad_id,
 async function admin(env,current,now){return env.ADMIN_TOTP_SECRET&&await env.DB.prepare('SELECT 1 FROM admin_sessions a JOIN admin_mfa_sessions m ON a.session_hash=m.session_hash WHERE a.session_hash=? AND a.expires>? AND m.expires>?').bind(current.token_hash,now,now).first();}
 async function owner(env,current,code,now){return current.owner_expires>now&&current.owner_station===code;}
 export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative,adPixels}){
+ const advertiserResponse=await advertiserStatusRoutes(request,env,now,deps);if(advertiserResponse)return advertiserResponse;
  const url=new URL(request.url),path=url.pathname;if(!['/api/ads/submit','/api/owner/ads','/api/admin/ads','/api/radio/ad','/api/radio/ad/displayed','/api/radio/ad/pixels'].includes(path)&&!/^\/api\/ad-artwork\/[a-f0-9]{32}$/.test(path))return null;
  if(path.startsWith('/api/radio/'))return radioAds(request,env,now);
  const current=request.method==='GET'?await session(request,env,now):await browserWrite(request,env,now);
@@ -50,11 +52,14 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
    try{const resized=(await env.IMAGES.input(object.body).transform({width:256,height:76,fit:'cover'}).output({format:'image/png',anim:false})).response();if(!resized.ok)throw Error();pixels=await deps.adPixels(await resized.arrayBuffer());}catch{throw new HttpError(400,'The sponsor image could not be prepared. Try another image.');}
    const pixelsKey=await mac(env,'ad-pixels:'+current.token_hash+':'+requestId)+'.bin';await env.MEDIA.put('ad-pixels/'+pixelsKey,pixels,{httpMetadata:{contentType:'application/octet-stream'},customMetadata:{pixel_version:'1'}});
    const safe=await deps.scanCreative(env,body.business+'\n'+body.message+'\n'+body.phone,key),id=claimed.ad_id,guard="session_hash=? AND request_id=? AND lease_token=? AND state='pending'",values=[current.token_hash,requestId,lease];
+   const stationOwner=await env.DB.prepare('SELECT contact_email,email_verified_at FROM stations WHERE code=?').bind(code).first();
+   const submittedNotice=stationOwner?.email_verified_at?await ownerNotification(env,{kind:'ad-submitted',stationCode:code,recipient:stationOwner.contact_email,event:id,adId:id}):null;
    await env.DB.batch([
    env.DB.prepare(`INSERT INTO local_ads(id,station_code,business,contact_email,message,artwork_key,created_at)
     SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM ad_requests WHERE ${guard}) AND (SELECT count(*) FROM local_ads a LEFT JOIN ad_policy p ON p.ad_id=a.id WHERE a.station_code=? AND ${activeAds})<20 AND (SELECT count(*) FROM local_ads a LEFT JOIN ad_policy p ON p.ad_id=a.id WHERE ${activeAds})<200 AND EXISTS (SELECT 1 FROM stations WHERE code=? AND status='published')`)
     .bind(id,code,body.business.trim(),body.email.trim().toLowerCase(),body.message.trim(),key,claimed.created_at,...values,code,now,now,code),
    env.DB.prepare(`INSERT INTO ad_policy(ad_id,phone,scanner_passed,pixels_key,start_at,end_at,rights_version,rights_hash) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM local_ads WHERE id=?) AND EXISTS(SELECT 1 FROM ad_requests WHERE ${guard})`).bind(id,body.phone.trim(),safe?1:0,pixelsKey,startAt,endAt,VERSION,await digest(RIGHTS),id,...values),
+   ...(submittedNotice?[env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM ad_policy WHERE ad_id=?) AND EXISTS(SELECT 1 FROM ad_requests WHERE ${guard}) AND EXISTS(SELECT 1 FROM stations WHERE code=? AND contact_email=? AND email_verified_at=?) ON CONFLICT(id) DO NOTHING`).bind(submittedNotice.id,submittedNotice.recipient,submittedNotice.subject,submittedNotice.encrypted_payload,now,now+7*86400,id,...values,code,stationOwner.contact_email,stationOwner.email_verified_at)]:[]),
    env.DB.prepare(`UPDATE ad_requests SET state='complete',scanner_passed=?,lease_until=0 WHERE ${guard} AND EXISTS(SELECT 1 FROM ad_policy WHERE ad_id=ad_requests.ad_id)`).bind(safe?1:0,...values)
    ]);
    const completed=await env.DB.prepare("SELECT * FROM ad_requests WHERE session_hash=? AND request_id=? AND state='complete'").bind(current.token_hash,requestId).first();if(!completed)throw new HttpError(409,'Ad limit reached or station unavailable.');return adSubmissionResponse(completed);
@@ -68,7 +73,7 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
  }
  const administrative=path==='/api/admin/ads';if(administrative?!isAdmin:(!current.owner_station||current.owner_expires<=now))throw new HttpError(403,'Please sign in.');
  if(request.method==='GET'){
-  const rows=await env.DB.prepare(`SELECT a.id,a.station_code,a.business,a.message,a.status,a.contact_email,p.scanner_passed,p.owner_approved,p.end_at,p.phone,(SELECT count(*) FROM ad_impressions i WHERE i.ad_id=a.id) AS reported_displays FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id WHERE a.status!='deleted' AND (?=1 OR a.station_code=?) ORDER BY a.created_at DESC LIMIT 200`).bind(isAdmin&&administrative?1:0,current.owner_station||0).all();return json({ads:rows.results,free_pilot:true});
+  const rows=await env.DB.prepare(`SELECT a.id,a.station_code,a.business,a.message,a.status,a.contact_email,p.scanner_passed,p.owner_approved,p.start_at,p.end_at,p.phone,(SELECT count(*) FROM ad_impressions i WHERE i.ad_id=a.id) AS reported_displays FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id WHERE a.status!='deleted' AND (?=1 OR a.station_code=?) ORDER BY a.created_at DESC LIMIT 200`).bind(isAdmin&&administrative?1:0,current.owner_station||0).all();return json({ads:rows.results,free_pilot:true});
  }
  if(request.method!=='POST')throw new HttpError(405,'Method not allowed.');
  await limit(env.DB,'ad-review',current.token_hash,60,900,now);const body=await readJson(request),ad=await env.DB.prepare("SELECT a.*,p.scanner_passed,p.owner_approved,s.contact_email AS owner_contact_email,s.email_verified_at AS owner_verified_at FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code WHERE a.id=? AND a.status!='deleted'").bind(String(body.id||'')).first();
@@ -82,6 +87,8 @@ export async function adsRoutes(request,env,now,deps={human,artwork,scanCreative
   env.DB.prepare(`UPDATE ad_policy SET scanner_passed=1 WHERE ad_id=? AND EXISTS (SELECT 1 FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code WHERE ${reviewed})`).bind(ad.id,...values):
   env.DB.prepare(`UPDATE local_ads SET status=? WHERE id=? AND EXISTS (SELECT 1 FROM local_ads a JOIN ad_policy p ON p.ad_id=a.id JOIN stations s ON s.code=a.station_code WHERE ${reviewed})`).bind(body.action==='delete'?'deleted':'approved',ad.id,...values);
  const after=[];
+ const advertiser=await advertiserNotice(env,ad,body.action);
+ if(advertiser)after.push({sql:'INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM ad_update_preferences WHERE ad_id=? AND email_hash=?) AND OWNER_NOTIFICATION_APPLIED ON CONFLICT(id) DO NOTHING',values:[advertiser.id,advertiser.recipient,advertiser.subject,advertiser.encrypted_payload,now,now+7*86400,ad.id,advertiser.email_hash]});
  if(body.action==='approve')after.push({sql:'UPDATE ad_policy SET owner_approved=1 WHERE ad_id=? AND OWNER_NOTIFICATION_APPLIED',values:[ad.id]});
  if(administrative)after.push({sql:'INSERT INTO admin_audit(id,actor_hash,station_code,action,created_at) SELECT ?,?,?,?,? WHERE OWNER_NOTIFICATION_APPLIED',values:[randomHex(16),current.token_hash,ad.station_code,(body.action==='clear'?'ad-safety-clear:':'ad-delete:')+ad.id,now]});
  if(!await commitOwnerNotification(env,now,mutation,notice,after))throw new HttpError(409,'Advertisement changed. Refresh and review it again.');

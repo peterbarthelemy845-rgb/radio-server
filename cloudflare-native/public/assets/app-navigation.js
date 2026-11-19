@@ -2,7 +2,7 @@
 // Listener navigation stays inside this document. Drafts and scroll positions
 // remain in memory; no device codes, ticket text or credentials enter history.
 const appPagePositions=new Map(),appDisplayMode=matchMedia('(display-mode: standalone)');
-let appCurrentPage=appVisiblePage(),appRestoring=false,appNavigationGeneration=0,appPanelOrigin=null,appSupportPromise=null,appControlOrigin=null,appLastControlId=null,appGuidedRadioWifi=false;
+let appCurrentPage=appVisiblePage(),appRestoring=false,appNavigationGeneration=0,appPanelOrigin=null,appSupportPromise=null,appControlOrigin=null,appLastControlId=null,appGuidedRadioWifi=false,appGuidedAnotherRadio=false;
 function appVisiblePage(){return ['myRadio','support','wifiSetup','login','register','editor','ownerEntryLoading','shared','admin','legal','advertise','adReview','reports','backups'].find(id=>$(id)&&!$(id).hidden)||(location.pathname==='/wifi-setup'?'wifiSetup':location.pathname==='/support'?'support':'myRadio');}
 function appIsListenerPage(id){return ['myRadio','support','wifiSetup'].includes(id);}
 function appListenerMode(){return new URLSearchParams(location.search).get('app')==='1'||appDisplayMode.matches||navigator.standalone===true;}
@@ -112,12 +112,13 @@ function appClearGuidedRadioWifi(){
 }
 function appHasLinkedRadio(){return typeof radioCardViews!=='undefined'&&radioCardViews.size>0;}
 function appResumeRadioConnection(enterCode=false){
- if(appHasLinkedRadio())return;
+ const connectingAnother=appGuidedAnotherRadio;appGuidedAnotherRadio=false;
+ if(appHasLinkedRadio()&&!connectingAnother)return;
  if(enterCode)window.showRadioCodeEntry?.();else window.showRadioConnectionChoices?.();
 }
 window.openGuidedRadioWifi=function(){
  if(appCurrentPage!=='myRadio'||shareRunning||window.radioControlsBusy||(typeof radioPairingBusy!=='undefined'&&radioPairingBusy))return false;
- appGuidedRadioWifi=true;const continueButton=$('wifiContinueConnection');if(continueButton)continueButton.hidden=false;
+ appGuidedRadioWifi=true;appGuidedAnotherRadio=appHasLinkedRadio();const continueButton=$('wifiContinueConnection');if(continueButton)continueButton.hidden=false;
  appShowPage('wifiSetup',{push:true,focus:$('listenerAppTitle')});return true;
 };
 function appCloseStationPanel(){
@@ -153,7 +154,7 @@ function appReportStationProblem({code,name}={}){
  return true;
 }
 window.openStationProblemReport=appReportStationProblem;
-$('reportStationProblem')?.addEventListener('click',()=>{if(!$('shareForm').hidden)appReportStationProblem({code:sharedCode,name:$('shareName').textContent});});
+$('reportStationProblem')?.addEventListener('click',()=>{if(!$('reportStationProblem').hidden)appReportStationProblem({code:sharedCode,name:$('shareName').textContent});});
 $('clearTicketStation')?.addEventListener('click',()=>{if($('ticketForm').dataset.busy==='1')return;appClearStationProblemContext();$('ticketForm').dataset.dirty='1';});
 $('ticketForm').addEventListener('reset',appClearStationProblemContext);
 const appOriginalOpenStation=openStationPopup;

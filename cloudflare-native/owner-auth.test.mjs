@@ -53,6 +53,9 @@ test('signup preserves ZIP leading zeros and binds the ZIP to its idempotent reg
  const job=f.sqlite.prepare('SELECT * FROM mail_outbox').get(),code=JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1];await f.post('/api/owner/verify',{verification_id:first.verification_id,code});assert.equal((await f.owner()).zip_code,'00501');
 });
 async function ownerLoginChallenge(f,headers={}){const result=await(await f.post('/api/owner/login',{email:f.registration.email,code:'10'},headers)).json(),job=f.sqlite.prepare('SELECT encrypted_payload FROM mail_outbox ORDER BY rowid DESC LIMIT 1').get();return {...result,code:JSON.parse(await decrypt(f.env,job.encrypted_payload)).text.match(/code is (\d{6})/)[1]};}
+test('owner login accepts a pasted station code prefix and spaces without accepting extra nonnumeric content',async()=>{
+ const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});const result=await(await f.post('/api/owner/login',{email:f.registration.email,code:' # 1 0 '})).json();assert.equal(result.verification_purpose,'edit');assert.equal(result.verification_email,'o***@example.com');await assert.rejects(f.post('/api/owner/login',{email:f.registration.email,code:'#10-extra'}),error=>error.status===400);
+});
 test('duplicate verified streams offer sign-in before image or email work, without revealing owner details',async()=>{
  const f=await registered();await f.post('/api/owner/verify',{verification_id:f.result.verification_id,code:f.code});
  const reads=f.imageReads(),jobs=f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n;

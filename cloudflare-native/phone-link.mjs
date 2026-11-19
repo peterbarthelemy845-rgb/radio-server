@@ -29,7 +29,7 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     const grant=await env.DB.prepare('SELECT 1 FROM phone_radios WHERE radio_id=? AND session_hash=? AND expires>?').bind(id,current.token_hash,now).first();if(!grant)throw new HttpError(403,'Link this radio first.');
     const rows=await env.DB.prepare("SELECT DISTINCT station_code FROM radio_commands WHERE radio_id=? AND state='added' LIMIT 1000").bind(id).all();
     const inventory=await savedInventory(env,id);
-    const response=json({confirmed_station_codes:rows.results.map(r=>String(r.station_code)),...inventory,
+    const response=json({confirmed_station_codes:rows.results.map(r=>String(r.station_code)),...inventory,server_time:now,
       note:inventory.inventory_reported_at===null?'This radio has not reported its saved stations yet.':'Published directory stations saved on this radio at its last report.'});
     if(current.setCookie)response.headers.set('Set-Cookie',current.setCookie);
     return response;
@@ -132,13 +132,40 @@ export async function phoneRoutes(request,env,now,deps={human}) {
   }
   if(path==='/api/phone/add'){
     await limit(env.DB,'phone-add',current.token_hash,20,60,now);
-    const id=String(body.radio_id||''),code=String(body.station_code||'');
+    const id=String(body.radio_id||''),code=String(body.station_code||''),requestId=body.request_id;
+    if(requestId!==undefined&&(typeof requestId!=='string'||!/^[a-f0-9]{32}$/.test(requestId)))throw new HttpError(400,'A valid station request reference is required.');
     const grant=await env.DB.prepare('SELECT 1 FROM phone_radios WHERE radio_id=? AND session_hash=? AND expires>?')
       .bind(id,current.token_hash,now).first();
     if(!grant)throw new HttpError(403,'Connect this phone to your radio first.');
     if(!/^[0-9]{2,6}$/.test(code)||!await env.DB.prepare("SELECT 1 FROM stations WHERE code=? AND status='published'").bind(Number(code)).first())
       throw new HttpError(404,'Station not found.');
     await env.DB.prepare("UPDATE radio_commands SET state='expired' WHERE radio_id=? AND expires<=? AND state IN ('pending','delivered')").bind(id,now).run();
+    if(requestId){
+      // Mapping and enqueue commit together. A same-phone pending command may
+      // serve several explicit request references, including after its ack.
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO phone_station_requests(session_hash,request_id,radio_id,station_code,command_id,created_at,expires)
+          SELECT ?,?,?,?,COALESCE((SELECT id FROM radio_commands WHERE radio_id=? AND station_code=? AND session_hash=? AND state IN ('pending','delivered')),?),?,?
+          WHERE EXISTS(SELECT 1 FROM phone_radios WHERE radio_id=? AND session_hash=? AND expires>?)
+          AND EXISTS(SELECT 1 FROM stations WHERE code=? AND status='published') ON CONFLICT(session_hash,request_id) DO NOTHING`)
+          .bind(current.token_hash,requestId,id,Number(code),id,Number(code),current.token_hash,randomHex(16),now,now+7*86400,id,current.token_hash,now,Number(code)),
+        env.DB.prepare(`INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires,session_hash)
+          SELECT r.command_id,r.radio_id,r.station_code,'pending',?,?,r.session_hash FROM phone_station_requests r
+          WHERE r.session_hash=? AND r.request_id=? AND r.radio_id=? AND r.station_code=? AND r.expires>?
+          AND EXISTS(SELECT 1 FROM phone_radios WHERE radio_id=r.radio_id AND session_hash=r.session_hash AND expires>?)
+          AND EXISTS(SELECT 1 FROM stations WHERE code=r.station_code AND status='published')
+          ON CONFLICT DO UPDATE SET id=radio_commands.id WHERE radio_commands.session_hash=excluded.session_hash
+          AND radio_commands.radio_id=excluded.radio_id AND radio_commands.station_code=excluded.station_code`)
+          .bind(now,now+300,current.token_hash,requestId,id,Number(code),now,now)
+      ]);
+      const receipt=await env.DB.prepare(`SELECT r.radio_id,r.station_code,c.id,c.state,c.expires FROM phone_station_requests r
+        LEFT JOIN radio_commands c ON c.id=r.command_id AND c.session_hash=r.session_hash AND c.radio_id=r.radio_id AND c.station_code=r.station_code
+        WHERE r.session_hash=? AND r.request_id=? AND r.expires>?
+        AND EXISTS(SELECT 1 FROM phone_radios p WHERE p.session_hash=r.session_hash AND p.radio_id=r.radio_id AND p.expires>?)`)
+        .bind(current.token_hash,requestId,now,now).first();
+      if(!receipt||receipt.radio_id!==id||Number(receipt.station_code)!==Number(code)||!receipt.id)throw new HttpError(409,'This station request could not be reconciled. Check the radio before trying again.');
+      return json({command_id:receipt.id,state:['added','failed'].includes(receipt.state)?receipt.state:receipt.expires<=now?'expired':receipt.state});
+    }
     // Authorization must be checked inside the write: an unlink can occur after
     // the earlier friendly validation but before this statement executes.
     const enqueued=await env.DB.prepare(`INSERT INTO radio_commands(id,radio_id,station_code,state,created_at,expires,session_hash)
@@ -157,7 +184,7 @@ export async function phoneRoutes(request,env,now,deps={human}) {
     return json({command_id:command.id,state:command.state});
   }
   if(path==='/api/phone/command/status'){
-    await limit(env.DB,'command-status',current.token_hash,40,60,now);
+    try{await limit(env.DB,'command-status',current.token_hash,40,60,now);}catch(error){if(error?.status===429)error.retry_after=60;throw error;}
     const command=await env.DB.prepare(`SELECT c.state,c.expires FROM radio_commands c JOIN phone_radios p ON p.radio_id=c.radio_id
       WHERE c.id=? AND p.session_hash=? AND p.expires>?`).bind(String(body.command_id||''),current.token_hash,now).first();
     if(!command)throw new HttpError(404,'Request not found.');

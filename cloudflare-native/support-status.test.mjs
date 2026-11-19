@@ -5,8 +5,54 @@ import {supportStatusRoutes} from './support-status.mjs';
 import {communityRoutes} from './community.mjs';
 import {authRoutes} from './owner-auth.mjs';
 import {encrypt,decrypt,digest,mac} from './security.mjs';
+import {supportRoutes} from './admin-support.mjs';
 
 const human={human:async()=>{}};
+
+async function replyFixture(){const f=await setup();f.env.ADMIN_EMAIL='support-admin@example.com';const reference=await f.insert();f.sqlite.prepare('INSERT INTO support_ticket_grants(session_hash,ticket_id,expires) SELECT token_hash,?,? FROM sessions').run(reference,f.now+1800);return {...f,reference,reply:(message='Here is the detail you requested.',request_id='customer_reply_request_1',at=f.now,request=f.request)=>f.call('/api/support/status/reply',{reference,message,request_id,turnstile_token:'fresh-proof',recipient:'attacker@example.com'},at,request)};}
+
+test('verified customers reply in their existing encrypted thread with one admin notification and safe public attribution',async()=>{
+ const f=await replyFixture(),result=await(await f.reply()).json();assert.equal(result.status,'ok');assert.equal(result.duplicate,false);
+ const row=f.sqlite.prepare('SELECT * FROM support_replies').get(),payload=JSON.parse(await decrypt(f.env,row.encrypted_payload));assert.equal(payload.author,'customer');assert.equal(payload.body,'Here is the detail you requested.');assert.equal(payload.recipient,f.env.ADMIN_EMAIL);assert.equal(row.encrypted_payload.includes(payload.body),false);
+ const jobs=f.sqlite.prepare('SELECT * FROM mail_outbox').all();assert.equal(jobs.length,1);assert.equal(jobs[0].recipient,f.env.ADMIN_EMAIL);assert.match(JSON.parse(await decrypt(f.env,jobs[0].encrypted_payload)).text,/Reference:/);
+ const thread=await(await f.call('/api/support/status/ticket?reference='+f.reference)).json();assert.equal(thread.replies[0].author,'customer');assert.equal(thread.replies[0].body,payload.body);assert.equal(JSON.stringify(thread).includes(f.env.ADMIN_EMAIL),false);assert.equal(JSON.stringify(thread).includes(ticketData.email),false);
+ f.admin();const admin=await(await supportRoutes(f.request('/api/admin/support?ticket_id='+f.reference),f.env,f.now)).json();assert.equal(admin.messages[0].author,'customer');assert.equal(admin.messages[0].body,payload.body);assert.equal(admin.ticket.state,'new');
+ const duplicate=await(await f.reply()).json();assert.equal(duplicate.duplicate,true);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,1);await assert.rejects(f.reply('Different text'),e=>e.status===409);
+});
+
+test('customer replies require a current scoped ticket grant, browser CSRF and a fresh bot check',async()=>{
+ const f=await replyFixture(),other=await f.secondBrowser();await assert.rejects(f.reply(undefined,undefined,f.now,other),e=>e.status===403);await assert.rejects(f.reply(undefined,undefined,f.now+1800),e=>e.status===403);
+ const request=f.request('/api/support/status/reply',{reference:f.reference,message:'A reply',request_id:'customer_reply_valid_ref'});request.headers.set('X-CSRF-Token','bad');await assert.rejects(supportStatusRoutes(request,f.env,f.now,human),e=>e.status===403);
+ let checks=0;await assert.rejects(supportStatusRoutes(f.request('/api/support/status/reply',{reference:f.reference,message:'A reply',request_id:'customer_reply_valid_ref'}),f.env,f.now,{human:async()=>{checks++;throw Error('Bot check failed');}}),/Bot check failed/);assert.equal(checks,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_replies').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);
+});
+
+test('reply cooldown, spam and multi-signal abuse blocks protect the existing support inbox',async()=>{
+ const f=await replyFixture();await f.reply();await assert.rejects(f.reply('Another reply','customer_reply_request_2',f.now+1),e=>e.status===429&&e.retry_after===29);assert.equal((await(await f.reply('Later reply','customer_reply_request_2',f.now+30)).json()).status,'ok');
+ f.sqlite.prepare("INSERT INTO support_ticket_flags(ticket_id,folder,reason,updated_at,actor_hash) VALUES (?,'spam','manual',?,'admin')").run(f.reference,f.now);await assert.rejects(f.reply('Spam reply','customer_reply_request_3',f.now+60),e=>e.status===409);f.sqlite.prepare('DELETE FROM support_ticket_flags').run();
+ const hash=await digest(f.request('/api/session').headers.get('Cookie').split('=')[1]);f.sqlite.prepare("INSERT INTO support_abuse_blocks(session_hash,email_hash,expires,reason) VALUES (?,?,?,'failed_email_proof')").run(hash,await mac(f.env,'support-email:'+ticketData.email),f.now+900);await assert.rejects(f.reply('Blocked reply','customer_reply_request_3',f.now+60),e=>e.status===429&&e.retry_after===840);
+ assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,2);
+});
+
+test('customer reply transactions roll back if mail cannot queue and closing access during a bot check prevents a send',async()=>{
+ const f=await replyFixture();f.sqlite.exec("CREATE TRIGGER reject_customer_mail BEFORE INSERT ON mail_outbox BEGIN SELECT RAISE(ABORT,'mail unavailable'); END");await assert.rejects(f.reply(),/mail unavailable/);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_replies').get().n,0);f.sqlite.exec('DROP TRIGGER reject_customer_mail');
+ let release,started;const wait=new Promise(resolve=>{started=resolve;}),barrier=new Promise(resolve=>{release=resolve;});const pending=supportStatusRoutes(f.request('/api/support/status/reply',{reference:f.reference,message:'Pending reply',request_id:'customer_reply_race_1'}),f.env,f.now,{human:async()=>{started();await barrier;}});await wait;await f.call('/api/support/status/logout',{reference:f.reference});release();await assert.rejects(pending,e=>e.status===409);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_replies').get().n,0);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,0);
+});
+
+test('a customer cooldown race cannot queue two different replies at the same time',async()=>{
+ const f=await replyFixture(),batch=f.env.DB.batch.bind(f.env.DB);let release,reached,hold=true;const waiting=new Promise(resolve=>{reached=resolve;}),barrier=new Promise(resolve=>{release=resolve;});f.env.DB.batch=async statements=>{if(hold){hold=false;reached();await barrier;}return batch(statements);};
+ const first=f.reply('First attempt','customer_reply_race_1');await waiting;assert.equal((await(await f.reply('Second attempt','customer_reply_race_2')).json()).status,'ok');release();await assert.rejects(first,e=>e.status===429&&e.retry_after===30);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_replies').get().n,1);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,1);
+});
+
+test('reply message bounds and hourly ticket limit cannot be bypassed, but recorded retries remain safe',async()=>{
+ const f=await replyFixture();for(const value of ['', ' '.repeat(20), 'x'.repeat(3001)])await assert.rejects(f.reply(value),e=>e.status===400);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM support_replies').get().n,0);
+ for(let i=0;i<6;i++)await f.reply('Bounded reply '+i,'customer_reply_hour_'+i,f.now+i*31);await assert.rejects(f.reply('One too many','customer_reply_hour_6',f.now+186),e=>e.status===429);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,6);assert.equal((await(await f.reply('Bounded reply 0','customer_reply_hour_0',f.now+186)).json()).duplicate,true);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM mail_outbox').get().n,6);
+});
+
+test('ticket-access errors distinguish incorrect, exhausted and expired codes and report resend cooldown',async()=>{
+ const f=await setup(),reference=await f.insert(),challenge=await(await f.call('/api/support/status/request',{reference,email:ticketData.email})).json(),correct=await f.code(challenge.verification_id),wrong=correct==='000000'?'111111':'000000';assert.equal(challenge.resend_after,60);
+ for(let i=0;i<5;i++)await assert.rejects(f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code:wrong}),e=>e.code===(i===4?'code_exhausted':'code_incorrect'));
+ await assert.rejects(f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code:correct}),e=>e.code==='code_expired');await assert.rejects(f.call('/api/support/status/request',{reference,email:ticketData.email},f.now+5),e=>e.status===429&&e.retry_after===55);
+});
 test('ticket-access email codes accept only whitespace formatting around six digits and still reject non-digits',async()=>{
  const f=await setup(),reference=await f.insert(),challenge=await(await f.call('/api/support/status/request',{reference,email:ticketData.email})).json(),code=await f.code(challenge.verification_id);await assert.rejects(f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code:code.slice(0,3)+'x'+code.slice(3)}),error=>error.status===400);const result=await(await f.call('/api/support/status/verify',{verification_id:challenge.verification_id,code:code.slice(0,3)+' \n '+code.slice(3)})).json();assert.equal(result.status,'verified');
 });

@@ -11,7 +11,9 @@
  let registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast',registrationSource='url',registrationInternalInput=false,registrationVersion=0,registrationActiveTest=null,registrationValid=false,registrationStatusKey='',registrationStatusFallback='';
  let registrationManualUrl='',registrationManualSource='ip',registrationManualEdited=false,registrationDirectDraft=registrationUrl.value,registrationDirectEdited=Boolean(registrationUrl.value);
  let registrationExpanded=!registrationPanel||registrationProviderFields.some(field=>field.checked);
- let registrationPassed=null,registrationProofTimer;
+ let registrationPassed=null,registrationProofTimer,registrationCooldownTimer,registrationCooldownVisible=false;
+ function registrationRetrySeconds(){return Math.max(0,Math.ceil(((window.streamTestRetryUntil||0)-Date.now())/1000));}
+ function registrationRetryText(seconds){const time=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');return registrationText('registration.retryStreamIn','Try again in {time}').replace('{time}',time);}
  function registrationText(key,fallback){const translated=window.appI18n?.t(key);return typeof translated==='string'&&translated!==key?translated:fallback;}
  window.streamTestFailure=response=>{const messages={timeout:['registration.streamUnreachable','Server did not respond in time. Check that your broadcaster is running, then try again.'],connection_failed:['registration.streamConnection','Could not connect. Check the server, port and HTTP/HTTPS setting.'],http_error:['registration.streamMount','The listening address was unavailable. Check your stream path / mount point.'],not_audio:['registration.streamNotAudio','This address did not return supported audio. Check your stream path / mount point.'],not_confirmed:['registration.notConfirmed','Stream test failed. Check the details and try again.']},[key,fallback]=messages[response?.reason]||messages.not_confirmed;return {key,message:registrationText(key,fallback)};};
  const registrationIsManual=value=>['icecast','shoutcast'].includes(value);
@@ -114,14 +116,17 @@
   registrationNodes.streamProtocol.value=parsed?parsed.protocol.slice(0,-1):'https';registrationNodes.streamPath.value=parsed?parsed.pathname+parsed.search:'';
  }
  function registrationControls(){
-  const submitting=registrationBusy(),inactive=!registrationExpanded;
+  if(registrationCooldownTimer!==undefined){clearTimeout(registrationCooldownTimer);registrationCooldownTimer=undefined;}
+  const submitting=registrationBusy(),inactive=!registrationExpanded,retrySeconds=registrationRetrySeconds();
   if(registrationHasProviders)for(const field of registrationBuilder)field.disabled=inactive||!registrationManualMode()||submitting;
   if(registrationPanel){registrationUrl.disabled=inactive||submitting;registrationUrl.required=!inactive&&!registrationManualMode();}
-  registrationNodes.testStream.disabled=Boolean(registrationActiveTest)||!registrationValid||submitting||inactive;
+  registrationNodes.testStream.disabled=Boolean(registrationActiveTest)||!registrationValid||submitting||inactive||retrySeconds>0;
+  if(retrySeconds){registrationNodes.testStream.dataset.i18nSkip='1';registrationNodes.testStream.textContent=registrationRetryText(retrySeconds);registrationCooldownVisible=true;registrationCooldownTimer=setTimeout(registrationControls,1000);registrationCooldownTimer?.unref?.();}
+  else if(registrationCooldownVisible){delete registrationNodes.testStream.dataset.i18nSkip;registrationNodes.testStream.textContent=registrationText('registration.test','Test stream');registrationCooldownVisible=false;}
   registrationNodes.copyGeneratedStream.disabled=!registrationValid||submitting||inactive;
   const save=registrationForm.querySelector('button[type="submit"]'),passed=registrationProofReady(),hint=document.getElementById('streamSaveHint');
   if(save){save.disabled=submitting||inactive||!passed;save.dataset.i18n='registration.continue';if(!submitting)save.textContent=registrationText('registration.continue','Continue');save.setAttribute('aria-describedby','streamSaveHint');}
-  if(hint){const missingPort=registrationExpanded&&registrationManualMode()&&!registrationNodes.streamPort.value.trim(),key=missingPort?'registration.enterPort':'registration.testRequired';hint.hidden=passed;hint.dataset.state='needed';hint.setAttribute('data-i18n',key);hint.textContent=registrationText(key,missingPort?'Enter port number':'Test your stream');}
+  if(hint){const missingPort=registrationExpanded&&registrationManualMode()&&!registrationNodes.streamPort.value.trim(),key=missingPort?'registration.enterPort':'registration.testRequired';hint.hidden=passed;hint.dataset.state=retrySeconds?'cooldown':'needed';if(retrySeconds){hint.removeAttribute('data-i18n');hint.dataset.i18nSkip='1';hint.textContent=registrationRetryText(retrySeconds);}else{delete hint.dataset.i18nSkip;hint.setAttribute('data-i18n',key);hint.textContent=registrationText(key,missingPort?'Enter port number':'Test your stream');}}
  }
  function registrationCompose(){
   const host=registrationNodes.streamHost.value.trim(),port=registrationNodes.streamPort.value.trim(),protocol=registrationNodes.streamProtocol.value,path=registrationNodes.streamPath.value.trim()||'/';
@@ -169,7 +174,7 @@
   catch{if(current()){registrationUrl.focus();registrationUrl.select();registrationStatus('registration.copyManually','Select and copy the stream URL shown above.','copy');}}
  };
  registrationNodes.testStream.onclick=async()=>{
-  if(registrationBusy()||!registrationExpanded||registrationActiveTest||!registrationValidate(true,true))return;
+  if(registrationBusy()||!registrationExpanded||registrationActiveTest||registrationRetrySeconds()||!registrationValidate(true,true))return;
   registrationClearPass();
   const target=new URL(registrationUrl.value);
   if(/\.(?:pls|m3u|m3u8|xspf)$/i.test(target.pathname)){registrationControls();registrationTerminal('registration.playlistTestUnavailable','Use a direct listening link, then test again before saving.','unconfirmed');return;}
@@ -181,10 +186,11 @@
    const response=await api('/api/owner/stream-check',{stream_url:value,turnstile_token});if(!current())return;
    if(response?.result==='audio_response'&&response.audio_response===true){registrationPass(value);registrationTerminal('registration.streamReady','✓ Stream ready','success');}
    else{const failure=window.streamTestFailure(response);if(response?.field==='stream_path'&&registrationManualMode()){registrationNodes.streamPath.setCustomValidity(failure.message);registrationNodes.streamPath.focus();}registrationTerminal(failure.key,failure.message,'unconfirmed');}
-  }catch(error){if(current())registrationTerminal('',String(error.message||'The stream check did not complete. Test again before saving.').slice(0,400),'error');}
+  }catch(error){if(current()){if(error.status===429&&Number.isInteger(error.retry_after)&&error.retry_after>0&&error.retry_after<=86400){window.streamTestRetryUntil=Date.now()+error.retry_after*1000;window.dispatchEvent?.(new Event('stream-test-cooldown-changed'));registrationStatus('',registrationRetryText(registrationRetrySeconds()),'cooldown');}else registrationTerminal('',String(error.message||'The stream check did not complete. Test again before saving.').slice(0,400),'error');}}
   finally{if(registrationActiveTest===attempt){registrationActiveTest=null;registrationControls();}}
  };
  new MutationObserver(()=>{if(document.getElementById('register').hidden){registrationInvalidate();registrationControls();}}).observe(document.getElementById('register'),{attributes:true,attributeFilter:['hidden']});
+ window.addEventListener('stream-test-cooldown-changed',registrationControls);
  window.addEventListener('app-language-changed',()=>{registrationRenderMode();registrationValidateName();registrationValidate();if(registrationStatusKey)registrationStatus(registrationStatusKey,registrationStatusFallback,registrationNodes.streamTestStatus.dataset.state,true);});
  registrationForm.addEventListener('reset',()=>{registrationInvalidate();queueMicrotask(()=>{registrationProvider=registrationProviderFields.find(field=>field.checked)?.value||'icecast';registrationExpanded=!registrationPanel||registrationProviderFields.some(field=>field.checked);registrationSource=registrationManualMode()?'ip':'url';registrationManualUrl='';registrationManualSource='ip';registrationManualEdited=false;registrationDirectDraft='';registrationDirectEdited=false;registrationUrl.value='';registrationNodes.streamManualSetup.open=false;registrationSyncBuilder(null);registrationRenderMode();registrationValidateName();registrationValidate();});});
  for(const field of registrationBuilder){field.disabled=false;field.required=false;field.setCustomValidity('');}

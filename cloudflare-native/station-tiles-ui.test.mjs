@@ -42,21 +42,21 @@ test('saved tiles open their station without automatic addition and names remain
 
 test('unlinked station lists omit repeated connection instructions but retain useful linked-radio hints',()=>{
  for(const {radio,inventory,expected} of [{radio:'',inventory:null,expected:''},{radio:'one',inventory:{known:false,unavailable:true},expected:'Saved stations could not be checked. Try refreshing your radio status.'},{radio:'one',inventory:{known:false},expected:'Saved list updates after a radio software update.'}]){
-  const nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,textContent:''});return nodes.get(id);};
+  const nodes=new Map(),$=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,textContent:'',dataset:{}});return nodes.get(id);};
   const context={$,stations:[],readSelectedRadio:()=>radio,readRadioInventory:()=>inventory,loadRadioInventory(){},renderStationSlider(){}};
   const list=runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('list=function()'),source.indexOf("$('search').oninput=list;"))+';list;',context);list();assert.equal($('stationInventoryHelp').textContent,expected);assert.equal($('stationInventoryHelp').hidden,!expected);
  }
 });
 
-test('an unchecked saved snapshot stays in its saved section instead of silently becoming an automatic-add tile',()=>{
- const nodes=new Map(),rendered=[],$=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,textContent:''});return nodes.get(id);};
+test('an unchecked saved snapshot stays labelled as history without hiding currently available stations',()=>{
+ const nodes=new Map(),rendered=[],$=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,textContent:'',dataset:{}});return nodes.get(id);};
  const context={$,stations:[{listener_code:'13',name:'Saved Radio'},{listener_code:'14',name:'Available Radio'}],readSelectedRadio:()=>'one',readRadioInventory:()=>({known:true,stale:true,unavailable:true,codes:new Set(['13'])}),loadRadioInventory(){},renderStationSlider(track,found,empty,saved){rendered.push({track,found,saved});}};
- const list=runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('list=function()'),source.indexOf("$('search').oninput=list;"))+';list;',context);list();assert.equal($('savedStationsSection').hidden,false);assert.equal($('stationInventoryHelp').textContent,'Saved stations not checked. Showing the last known list.');assert.deepEqual(Array.from(rendered[0].found,s=>s.listener_code),['13']);assert.equal(rendered[0].saved,true);assert.deepEqual(Array.from(rendered[1].found,s=>s.listener_code),['14']);
+ const list=runInNewContext('let stationListSnapshot="",list;'+source.slice(source.indexOf('list=function()'),source.indexOf("$('search').oninput=list;"))+';list;',context);list();assert.equal($('savedStationsSection').hidden,false);assert.equal($('savedStationsTitle').textContent,'Previously reported');assert.equal($('stationInventoryHelp').textContent,'Saved stations not checked. Showing the last known list.');assert.deepEqual(Array.from(rendered[0].found,s=>s.listener_code),['13']);assert.equal(rendered[0].saved,true);assert.deepEqual(Array.from(rendered[1].found,s=>s.listener_code),['13','14']);
 });
 
 function searchFixture({known=true,codes=['13'],stations=[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],directory=null,metadata=new Map()}={}){
  const nodes=new Map(),openings=[],focusCalls=[];
- function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}
+ function node(tagName='div'){return {tagName:tagName.toUpperCase(),children:[],attrs:{},dataset:{},value:'',hidden:false,textContent:'',setAttribute(key,value){this.attrs[key]=value;},removeAttribute(key){delete this.attrs[key];},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},focus(options){focusCalls.push({id:this.id,options});}};}
  const $=id=>{if(!nodes.has(id)){const element=node();element.id=id;nodes.set(id,element);}return nodes.get(id);};
  const context={$,document:{createElement:node},stations,readSelectedRadio:()=>known?'radio':'',readRadioInventory:()=>known?{known:true,codes:new Set(codes)}:null,loadRadioInventory(){},openStationPopup:(code,options)=>openings.push({code,options})};
  if(directory){context.readStationDirectoryState=()=>directory;context.getStationDirectoryStation=code=>metadata.get(code);}

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
-function fixture({human,clipboard,receipt=false}={}){
+function fixture({human,clipboard,receipt=false,now}={}){
  const events={},documentEvents={},calls=[],answers=[],ids=new Map(),observers=[],timers=new Map();let nextTimer=0;
  function element(tag='div'){
   const node={tag,nodeType:1,children:[],dataset:{},hidden:false,attributes:{},textContent:'',value:'',isConnected:true,replacements:0,
@@ -19,9 +19,10 @@ function fixture({human,clipboard,receipt=false}={}){
  }
  const document={hidden:false,activeElement:null,selection:null,getSelection(){return this.selection;},createElement:element,createTextNode:text=>({textContent:text}),body:element('body'),addEventListener(name,fn){documentEvents[name]=fn;}};ids.set('supportTicketStatus',element());ids.set('support',element());ids.set('supportChatTicket',element('button'));if(receipt){ids.set('ticketReference',element());ids.set('ticketSuccess',element('dialog'));}
  const window={innerHeight:720,scrollX:0,scrollY:0,scrolls:[],scrollTo(x,y){this.scrolls.push({x,y});this.scrollX=x;this.scrollY=y;},addEventListener(name,fn){events[name]=fn;},dispatchEvent(){},appI18n:{language:'en'}};
- const ctx={document,window,navigator:{clipboard},$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(fn,delay){const id=++nextTimer;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);},encodeURIComponent,Date,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
+ const Clock=now===undefined?Date:class extends Date{static now(){return now;}};
+ const ctx={document,window,navigator:{clipboard},crypto,AbortController,$:id=>ids.get(id),Event:class{constructor(name){this.type=name;}},MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},setTimeout(fn,delay){const id=++nextTimer;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);},encodeURIComponent,Date:Clock,busy(){},human:human||(async()=> 'bot-proof'),api:async(path,body)=>{calls.push({path,body});const answer=answers.shift();if(answer instanceof Error)throw answer;if(!answer)throw Error('Missing fixture answer');return answer;}};
  runInNewContext(readFileSync(new URL('./public/assets/support-status.js',import.meta.url),'utf8'),ctx);
- return {events,calls,answers,document,window,ids,timers,get:name=>runInNewContext(name,ctx),open:runInNewContext('openSupportTicket',ctx),show:runInNewContext('showSupportTicketSheet',ctx),close:runInNewContext('closeSupportTicketSheet',ctx),visibility(hidden){document.hidden=hidden;documentEvents.visibilitychange?.();},leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
+ return {events,calls,answers,document,window,ids,timers,get:name=>runInNewContext(name,ctx),run:code=>runInNewContext(code,ctx),advance(ms){now+=ms;},open:runInNewContext('openSupportTicket',ctx),show:runInNewContext('showSupportTicketSheet',ctx),close:runInNewContext('closeSupportTicketSheet',ctx),visibility(hidden){document.hidden=hidden;documentEvents.visibilitychange?.();},leave(){ids.get('support').hidden=true;observers[0]();},returnToSupport(){ids.get('support').hidden=false;observers[0]();}};
 }
 function text(node){return node.textContent+(node.children||[]).map(text).join('');}
 const reference='b'.repeat(32);
@@ -155,7 +156,7 @@ test('closing during a bot check prevents lookup email and closing during email 
 });
 test('refresh runs only while the sheet and page are visible and resumes after closing a nested verification challenge',async()=>{
  const f=fixture();f.answers.push(result);await f.open(reference);assert.equal(f.timers.size,1);assert.equal([...f.timers.values()][0].delay,30000);const oldTimer=[...f.timers.values()][0].fn;f.visibility(true);assert.equal(f.timers.size,0);f.visibility(false);assert.equal(f.timers.size,1);
- await beginVerification(f);assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('statusSheet').open,true);assert.equal(f.timers.size,0);f.get('statusCancel').onclick();assert.equal(f.get('statusSheet').open,true);assert.equal(f.timers.size,1);
+ await beginVerification(f);assert.equal(f.get('statusVerify').open,true);assert.equal(f.get('statusSheet').open,true);assert.equal([...f.timers.values()].some(timer=>timer.delay===30000),false);assert.equal([...f.timers.values()].some(timer=>timer.delay===1000),true);f.get('statusCancel').onclick();assert.equal(f.get('statusSheet').open,true);assert.equal(f.timers.size,1);
  const calls=f.calls.length;f.close();oldTimer();f.events['app-language-changed']();assert.equal(f.calls.length,calls);assert.equal(f.timers.size,0);
 });
 test('the success receipt never stacks the tracker modal and the next My ticket opens the existing grant without another code email',async()=>{
@@ -170,4 +171,35 @@ test('tracker inputs keep normal letter spacing and the sheet has bounded respon
 });
 test('pasting a formatted ticket-access code does not truncate digits or silently remove letters',async()=>{
  const f=fixture();await beginVerification(f);const field=f.get('statusCode');assert.equal(field.maxLength,32);field.value='123 456';field.inputListener();assert.equal(field.value,'123456');field.value='12x 456';field.inputListener();assert.equal(field.value,'12x456');
+});
+
+test('expired or exhausted ticket codes offer a fresh challenge directly and Change email never sends an email',async()=>{
+ const f=fixture({now:1800000000000});await beginVerification(f);assert.equal(f.get('statusResend').disabled,true);f.advance(61000);f.get('renderSupportAccessChallenge')();const ended=Object.assign(Error('Attempt limit reached'),{status:400,code:'code_exhausted'});f.answers.push(ended);await f.get('statusVerifyForm').onsubmit({preventDefault(){}});assert.equal(f.get('statusVerifyButton').disabled,true);assert.match(f.get('statusResend').textContent,/Send new code/);assert.equal(f.get('statusResend').disabled,false);
+ const next='d'.repeat(32);f.answers.push({verification_id:next,expires_in:900,resend_after:60});await f.get('statusResend').onclick();assert.equal(f.calls.at(-1).path,'/api/support/status/request');assert.equal(f.calls.at(-1).body.email,'listener@example.com');assert.equal(f.get('supportStatusVerification'),next);assert.equal(f.get('statusVerifyButton').disabled,false);assert.equal(f.get('statusCode').value,'');const count=f.calls.length;f.get('statusChangeEmail').onclick();assert.equal(f.get('statusVerify').open,false);assert.equal(f.document.activeElement,f.get('statusEmail'));assert.equal(f.calls.length,count);
+});
+
+test('ticket code expiry disables Verify automatically and resend rate limits show their actual wait',async()=>{
+ const f=fixture({now:1800000000000});await beginVerification(f);f.advance(900000);f.get('renderSupportAccessChallenge')();assert.equal(f.get('statusVerifyButton').disabled,true);assert.match(f.get('statusVerifyExpiry').textContent,/no longer active/);const count=f.calls.length;await f.get('statusVerifyForm').onsubmit({preventDefault(){}});assert.equal(f.calls.length,count);
+ f.answers.push(Object.assign(Error('Wait before requesting another code.'),{status:429,retry_after:45}));await f.get('statusResend').onclick();assert.equal(f.get('statusResend').disabled,true);assert.match(f.get('statusResend').textContent,/45s/);
+});
+
+test('customers can reply to an existing ticket without a new ticket and lost responses reuse the same request reference',async()=>{
+ const f=fixture();f.answers.push(result);await f.open(reference);let view=f.get('supportTicketView');assert.equal(view.replyCompose.open,undefined);view.replyInput.value='Here is the detail you requested';view.replyInput.inputListener();const draft=view.replyInput.value;assert.equal(f.window.supportTickets.hasReplyDraft(),true);
+ f.answers.push(Error('Connection interrupted'));await view.replyForm.onsubmit({preventDefault(){}});assert.equal(view.replyInput.value,draft);assert.equal(f.calls.at(-1).path,'/api/support/status/reply');const request=f.calls.at(-1).body.request_id;assert.equal(f.window.supportTickets.hasPendingReply(),false);
+ f.answers.push({status:'ok',duplicate:true},{...result,replies:[...result.replies,{body:draft,created_at:1800000030,author:'customer'}]});await view.replyForm.onsubmit({preventDefault(){}});const calls=f.calls.filter(call=>call.path==='/api/support/status/reply');assert.equal(calls.length,2);assert.equal(calls[1].body.request_id,request);assert.equal(calls[1].body.reference,reference);assert.equal(f.window.supportTickets.hasReplyDraft(),false);assert.equal(view.replyInput.value,'');assert.match(text(view.replies),/You/);assert.match(text(view.replies),/detail you requested/);
+});
+
+test('closing and reopening a ticket preserves a reply draft and busy replies cannot send twice or be sent after closing during security checks',async()=>{
+ let finish;const f=fixture({human:()=>new Promise(resolve=>{finish=resolve;})});f.answers.push(result);await f.open(reference);const view=f.get('supportTicketView');view.replyInput.value='Keep this reply';view.replyInput.inputListener();const pending=view.replyForm.onsubmit({preventDefault(){}});await view.replyForm.onsubmit({preventDefault(){}});assert.equal(f.window.supportTickets.hasPendingReply(),true);f.close();finish('bot-proof');await pending;assert.equal(f.calls.filter(call=>call.path==='/api/support/status/reply').length,0);assert.equal(f.window.supportTickets.hasReplyDraft(),true);
+ f.answers.push(result);await f.open(reference);assert.equal(f.get('supportTicketView').replyInput.value,'Keep this reply');let warned=false;f.events.beforeunload({preventDefault(){warned=true;}});assert.equal(warned,true);
+});
+
+test('a reply accepted after closing and reopening clears its restored matching draft instead of offering a duplicate send',async()=>{
+ const f=fixture();f.answers.push(result);await f.open(reference);const first=f.get('supportTicketView'),message='The detail you requested';first.replyInput.value=message;first.replyInput.inputListener();const post=deferred();f.answers.push(post.promise);const sending=first.replyForm.onsubmit({preventDefault(){}});await new Promise(setImmediate);assert.equal(f.calls.at(-1).path,'/api/support/status/reply');f.close();f.answers.push(result);await f.open(reference);const restored=f.get('supportTicketView');assert.notEqual(restored,first);assert.equal(restored.replyInput.value,message);assert.equal(restored.replyInput.disabled,true);
+ f.answers.push({...result,replies:[...result.replies,{body:message,created_at:1800000030,author:'customer'}]});post.resolve({status:'ok'});await sending;assert.equal(restored.replyInput.value,'');assert.equal(f.window.supportTickets.hasReplyDraft(),false);assert.equal(restored.replySubmit.disabled,false);assert.match(text(restored.replies),/The detail you requested/);const calls=f.calls.length;await restored.replyForm.onsubmit({preventDefault(){}});assert.equal(f.calls.length,calls);
+});
+
+test('reply authorization expiry returns to verification while keeping the draft and cooldown protects rapid sends',async()=>{
+ const f=fixture({now:1800000000000});f.answers.push(result);await f.open(reference);let view=f.get('supportTicketView');view.replyInput.value='A private draft';view.replyInput.inputListener();f.answers.push(Object.assign(Error('Wait'),{status:429,retry_after:30}));await view.replyForm.onsubmit({preventDefault(){}});assert.match(view.replySubmit.textContent,/30s/);const count=f.calls.length;await view.replyForm.onsubmit({preventDefault(){}});assert.equal(f.calls.length,count);
+ f.advance(30000);f.answers.push(Object.assign(Error('Verify your email'),{status:403}));await view.replyForm.onsubmit({preventDefault(){}});assert.equal(f.get('statusPrivate').hidden,true);assert.equal(f.get('statusReference').value,reference);assert.equal(f.window.supportTickets.hasReplyDraft(),true);assert.match(f.get('statusNotice').textContent,/saved reply/);
 });

@@ -94,12 +94,12 @@ test('an offline linked radio shows Wi-Fi help without stale station actions and
  assert.equal(status.textContent,'Radio offline. Check power and Wi-Fi.');assert.equal(status.className,'radio-offline');
  assert.equal(station.hidden,true);assert.equal(report.hidden,true);report.onclick();assert.equal(f.reports.length,0);
  assert.equal(code.textContent,'Device code 3961');assert.equal(unlink.hidden,false);assert.equal(f.ids.get('openWifiSetup').hidden,false);
- for(const id of ['connectRadio','radioConnectionChoices','connectRadioForm','radioCodeBack'])assert.equal(f.ids.get(id).hidden,true);
+ assert.equal(f.ids.get('connectRadio').hidden,false);assert.equal(f.ids.get('connectRadio').textContent,'Connect another radio');for(const id of ['radioConnectionChoices','connectRadioForm','radioCodeBack'])assert.equal(f.ids.get(id).hidden,true);
  f.schedule();f.answers.push(response({current_station:'Fresh station',current_station_code:'11'}));await f.poll();
  assert.equal(f.views()[0],card);assert.equal(f.ids.get('linkedRadios').replacements,replacements);assert.equal(status.textContent,'Online');assert.equal(status.className,'radio-online');
  assert.equal(station.hidden,false);assert.equal(station.textContent,'Current station: FRESH STATION');assert.equal(report.hidden,false);report.onclick();assert.equal(f.reports.at(-1).code,'11');
  assert.equal(f.ids.get('openWifiSetup').hidden,true);assert.equal(f.ids.get('radioConnectStatus').textContent,'');
- for(const id of ['connectRadio','radioConnectionChoices','connectRadioForm','radioCodeBack'])assert.equal(f.ids.get(id).hidden,true);
+ assert.equal(f.ids.get('connectRadio').hidden,false);for(const id of ['radioConnectionChoices','connectRadioForm','radioCodeBack'])assert.equal(f.ids.get(id).hidden,true);
  assert.deepEqual(f.calls,['/api/phone/radios','/api/phone/radios']);assert.equal(f.dialogs.length,0);
 });
 

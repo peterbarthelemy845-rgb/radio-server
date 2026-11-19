@@ -1,5 +1,5 @@
 'use strict';
-const APP_RELEASE='2026.11.15.4';
+const APP_RELEASE='2026.11.19.1';
 let appAvailableRelease='',appDismissedRelease='',appReleaseChecking=false,appUpdateConfirming=false;
 const appUpdateBanner=document.createElement('aside');appUpdateBanner.id='appUpdateBanner';appUpdateBanner.className='app-update-banner';appUpdateBanner.hidden=true;appUpdateBanner.setAttribute('aria-label','Website update');
 const appUpdateTitle=document.createElement('strong'),appUpdateNote=document.createElement('p'),appUpdateActions=document.createElement('div'),appUpdateRefresh=document.createElement('button'),appUpdateLater=document.createElement('button');
@@ -11,6 +11,7 @@ function appStationDeliveryState(){
  return {pending:records.some(record=>['sending','pending'].includes(record.state)),unconfirmed:records.some(record=>record.state==='unconfirmed')};
 }
 function appHasUnfinishedWork(){
+ if(window.supportTickets?.hasReplyDraft?.()||window.supportTickets?.hasPendingReply?.())return true;
  if(typeof shareRunning!=='undefined'&&shareRunning||typeof pairingCleanupPending!=='undefined'&&pairingCleanupPending>0||window.radioControlsBusy||appStationDeliveryState().pending)return true;
  if(document.querySelector('dialog[open]'))return true;
  for(const form of document.querySelectorAll('form')){

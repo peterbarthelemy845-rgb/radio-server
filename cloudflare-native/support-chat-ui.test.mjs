@@ -81,6 +81,10 @@ test('No sound can report only the fresh selected current station and rechecks i
  const f=fixture({currentCode:'24'});assert.equal(f.get('supportChatReportStation').hidden,true);f.choose(2);assert.equal(f.get('supportChatReportStation').hidden,false);f.get('supportChatReportStation').onclick();assert.equal(f.reports.length,1);assert.deepEqual(Object.keys(f.reports[0]),['code']);assert.equal(f.reports[0].code,'24');assert.equal(f.contacts[0].subject,'Station problem');assert.equal(f.contacts[0].focus,false);assert.equal(f.calls.length+f.checks.length,0);
  f.setCurrentCode(null);assert.equal(f.get('supportChatReportStation').hidden,true);f.get('supportChatReportStation').onclick();assert.equal(f.reports.length,1);assert.match(f.get('supportChatStatus').textContent,/current station is unavailable/);assert.equal(f.ticket.elements.station_code.value,'13');
 });
+
+test('editing a suggested question clears its topic and station-report action before Contact support',()=>{
+ const f=fixture({currentCode:'24'});f.choose(2);assert.equal(f.get('supportChatReportStation').hidden,false);f.type('My station login email is incorrect');assert.equal(f.get('supportChatReportStation').hidden,true);f.buttons()[0].onclick();assert.equal(f.contacts.length,1);assert.equal(f.contacts[0].subject,undefined);assert.equal(f.calls.length+f.checks.length,0);assert.equal(f.get('supportChatQuestion').value,'My station login email is incorrect');
+});
 test('No sound report never guesses a first station, accepts invalid current codes, or proceeds while the report flow is busy',()=>{
  for(const code of [null,'0','1','0013','13,24','javascript:alert(1)']){const f=fixture({currentCode:code});f.choose(2);assert.equal(f.get('supportChatReportStation').hidden,true);f.get('supportChatReportStation').onclick();assert.equal(f.reports.length,0);}
  const f=fixture({currentCode:'24',reportAccepted:false});f.choose(2);f.get('supportChatReportStation').onclick();assert.equal(f.contacts.length,0);assert.equal(f.calls.length,0);f.changeLanguage('ht');assert.equal(f.get('supportChatReportStation').textContent,'Rapòte estasyon sa a');

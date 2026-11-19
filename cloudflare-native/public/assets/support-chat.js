@@ -55,7 +55,7 @@
  toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)input.focus({preventScroll:true});};
  contact.onclick=()=>{
   if(pending){generation++;controller?.abort();setBusy(false);}
-  const subject=topicSubjects[topic];if(typeof window.supportGuidedFlow?.openContact==='function')window.supportGuidedFlow.openContact({subject});
+  const subject=topicSubjects[topic];if(typeof window.supportGuidedFlow?.openContact==='function')window.supportGuidedFlow.openContact({subject,clearSuggestedSubject:!subject});
   else{if(subject&&ticketForm.elements?.subject&&!ticketForm.elements.subject.value)ticketForm.elements.subject.value=subject;ticketForm.hidden=false;(ticketForm.elements?.name||ticketForm.querySelector('input'))?.focus({preventScroll:true});ticketForm.scrollIntoView?.({block:'start',behavior:'auto'});}
  };
  report.onclick=()=>{
@@ -65,7 +65,7 @@
   window.supportGuidedFlow?.openContact?.({subject:'Station problem',focus:false});
  };
  clear.onclick=()=>{if(pending)return;history=[];topic='';thread.replaceChildren();feedback('');helpGuides.hidden=true;helpGuides.open=false;input.value='';updateCount();renderReport();input.focus({preventScroll:true});};
- input.addEventListener('input',()=>{updateCount();feedback('');});
+ input.addEventListener('input',()=>{topic='';updateCount();feedback('');renderReport();});
  form.onsubmit=async event=>{
   event.preventDefault();if(pending)return;
   const question=input.value.trim(),lang=language(),transport=window.supportChatTransport;
@@ -86,5 +86,5 @@
  window.addEventListener('app-language-changed',()=>{renderLabels();if(guideStatusKey)helpStatus.textContent=t(guideStatusKey);if(helpGuides.open&&!helpGuides.hidden)void loadHelpGuides();});
  for(const event of ['radio-status-updated','radio-selection-changed','radio-current-station-invalidated'])window.addEventListener(event,renderReport);
  window.addEventListener('pagehide',()=>{generation++;controller?.abort();controller=null;guideGeneration++;guideRequest?.controller.abort();guideRequest=null;setBusy(false);});
- renderLabels();
+ renderLabels();window.supportChatReady=true;window.supportGuidedFlow?.render?.();
 })();

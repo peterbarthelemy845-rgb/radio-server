@@ -46,6 +46,7 @@ function fixture({sdkReady=true}={}){
 function ownerNavigationFixture({owner=null,session=Promise.resolve(),feature=Promise.resolve()}={}){
  const f=fixture(),events=[],history=[];f.context.window.loadAppFeature=async name=>{events.push(['feature',name]);await feature;};f.context.history={replaceState(_state,_title,url){history.push(url);}};
  f.context.loadOwnerSession=async()=>{events.push(['session']);await session;const snapshot={owner_station:owner,owner_expires:owner?2000:null,server_time:1000};Object.assign(f.context.state,snapshot);f.context.window.dispatchEvent({type:'owner-session-updated',detail:snapshot});};f.context.editor=async(preserve,generation)=>{events.push(['editor',preserve,generation]);f.page('editor');};
+ vm.runInContext(between('function ownerEntryHistory(',"$('openLogin').onclick="),f.context);
  vm.runInContext(between("$('openLogin').onclick=", ";$('navAdd').onclick="),f.context);
  vm.runInContext(between("$('navAdd').onclick=async()=>", ";$('navLibrary').onclick="),f.context);
  vm.runInContext(between('function ownerAccountUnavailable()','async function ensureOwnerSession()'),f.context);
@@ -73,9 +74,15 @@ test('a server rejection of expired stream proof clears the gate and preserves t
 });
 
 test('Add Station opens Create Station for an unowned session and Sign in remains an explicit tab',async()=>{
- const f=ownerNavigationFixture();f.page('myRadio');await f.open();assert.equal(f.get('register').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.get('myRadio').hidden,true);assert.deepEqual(f.history,['/#add-station']);assert.deepEqual(f.navigation,[['feature','owner'],['session']]);
+ const f=ownerNavigationFixture();f.page('myRadio');await f.open();assert.equal(f.get('register').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.get('myRadio').hidden,true);assert.deepEqual(f.history,['/create-station']);assert.deepEqual(f.navigation,[['feature','owner'],['session']]);
  f.get('openLogin').onclick();assert.equal(f.get('login').hidden,false);assert.equal(f.get('register').hidden,true);assert.equal(f.focused(),f.get('signInTab'));
  f.get('openRegister').onclick();assert.equal(f.get('register').hidden,false);assert.equal(f.get('login').hidden,true);assert.equal(f.focused(),f.get('createStationTab'));assert.equal(f.calls.length,0);assert.equal(f.widgets.length,0);
+});
+test('owner entry tabs keep distinct reloadable URLs and form state in ordinary browser history',async()=>{
+ const f=ownerNavigationFixture(),snapshots=[];f.context.history.pushState=function(state,_title,url){this.state=state;f.history.push(url);snapshots.push(state);};await f.open();f.get('registerForm').elements.name.value='Keep draft';f.get('openLogin').onclick();assert.equal(f.history.at(-1),'/station-edit');assert.equal(snapshots.at(-1).radioLocalsApp.page,'login');f.get('openRegister').onclick();assert.equal(f.history.at(-1),'/create-station');assert.equal(snapshots.at(-1).radioLocalsApp.page,'register');assert.equal(f.get('registerForm').elements.name.value,'Keep draft');
+});
+test('the first owner-tab switch records its original direct-entry page so Back can restore it',()=>{
+ const f=ownerNavigationFixture(),entries=[{url:'/station-edit',state:null}];f.page('login');f.context.history={state:null,replaceState(state,_title,url){this.state=state;entries[entries.length-1]={state,url:url??entries.at(-1).url};},pushState(state,_title,url){this.state=state;entries.push({state,url});}};f.get('openRegister').onclick();assert.equal(entries.length,2);assert.equal(entries[0].url,'/station-edit');assert.equal(entries[0].state.radioLocalsApp.page,'login');assert.equal(entries[1].url,'/create-station');assert.equal(entries[1].state.radioLocalsApp.page,'register');
 });
 
 test('Add Station retains the authenticated editor path with its existing draft-preservation contract',async()=>{

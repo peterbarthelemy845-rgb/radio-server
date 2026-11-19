@@ -3,6 +3,7 @@ import {digest,encrypt,randomHex,HttpError} from './security.mjs';
 // Subjects and message templates are application-owned. Reviewed content, stream
 // URLs, artwork paths, sign-in codes and advertiser contact details stay out of mail.
 const messages={
+ 'ad-submitted':['A new advertisement needs your review','A new advertisement for your station is waiting for review. Sign in and open Review radio ads to see its status and requested dates.'],
  'station-approved':['Your Radio Locals station is approved','Your station is approved and published on Radio Locals.'],
  'station-needs-changes':['Your Radio Locals station needs changes','Your station needs changes and is currently suspended from Radio Locals. Station editing is unavailable while it is suspended.'],
  'station-edit-rejected':['Your proposed Radio Locals changes need revision','Your proposed station changes were not approved. Your previously approved station details, if any, are unchanged. Sign in to review and revise your changes.'],

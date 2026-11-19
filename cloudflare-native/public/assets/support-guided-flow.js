@@ -16,6 +16,12 @@
  const choices=node('div',null,null,'support-topic-choices');choices.setAttribute('role','group');choices.setAttribute('aria-labelledby',heading.id);
  const topicButtons=new Map();for(const [id,topic] of Object.entries(topics)){const choice=button(topic.key,topic.label,'support-topic-choice');choice.dataset.supportTopic=id;choice.setAttribute('aria-controls','supportTopicHelp');choice.onclick=()=>chooseTopic(id);topicButtons.set(id,choice);choices.append(choice);}
  const otherContact=button('supportFlow.contact','Contact support','support-contact-link');otherContact.setAttribute('aria-controls','ticketForm');otherContact.onclick=()=>openContact();questions.append(heading,choices,otherContact);
+ // Human help remains independent of the optional assistant bundle. Only hide
+ // these fallbacks after the assistant has finished installing its own links.
+ const fallback=node('div',null,null,'support-contact-fallback');fallback.id='supportContactFallback';
+ const fallbackContact=button('supportFlow.contact','Contact support'),fallbackTicket=button('supportStatus.title','My ticket'),fallbackNotice=node('p');fallbackNotice.setAttribute('role','status');
+ fallbackContact.onclick=()=>openContact();fallbackTicket.onclick=async()=>{if(pending())return;if(typeof window.supportTickets?.open==='function'){window.supportTickets.open();return;}fallbackTicket.disabled=true;try{await window.loadAppFeature?.('support');if(typeof window.supportTickets?.open==='function')window.supportTickets.open();else throw Error('Ticket status is unavailable. Please reload and try again.');}catch(error){fallbackNotice.textContent=error.message;}finally{fallbackTicket.disabled=false;}};
+ fallback.append(fallbackContact,fallbackTicket,fallbackNotice);form.before(fallback);
  const help=node('section',null,null,'support-topic-help');help.id='supportTopicHelp';help.hidden=true;
  const chooseAgain=button('supportFlow.chooseAgain','Choose another problem','support-help-back');chooseAgain.onclick=()=>{if(pending())return;topicId='';contact=false;videos.scrollLeft=0;render();heading.focus({preventScroll:true});};
  const helpTitle=node('h2');helpTitle.id='supportTopicTitle';helpTitle.tabIndex=-1;help.setAttribute('aria-labelledby',helpTitle.id);const steps=node('ol');help.append(chooseAgain,helpTitle,steps);
@@ -52,7 +58,7 @@
   videos.hidden=!count;window.dispatchEvent(new Event('support-guided-flow-updated'));
  }
  function render(){
-  host.dataset.view=contact?'contact':topicId?'topic':'choose';questions.hidden=true;help.hidden=contact||!topicId;helpContact.hidden=contact||!topicId;contactBack.hidden=!contact;form.hidden=!contact;
+  host.dataset.view=contact?'contact':topicId?'topic':'choose';questions.hidden=true;help.hidden=contact||!topicId;helpContact.hidden=contact||!topicId;contactBack.hidden=!contact;form.hidden=!contact;fallback.hidden=window.supportChatReady===true;
   const disabled=pending();contactBack.disabled=disabled;chooseAgain.disabled=disabled;otherContact.disabled=disabled;helpContact.disabled=disabled;for(const choice of topicButtons.values())choice.disabled=disabled;
   renderSubject();
   renderGuides();
@@ -65,9 +71,9 @@
  function chooseTopic(id){
   const topic=topics[id];if(!topic||pending())return;topicId=id;contact=false;helpTitle.dataset.i18n=topic.key;helpTitle.textContent=text(topic.key,topic.label);steps.replaceChildren();for(const [key,fallback] of topic.steps)steps.append(node('li','supportFlow.'+key,fallback));videos.scrollLeft=0;render();helpTitle.focus({preventScroll:true});
  }
- function openContact({subject,focus=true}={}){
+ function openContact({subject,focus=true,clearSuggestedSubject=false}={}){
   if(pending()){contact=true;render();return false;}
-  const field=form.elements.subject;if(subject&&(!field.value||field.value===autoSubject)){field.value=subject;autoSubject=subject;subjectEditing=false;}
+  const field=form.elements.subject;if(clearSuggestedSubject&&autoSubject&&field.value===autoSubject){field.value='';autoSubject='';subjectEditing=true;}if(subject&&(!field.value||field.value===autoSubject)){field.value=subject;autoSubject=subject;subjectEditing=false;}
   contact=true;render();if(focus&&!support.hidden){const first=['name','email','subject','message'].map(key=>form.elements[key]).find(input=>input&&!String(input.value||'').trim())||form.elements.message;first?.focus({preventScroll:true});form.scrollIntoView?.({block:'start',behavior:'auto'});}return true;
  }
  form.elements.subject.addEventListener('input',()=>{autoSubject='';});form.elements.subject.addEventListener('change',()=>{autoSubject='';subjectEditing=!subjectField.value;renderSubject();if(contact&&subjectField.value&&!support.hidden)subjectChange.focus({preventScroll:true});});

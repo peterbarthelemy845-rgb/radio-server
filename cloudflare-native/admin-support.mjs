@@ -50,7 +50,7 @@ export async function supportRoutes(request,env,now){
   const rows=(await env.DB.prepare(`SELECT r.id,r.encrypted_payload,r.created_at,m.state AS delivery_state,m.attempts
    FROM support_replies r LEFT JOIN mail_outbox m ON m.id=r.outbox_id
    WHERE r.ticket_id=? AND r.outbox_id IS NOT NULL ORDER BY r.created_at DESC,r.rowid DESC LIMIT 200`).bind(item.id).all()).results;
-  const messages=await Promise.all(rows.reverse().map(async row=>{const payload=JSON.parse(await decrypt(env,row.encrypted_payload));return {id:row.id,body:payload.body,recipient:payload.recipient,created_at:row.created_at,delivery:{state:row.delivery_state||'unavailable',attempts:row.attempts||0}};}));
+  const messages=await Promise.all(rows.reverse().map(async row=>{const payload=JSON.parse(await decrypt(env,row.encrypted_payload));return {id:row.id,body:payload.body,recipient:payload.recipient,...(payload.author==='customer'?{author:'customer'}:{}),created_at:row.created_at,delivery:{state:row.delivery_state||'unavailable',attempts:row.attempts||0}};}));
   const history=(await env.DB.prepare('SELECT action,notes,created_at FROM legal_actions WHERE request_id=? ORDER BY created_at DESC,rowid DESC LIMIT 200').bind(item.id).all()).results;
   return json({ticket:item,messages,history});
  }

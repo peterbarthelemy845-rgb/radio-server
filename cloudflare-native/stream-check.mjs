@@ -1,4 +1,4 @@
-import {browserWrite,human,HttpError,json,limit,readJson} from './security.mjs';
+import {browserWrite,digest,human,HttpError,json,limit,readJson} from './security.mjs';
 import {publicStreamUrl,isIPv4} from './public-stream-url.mjs';
 import {beginStreamCheck,completeStreamCheck} from './stream-verification.mjs';
 import {ipv4StreamResponse} from './ipv4-stream-socket.mjs';
@@ -62,9 +62,10 @@ export async function streamCheckRoutes(request,env,now,deps={human}){
  const current=await browserWrite(request,env,now);
  // Failed bot checks and invalid payloads consume their allowance before any
  // provider call, DNS resolution, or external connection can take place.
- await limit(env.DB,'stream-check-ip',request.headers.get('CF-Connecting-IP')||'unknown',10,900,now);
- await limit(env.DB,'stream-check-session',current.token_hash,6,900,now);
- await limit(env.DB,'stream-check-global','all',60,60,now);
+ const allowance=async(scope,identity,maximum,seconds)=>{try{await limit(env.DB,scope,identity,maximum,seconds,now);}catch(error){if(error instanceof HttpError&&error.status===429){const row=await env.DB.prepare('SELECT expires FROM rate_limits WHERE key=?').bind(scope+':'+await digest(identity)).first();error.retry_after=Math.min(seconds,Math.max(1,Math.ceil(Number(row?.expires||now+seconds)-now)));error.message='Stream test limit reached. Try again when the countdown ends.';}throw error;}};
+ await allowance('stream-check-ip',request.headers.get('CF-Connecting-IP')||'unknown',10,900);
+ await allowance('stream-check-session',current.token_hash,6,900);
+ await allowance('stream-check-global','all',60,60);
  const body=await readJson(request,4096),validated=publicStreamUrl(body.stream_url);
  await (deps.human||human)(request,env,body.turnstile_token,'stream-check',now);
  if(env.STREAM_CHECK_PUBLIC_FETCH!=='true')throw new HttpError(503,'Stream checking is temporarily unavailable.');

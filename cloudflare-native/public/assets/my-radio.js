@@ -24,28 +24,27 @@ async function pollPhoneApproval(claimId,{current,deadline,signal}={}){
 let radioPairingCancellation=Promise.resolve();
 // Connection steps stay in this tab. Wi-Fi credentials are entered only on the
 // radio's local setup page; finding a radio never grants this phone access.
-let radioConnectionStep='idle';
+let radioConnectionStep='idle',radioConnectingAnother=false;
 function syncRadioConnectionControls(){
  const linked=radioCardViews.size>0;
- if(linked)radioConnectionStep='idle';
- $('connectRadio').hidden=linked||radioConnectionStep!=='idle';
- $('radioConnectionChoices').hidden=linked||radioConnectionStep!=='choose';
- $('connectRadioForm').hidden=linked||radioConnectionStep!=='code';
- $('radioCodeBack').hidden=linked||radioConnectionStep!=='code';
+ if(linked&&!radioConnectingAnother)radioConnectionStep='idle';
+ const connect=$('connectRadio'),key=linked?'pairing.connectAnother':'connect',fallback=linked?'Connect another radio':'Connect my radio',translated=window.appI18n?.t(key);connect.textContent=translated&&translated!==key?translated:fallback;connect.setAttribute('data-i18n',key);
+ connect.hidden=radioConnectionStep!=='idle';
+ $('radioConnectionChoices').hidden=radioConnectionStep!=='choose';
+ $('connectRadioForm').hidden=radioConnectionStep!=='code';
+ $('radioCodeBack').hidden=radioConnectionStep!=='code';
 }
 function showRadioConnectionChoices(){
  if(radioPairingBusy||$('myRadio').hidden||document.hidden)return false;
- radioConnectionStep='choose';syncRadioConnectionControls();
- if(radioCardViews.size)return false;
+ radioConnectingAnother=radioCardViews.size>0;radioConnectionStep='choose';syncRadioConnectionControls();
  $('radioConnectStatus').textContent='';$('setupRadioWifi').focus({preventScroll:true});return true;
 }
 function showRadioCodeEntry(){
  if(radioPairingBusy||$('myRadio').hidden||document.hidden)return false;
- radioConnectionStep='code';syncRadioConnectionControls();
- if(radioCardViews.size)return false;
+ radioConnectingAnother=radioCardViews.size>0;radioConnectionStep='code';syncRadioConnectionControls();
  $('radioConnectStatus').textContent='';$('connectRadioForm').elements.device_code.focus({preventScroll:true});return true;
 }
-function closeRadioConnectionFlow(){radioConnectionStep='idle';syncRadioConnectionControls();}
+function closeRadioConnectionFlow(){radioConnectionStep='idle';radioConnectingAnother=false;syncRadioConnectionControls();}
 window.showRadioConnectionChoices=showRadioConnectionChoices;
 window.showRadioCodeEntry=showRadioCodeEntry;
 window.closeRadioConnectionFlow=closeRadioConnectionFlow;

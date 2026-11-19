@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {randomUUID} from 'node:crypto';
 
 const directory=readFileSync(new URL('./public/assets/directory-news.js',import.meta.url),'utf8');
 const site=readFileSync(new URL('./public/assets/site.js',import.meta.url),'utf8');
@@ -16,12 +17,12 @@ function fixture({translation=key=>key}={}){
  function node(tag='div'){return {tagName:tag.toUpperCase(),children:[],attributes:{},dataset:{},value:'',hidden:false,textContent:'',scrollLeft:0,replaceCount:0,attributeWrites:0,setAttribute(key,value){this.attributes[key]=String(value);this.attributeWrites++;if(key.startsWith('data-'))this.dataset[key.slice(5)]=String(value);},removeAttribute(key){delete this.attributes[key];if(key.startsWith('data-'))delete this.dataset[key.slice(5)];},append(...children){for(const child of children){child.parent=this;this.children.push(child);}},replaceChildren(...children){this.children=children;this.replaceCount++;},focus(){document.activeElement=this;}};}
  const $=id=>{if(!ids.has(id))ids.set(id,node());return ids.get(id);};
  const window={appI18n:{t:translation},addEventListener(name,handler){const events=handlers.get(name)||[];events.push(handler);handlers.set(name,events);},dispatchEvent(event){for(const handler of handlers.get(event.type)||[])handler(event);}};
- const context={document,window,$,setTimeout(){},Event:class{constructor(type){this.type=type;}},stations:[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],readSelectedRadio:()=>selected,readRadioInventory:()=>inventory,loadRadioInventory(){},refreshRadioInventory:radio=>refreshes.push(radio),api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('Missing response');return await answers.shift();},delay:async()=>{},openStationPopup:(code,options)=>{openings.push({code,options});return runInNewContext('requestStationDelivery',context)(selected,code,'Local Radio');}};
+ const context={crypto:{randomUUID},document,window,$,setTimeout(){},Event:class{constructor(type){this.type=type;}},stations:[{name:'Local Radio',listener_code:'13'},{name:'Morning News',listener_code:'14'}],readSelectedRadio:()=>selected,readRadioInventory:()=>inventory,loadRadioInventory(){},refreshRadioInventory:radio=>refreshes.push(radio),api:async(path,body)=>{calls.push({path,body});if(!answers.length)throw Error('Missing response');return await answers.shift();},delay:async()=>{},openStationPopup:(code,options)=>{openings.push({code,options});return runInNewContext('requestStationDelivery',context)(selected,code,'Local Radio');}};
  runInNewContext('let list;'+deliverySource+tileSource+listeners,context);
  const emit=(type,detail)=>window.dispatchEvent({type,detail});
  const render=()=>runInNewContext('list()',context);
  render();
- return {$,document,calls,answers,refreshes,openings,render,emit,tiles:id=>$(id).children.filter(item=>item.className==='station-slider-item').map(item=>item.children[0]),deliver(code,state,radio='one'){context.nextDelivery={key:radio+'|'+code,radioId:radio,stationCode:code,state};runInNewContext('stationDeliveries.set(nextDelivery.key,nextDelivery)',context);emit('station-delivery-changed');},clear(code,radio='one'){context.deliveryKey=radio+'|'+code;runInNewContext('stationDeliveries.delete(deliveryKey)',context);emit('station-delivery-changed');},select(radio){selected=radio;emit('radio-selection-changed');},inventory(codes){inventory={known:true,codes:new Set(codes)};emit('radio-inventory-changed',{radioId:selected});}};
+ return {$,document,calls,answers,refreshes,openings,render,emit,tiles:id=>$(id).children.filter(item=>item.className==='station-slider-item').map(item=>item.children[0]),deliver(code,state,radio='one'){context.nextDelivery={key:radio+'|'+code,radioId:radio,stationCode:code,state};runInNewContext('stationDeliveries.set(nextDelivery.key,nextDelivery)',context);emit('station-delivery-changed');},clear(code,radio='one'){context.deliveryKey=radio+'|'+code;runInNewContext('stationDeliveries.delete(deliveryKey)',context);emit('station-delivery-changed');},select(radio){selected=radio;emit('radio-selection-changed');},inventory(codes,stale=false){inventory={known:true,codes:new Set(codes),stale};emit('radio-inventory-changed',{radioId:selected});}};
 }
 const feedback=tile=>tile.children[2];
 
@@ -59,4 +60,8 @@ test('tapping an Adding tile reuses its outstanding delivery instead of sending 
 
 test('Adding feedback uses the current language while station names stay literal',()=>{
  const f=fixture({translation:key=>key==='busy.adding'?'N ap ajoute…':key});f.deliver('13','pending');const [tile]=f.tiles('stations');assert.equal(feedback(tile).textContent,'N ap ajoute…');assert.equal(tile.children[1].textContent,'Local Radio');
+});
+
+test('a previously reported list is labelled as history and cannot hide available stations',()=>{
+ const f=fixture();f.inventory(['13'],true);assert.equal(f.$('savedStationsTitle').textContent,'Previously reported');assert.equal(f.tiles('savedStations').length,1);assert.equal(f.tiles('stations').length,2);
 });

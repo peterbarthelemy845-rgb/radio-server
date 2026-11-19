@@ -19,6 +19,11 @@ test('failed stream checks distinguish connection, listening-path and non-audio 
   const f=await fixture(),result=await check(f,audioUrl,fetcher);assert.equal(result.audio_response,false);assert.equal(result.reason,reason);assert.equal(result.field,field);assert.match(result.message,words);assert.doesNotMatch(JSON.stringify(result),/secret|private upstream/);assert.equal(f.sqlite.prepare('SELECT count(*) n FROM stream_check_results WHERE checked_at>0').get().n,0);
  }
 });
+test('stream-check throttling returns the actual remaining wait before any additional provider access',async()=>{
+ const f=await fixture();let probes=0;const deps={human:async()=>{},fetch:async()=>{probes++;return new Response(mp3(),{headers:{'Content-Type':'audio/mpeg'}});}};
+ for(let i=0;i<6;i++)await streamCheckRoutes(f.request(path,body(audioUrl)),f.env,f.now,deps);
+ await assert.rejects(streamCheckRoutes(f.request(path,body(audioUrl)),f.env,f.now+65,deps),error=>error.status===429&&error.retry_after===835&&/countdown/.test(error.message));assert.equal(probes,6);
+});
 const encode=value=>new TextEncoder().encode(value);
 function rawResponse(payload=mp3(),headers='Content-Type: audio/mpeg\r\n',status='HTTP/1.1 200 OK'){
  const head=encode(status+'\r\n'+headers+'\r\n'),result=new Uint8Array(head.length+payload.length);result.set(head);result.set(payload,head.length);return result;

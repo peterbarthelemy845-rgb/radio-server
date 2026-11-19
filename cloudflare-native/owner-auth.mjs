@@ -307,7 +307,7 @@ export async function authRoutes(request,env,now,deps={human}){
   if(path==='/api/owner/login'){
     await deps.human(request,env,body.turnstile_token,'station-access',now);
     await limit(env.DB,'owner-login-ip',request.headers.get('CF-Connecting-IP')||'unknown',10,900,now);
-    const email=String(body.email||'').trim().toLowerCase(),code=String(body.code||'');
+    const email=String(body.email||'').trim().toLowerCase(),code=String(body.code||'').trim().replace(/^#\s*/,'').replace(/\s/g,'');
     if(!emailPattern.test(email)||!/^\d{2,6}$/.test(code))throw new HttpError(400,'Enter your registered email and station code.');
     await limit(env.DB,'owner-login-email',email,5,900,now);
     const station=await env.DB.prepare("SELECT code,contact_email FROM stations WHERE code=? AND contact_email=? AND email_verified_at IS NOT NULL AND status NOT IN ('deleted','suspended')")

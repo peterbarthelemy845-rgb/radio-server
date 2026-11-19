@@ -280,3 +280,11 @@ test('guided Wi-Fi setup cannot abandon pending station, control or pairing requ
 test('history entries without application state clear a guided Wi-Fi continuation',()=>{
  const f=fixture();f.window.openGuidedRadioWifi();assert.equal(f.nodes.get('wifiContinueConnection').hidden,false);f.dispatchWindow('popstate',{state:null});assert.equal(f.nodes.get('wifiContinueConnection').hidden,true);f.click(f.nodes.get('wifiContinueConnection'));assert.equal(f.nodes.get('wifiSetup').hidden,false);assert.deepEqual(f.connectionSteps,[]);
 });
+
+test('Wi-Fi setup for an explicitly added second radio still returns to its Device Code step',async()=>{
+ for(const method of ['continue','back']){const f=fixture();f.context.radioCardViews.set('existing',{radio:{id:'existing',online:true}});assert.equal(f.window.openGuidedRadioWifi(),true);if(method==='continue')f.click(f.nodes.get('wifiContinueConnection'));else f.history.back();await f.settle();assert.deepEqual(f.connectionSteps,[method==='continue'?'code':'choices']);assert.equal(f.nodes.get('myRadio').hidden,false);assert.equal(f.stationOpenings.length,0);}
+});
+
+test('a public station can be reported while its add form is unavailable, but an active add remains protected',async()=>{
+ for(const busy of [false,true]){const f=fixture();await vm.runInContext("openStationPopup('13')",f.context);f.context.sharedCode='13';f.context.shareRunning=busy;f.nodes.get('shareName').textContent='Public station';f.nodes.get('shareForm').hidden=true;f.nodes.get('reportStationProblem').hidden=false;f.nodes.get('reportStationProblem').dispatch('click');await f.settle();assert.equal(f.nodes.get('support').hidden,busy);assert.equal(f.nodes.get('ticketForm').elements.station_code.value,busy?'':'13');}
+});

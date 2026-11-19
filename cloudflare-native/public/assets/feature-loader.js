@@ -4,7 +4,7 @@
 const appFeatureFiles={
  owner:{css:['registration-form.css','operations.css','station-code-recovery.css','owner-editor-simplicity.css','owner-station-metadata.css'],js:['action-prompts.js','stream-test-feedback.js','registration-form.js','editor-stream-setup.js','editor-stream-test.js','owner-station-metadata.js','owner-editor-simplicity.js','owner-stream-publication.js','station-code-recovery.js','policy-preview.js','ads.js','operations.js','owner-session-warning.js']},
  admin:{css:['operations.css','ai-admin.css','ai-operations.css'],js:['action-prompts.js','ai-admin.js','admin-tools.js','ads.js','operations.js','admin-overview.js','ai-operations.js']},
- advertise:{css:['operations.css'],js:['action-prompts.js','ads.js']},
+ advertise:{css:['operations.css'],js:['action-prompts.js','ads.js','advertiser-status.js']},
  support:{css:['support-status.css','support-chat.css'],js:['support-status.js','support-chat.js']}
 };
 const appFeatureRequests=new Map(),appFileRequests=new Map();

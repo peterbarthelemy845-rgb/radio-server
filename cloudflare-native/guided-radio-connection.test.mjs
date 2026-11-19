@@ -79,7 +79,7 @@ test('automatic empty status refreshes preserve the current setup step and input
 
 test('an existing linked radio bypasses all setup and comes online without a new claim',async()=>{
  const f=fixture();f.answers.push({radios:[{...radio,online:false}]});await f.load();const card=f.get('linkedRadios').children[0];
- assert.equal(f.form.hidden,true);assert.equal(f.get('connectRadio').hidden,true);assert.equal(f.get('radioConnectionChoices').hidden,true);assert.equal(f.get('openWifiSetup').hidden,false);
+ assert.equal(f.form.hidden,true);assert.equal(f.get('connectRadio').hidden,false);assert.equal(f.get('connectRadio').textContent,'Connect another radio');assert.equal(f.get('radioConnectionChoices').hidden,true);assert.equal(f.get('openWifiSetup').hidden,false);
  f.advance(10000);f.answers.push({radios:[radio]});await f.load(true);
  assert.equal(f.get('linkedRadios').children[0],card);assert.equal(card.children[0].children[1].textContent,'Online');assert.equal(f.get('openWifiSetup').hidden,true);
  assert.deepEqual(f.calls.map(call=>call.path),['/api/phone/radios','/api/phone/radios']);
@@ -88,8 +88,8 @@ test('an existing linked radio bypasses all setup and comes online without a new
 test('a remembered radio learned during setup closes code entry without creating another pairing',async()=>{
  const f=fixture();f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';
  f.answers.push({radios:[radio]});await f.load(true);
- assert.equal(f.form.hidden,true);assert.equal(f.get('radioConnectionChoices').hidden,true);assert.equal(f.get('connectRadio').hidden,true);assert.equal(f.get('linkedRadios').children.length,1);
- f.showCode();assert.equal(f.form.hidden,true);assert.equal(f.calls.some(call=>call.path.includes('/claim')),false);
+ assert.equal(f.form.hidden,true);assert.equal(f.get('radioConnectionChoices').hidden,true);assert.equal(f.get('connectRadio').hidden,false);assert.equal(f.get('linkedRadios').children.length,1);
+ f.showCode();assert.equal(f.form.hidden,false);assert.equal(f.calls.some(call=>call.path.includes('/claim')),false);
 });
 
 test('a failed status check does not discard the code or force the user through Wi-Fi again',async()=>{
@@ -142,6 +142,10 @@ test('approval queues a fresh status request when the old initial request is hel
  await until(()=>runInNewContext('radioReloadRequested',f.context));assert.equal(f.form.button.disabled,true);assert.equal(f.calls.filter(call=>call.path==='/api/phone/radios').length,1);
  f.answers.push({radios:[radio]});initial.resolve({radios:[]});await initialLoad;
  await until(()=>f.get('linkedRadios').children.length===1);assert.equal(f.calls.filter(call=>call.path==='/api/phone/radios').length,2);
- assert.equal(f.get('linkedRadios').children[0].children[0].children[1].textContent,'Online');assert.equal(f.form.hidden,true);assert.equal(f.get('connectRadio').hidden,true);assert.equal(f.calls.some(call=>call.path==='/api/phone/claim/cancel'),false);
+ assert.equal(f.get('linkedRadios').children[0].children[0].children[1].textContent,'Online');assert.equal(f.form.hidden,true);assert.equal(f.get('connectRadio').hidden,false);assert.equal(f.calls.some(call=>call.path==='/api/phone/claim/cancel'),false);
  success.resolve(true);await pairing;assert.equal(f.form.button.disabled,false);
+});
+
+test('Connect another radio opens an independent pairing flow without adding a station or losing the existing radio',async()=>{
+ const f=fixture();f.answers.push({radios:[radio]});await f.load();assert.equal(f.get('connectRadio').hidden,false);assert.equal(f.get('connectRadio').textContent,'Connect another radio');await f.click('connectRadio');assert.equal(f.get('radioConnectionChoices').hidden,false);await f.click('radioAlreadyOnline');assert.equal(f.form.hidden,false);assert.equal(f.get('linkedRadios').children.length,1);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);await f.click('radioConnectionExit');assert.equal(f.form.hidden,true);assert.equal(f.get('connectRadio').hidden,false);
 });

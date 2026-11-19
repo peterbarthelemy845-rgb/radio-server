@@ -1,4 +1,10 @@
-# Independent Cloudflare backend — migration work in progress
+# Radio Locals Cloudflare backend
+
+Production status, 2026-11-19: `radio-locals-native` serves radiolocals.com through
+the existing `radio-server` entry Worker. The migration narrative below records
+earlier staging work; its cutover warnings are historical. Keep both Workers.
+Use `OPERATIONS.md` for current release requirements. Apply migrations 0034 and
+0036 before deploying the November 19 reliability and support release.
 
 This directory has **no Render dependency**. It is an isolated test backend, not
 yet a replacement for the live website. Do not point radiolocals.com at it yet.

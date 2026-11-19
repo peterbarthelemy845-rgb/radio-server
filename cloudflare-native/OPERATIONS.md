@@ -1,5 +1,31 @@
 # Cloudflare advertising, reports and recovery
 
+## Reliability and support release — 2026-11-19
+
+Apply `0034_phone_station_requests.sql` and `0036_advertiser_updates.sql` before
+deploying this release. Phone add receipts make retries recover the same command;
+they are temporary and cleared on restore. Polling shares a paced queue. Inventory
+freshness uses the radio report time, independently of a successful HTTP request.
+
+Support contact and ticket access remain usable without the optional AI script.
+Verified customers can add replies to their existing encrypted ticket thread.
+Replies require the current ticket grant, CSRF and Turnstile, retain their retry
+identity, and observe spam checks, a cooldown and hourly limits. Accepted replies
+queue a notification to the configured administrator. No new AI calls are needed.
+
+Advertisements show their reference, status and requested dates. The submitting
+browser can check its request for one day. Another browser must prove the submitted
+contact email. Receipt/decision email updates are opt-in after a single-use,
+15-minute email challenge; successful verification grants 30-minute browser access.
+Temporary grants and proofs are excluded from backups. Verified email preferences
+are included, validated against their ad contact, and never replay sent mail on
+restore. Opt-out cancels unsent, unleased advertiser mail and pending proofs.
+
+Owner account entry uses `/station-edit` for Sign in and `/create-station` for
+Create. Verification reconciles uncertain successful logins and uses an absolute
+expiry. Stream-test throttling returns its remaining cooldown. Public and in-memory
+automated checks do not replace physical-radio or real mailbox delivery checks.
+
 These features use D1, private R2, Cloudflare Images and the existing moderation
 credential. They do not use the Render database or its station codes. Apply
 0007_local_ads.sql and 0008_reports_backups.sql before deploying this release.

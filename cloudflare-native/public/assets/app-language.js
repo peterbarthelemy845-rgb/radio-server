@@ -193,6 +193,26 @@ Object.assign(appEnglish,{"registration.continue":"Continue","registration.strea
 Object.assign(appCreole,{"registration.continue":"Kontinye","registration.streamReady":"✓ Difizyon an pare","registration.enterPort":"Antre nimewo pò a","registration.testRequired":"Teste difizyon ou","registration.portRange":"Antre yon pò ant 1 ak 65535.","metadata.requiredDetails":"Detay estasyon · Obligatwa","registration.streamUnreachable":"Sèvè a pa reponn alè. Verifye pwogram difizyon ou an ap mache, epi eseye ankò.","registration.streamConnection":"Nou pa ka konekte. Verifye sèvè a, pò a ak chwa HTTP/HTTPS la.","registration.streamMount":"Adrès pou koute a pa disponib. Verifye chemen difizyon / pwen montaj ou.","registration.streamNotAudio":"Adrès sa a pa voye yon fòma odyo ki sipòte. Verifye chemen difizyon / pwen montaj ou.","owner.continueVerification":"Kontinye verifikasyon imèl","owner.codeDifference":"Kòd prive nan imèl sa a diferan ak Kòd Estasyon ou ak Kòd Aparèy sou radyo ou.","owner.changeEmail":"Chanje imèl","owner.contactEmail":"Imèl kontak","owner.sendNewCode":"Voye nouvo kòd","owner.keepCurrentLogo":"Kenbe logo aktyèl la","owner.privateRegisteredEmail":"Imèl ki anrejistre (prive):","owner.bioRemaining":"{count} karaktè ki rete","filters.zipOptional":"Kòd postal — pa obligatwa","filters.nearbyHelp":"Sa ki pi pre yo an premye nan anviwon 25 mil. Distans kòd postal yo se estimasyon.","station.current":"Estasyon aktyèl","directory.skip":"Ale nan estasyon yo","pairing.whichCode":"Ki kòd?","pairing.codeHelp":"Kòd Aparèy konekte radyo ou. Kòd Estasyon idantifye yon estasyon. Kòd prive nan imèl verifye pwopriyetè estasyon an; pa janm pataje yo isit la.","pairing.addingTo":"Ap ajoute nan Kòd Aparèy {code}","pairing.chooseDevice":"Chwazi yon Kòd Aparèy anlè a.","pairing.incorrectHelp":"Kòd la pa kòrèk. Verifye Kòd Aparèy sou radyo ou epi eseye ankò.","pairing.deniedHelp":"Koneksyon an pa apwouve: ou refize l sou radyo ou. Rekòmanse epi tape Allow sèlman pou pwòp demann ou.","pairing.expiredHelp":"Koneksyon an ekspire. Antre Kòd Aparèy aktyèl la epi rekòmanse.","pairing.cancelledHelp":"Koneksyon an anile. Rekòmanse lè ou pare.","supportFlow.changeSubject":"Chanje"});
 Object.assign(appEnglish,{'station.advertise':'Advertise on this station'});
 Object.assign(appCreole,{'station.advertise':'Fè piblisite sou estasyon sa a'});
+Object.assign(appEnglish,{
+ 'owner.codeTimeLeft':'Enter the private code emailed to {email}. Time left: {minutes} min.',
+ 'owner.codeExpired':'This code expired. Resend email for a new code.',
+ 'owner.emailChanged':'Use the new code sent to your updated email. The previous code no longer works.',
+ 'owner.codeResent':'A new code has been requested. Use only the newest email code.',
+ 'owner.signInStation':'Sign in to your station','owner.latestZip':'Latest ZIP code:','owner.latestCategory':'Latest category:','owner.latestLogo':'Latest station logo:','owner.logoBelow':'Preview below.','owner.noLogo':'No logo.',
+ 'owner.codeWrong':'Incorrect code. Use the newest private email code.','owner.codeExhausted':'Too many incorrect codes. Resend email for a new code.','owner.codeInvalid':'Incorrect or expired code. Request a new email code if needed.',
+ 'registration.retryStreamIn':'Try again in {time}','registration.testLimit':'Stream test limit reached. Try again when the countdown ends.',
+ 'pairing.connectAnother':'Connect another radio','station.previouslyReported':'Previously reported','pairing.checkingDestination':'Checking radio destination…'
+});
+Object.assign(appCreole,{
+ 'owner.codeTimeLeft':'Antre kòd prive yo voye nan imèl {email}. Tan ki rete: {minutes} min.',
+ 'owner.codeExpired':'Kòd sa a ekspire. Voye imèl la ankò pou jwenn yon nouvo kòd.',
+ 'owner.emailChanged':'Sèvi ak nouvo kòd yo voye nan nouvo imèl ou. Ansyen kòd la pa mache ankò.',
+ 'owner.codeResent':'Yon nouvo kòd mande. Sèvi sèlman ak dènye kòd nan imèl la.',
+ 'owner.signInStation':'Konekte nan estasyon ou','owner.latestZip':'Dènye kòd postal:','owner.latestCategory':'Dènye kategori:','owner.latestLogo':'Dènye logo estasyon:','owner.logoBelow':'Gade logo a anba a.','owner.noLogo':'Pa gen logo.',
+ 'owner.codeWrong':'Kòd la pa kòrèk. Sèvi ak dènye kòd prive nan imèl la.','owner.codeExhausted':'Twòp kòd ki pa kòrèk. Voye imèl la ankò pou jwenn yon nouvo kòd.','owner.codeInvalid':'Kòd la pa kòrèk oswa li ekspire. Mande yon nouvo kòd imèl si sa nesesè.',
+ 'registration.retryStreamIn':'Eseye ankò nan {time}','registration.testLimit':'Ou rive nan limit tès difizyon yo. Eseye ankò lè kontè a fini.',
+ 'pairing.connectAnother':'Konekte yon lòt radyo','station.previouslyReported':'Dènye lis ki te rapòte','pairing.checkingDestination':'N ap verifye radyo pou ajoute estasyon an…'
+});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';

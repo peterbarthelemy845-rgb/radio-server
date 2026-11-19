@@ -29,15 +29,16 @@ function loadSavedStationMetadata(codes){
  }
  return Promise.all([...new Set(requested.map(code=>savedStationMetadataRequests.get(code)).filter(Boolean))]);
 }
-function readRadioInventory(id){return radioInventories.get(String(id))||null;}
+function readRadioInventory(id){const inventory=radioInventories.get(String(id))||null;if(inventory?.known&&inventory.freshUntil!=null&&Date.now()>=inventory.freshUntil)inventory.stale=true;return inventory;}
 function loadRadioInventory(id,force=false){
  id=String(id||'');if(!id)return Promise.resolve(null);
  if(radioInventoryRequests.has(id))return radioInventoryRequests.get(id);
- if(!force&&radioInventories.has(id))return Promise.resolve(radioInventories.get(id));
+ if(!force&&radioInventories.has(id))return Promise.resolve(readRadioInventory(id));
  const request=api('/api/phone/stations?radio_id='+encodeURIComponent(id)).then(result=>{
   const known=Array.isArray(result.saved_station_codes)&&result.inventory_reported_at!=null;
-  const inventory={known,codes:new Set(known?result.saved_station_codes.map(String):[]),reportedAt:known?result.inventory_reported_at:null};
-  const previous=radioInventories.get(id),changed=!previous||previous.known!==known||previous.unavailable||[...previous.codes].sort().join(',')!==[...inventory.codes].sort().join(',');radioInventories.set(id,inventory);if(changed)window.dispatchEvent(new CustomEvent('radio-inventory-changed',{detail:{radioId:id}}));if(known)void loadSavedStationMetadata(inventory.codes);return inventory;
+  const serverNow=Number.isFinite(result.server_time)?result.server_time:Date.now()/1000,age=known?Math.max(0,serverNow-Number(result.inventory_reported_at)):Infinity;
+  const inventory={known,codes:new Set(known?result.saved_station_codes.map(String):[]),reportedAt:known?result.inventory_reported_at:null,freshUntil:known?Date.now()+Math.max(0,120-age)*1000:0,...(known&&age>=120?{stale:true}:{})};
+  const previous=radioInventories.get(id),changed=!previous||previous.known!==known||previous.unavailable||!!previous.stale!==!!inventory.stale||[...previous.codes].sort().join(',')!==[...inventory.codes].sort().join(',');radioInventories.set(id,inventory);if(changed)window.dispatchEvent(new CustomEvent('radio-inventory-changed',{detail:{radioId:id}}));if(known)void loadSavedStationMetadata(inventory.codes);return inventory;
  }).catch(error=>{const previous=radioInventories.get(id),retain=previous?.known&&error?.status!==401&&error?.status!==403,inventory=retain?{...previous,codes:new Set(previous.codes),unavailable:true,stale:true}:{known:false,codes:new Set(),reportedAt:null,unavailable:true};radioInventories.set(id,inventory);window.dispatchEvent(new CustomEvent('radio-inventory-changed',{detail:{radioId:id}}));return inventory;}).finally(()=>radioInventoryRequests.delete(id));
  radioInventoryRequests.set(id,request);return request;
 }

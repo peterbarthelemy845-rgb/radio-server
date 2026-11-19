@@ -10,7 +10,7 @@ async function details(env,id,current,now){
  if(!item)throw new HttpError(403,'Verify your email to open this support ticket.');
  const payload=JSON.parse(await decrypt(env,item.encrypted_payload));
  const rows=(await env.DB.prepare(`SELECT encrypted_payload,created_at FROM support_replies WHERE ticket_id=? AND outbox_id IS NOT NULL ORDER BY created_at DESC,rowid DESC LIMIT 100`).bind(id).all()).results;
- const replies=await Promise.all(rows.reverse().map(async row=>({body:JSON.parse(await decrypt(env,row.encrypted_payload)).body,created_at:row.created_at})));
+ const replies=await Promise.all(rows.reverse().map(async row=>{const payload=JSON.parse(await decrypt(env,row.encrypted_payload));return {body:payload.body,created_at:row.created_at,...(payload.author==='customer'?{author:'customer'}:{})};}));
  const history=(await env.DB.prepare(`SELECT action AS state,created_at FROM legal_actions WHERE request_id=? AND action IN ('new','review','closed') ORDER BY created_at DESC,rowid DESC LIMIT 100`).bind(id).all()).results.reverse();
  // Deliberate allowlist: email address, device code and internal audit notes are not returned.
  return {ticket:{reference:item.id,state:item.state,subject:payload.subject,message:payload.message,created_at:item.created_at,...(payload.station_code?{station_code:payload.station_code,station_name:payload.station_name||''}:{})},replies,history};
@@ -39,8 +39,8 @@ export async function supportStatusRoutes(request,env,now,deps={human}){
   const id=reference(body.reference),email=typeof body.email==='string'?body.email.trim().toLowerCase():'';
   if(email.length>254||!emailPattern.test(email))throw new HttpError(400,'Enter the email used for this support ticket.');
   await limit(env.DB,'support-status-request-email',email,3,900,now);
-  const recent=await env.DB.prepare('SELECT 1 FROM support_status_verifications WHERE session_hash=? AND created_at>? LIMIT 1').bind(current.token_hash,now-60).first();
-  if(recent)throw new HttpError(429,'Wait a minute before requesting another code.');
+  const recent=await env.DB.prepare('SELECT created_at FROM support_status_verifications WHERE session_hash=? AND created_at>? ORDER BY created_at DESC LIMIT 1').bind(current.token_hash,now-60).first();
+  if(recent){const error=new HttpError(429,'Wait before requesting another code.');error.retry_after=Math.max(1,recent.created_at+60-now);throw error;}
   await deps.human(request,env,body.turnstile_token,'support-status',now);
   const item=await env.DB.prepare("SELECT encrypted_payload FROM legal_requests WHERE id=? AND kind='support'").bind(id).first();
   let matched=false;if(item){const payload=JSON.parse(await decrypt(env,item.encrypted_payload));matched=String(payload.email||'').trim().toLowerCase()===email;}
@@ -52,14 +52,15 @@ export async function supportStatusRoutes(request,env,now,deps={human}){
   if(matched)statements.push(env.DB.prepare('INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) VALUES (?,?,?,?,?,?)').bind('support-access:'+verificationId,email,'Your private Radio Locals support code',await encrypt(env,JSON.stringify({text:`Your private Radio Locals support verification code is ${code}.\n\nEnter it only on the support page where you requested it. It expires in 15 minutes and works once. Never share it. If you did not request it, ignore this email.`})),now,expires));
   await env.DB.batch(statements);
   // Unknown and mismatched references have the same outward challenge shape.
-  return json({status:'verification_required',verification_id:verificationId,expires_in:900,message:generic});
+  return json({status:'verification_required',verification_id:verificationId,expires_in:900,resend_after:60,message:generic});
  }
  if(path==='/api/support/status/verify'){
   await limit(env.DB,'support-status-verify-ip',ip,30,900,now);await limit(env.DB,'support-status-verify-session',current.token_hash,20,900,now);
   const id=String(body.verification_id||''),code=String(body.code||'').replace(/\s/g,'');
   if(!referencePattern.test(id)||!/^\d{6}$/.test(code))throw new HttpError(400,'Enter the 6-digit email code.');
   const check=await env.DB.prepare(`UPDATE support_status_verifications SET attempts=attempts+1 WHERE id=? AND session_hash=? AND consumed_at IS NULL AND expires>? AND attempts<5 RETURNING *`).bind(id,current.token_hash,now).first();
-  if(!check||!check.ticket_id||check.code_hash!==await mac(env,'support-status:'+id+':'+code))throw new HttpError(400,'Incorrect or expired support code.');
+  if(!check){const error=new HttpError(400,'This support code expired or is no longer active. Request a new email code.');error.code='code_expired';throw error;}
+  if(!check.ticket_id||check.code_hash!==await mac(env,'support-status:'+id+':'+code)){const exhausted=check.attempts>=5,error=new HttpError(400,exhausted?'This support code reached its attempt limit. Request a new email code.':'Incorrect support code. Check the newest email and try again.');error.code=exhausted?'code_exhausted':'code_incorrect';throw error;}
   const proved=await env.DB.prepare("SELECT encrypted_payload FROM legal_requests WHERE id=? AND kind='support'").bind(check.ticket_id).first(),provedEmail=proved?String(JSON.parse(await decrypt(env,proved.encrypted_payload)).email||'').trim().toLowerCase():'';
   if(!provedEmail||!emailPattern.test(provedEmail))throw new HttpError(400,'Incorrect or expired support code.');const emailHash=await mac(env,'support-email:'+provedEmail),operation=randomHex(16);
   await env.DB.batch([
@@ -71,6 +72,36 @@ export async function supportStatusRoutes(request,env,now,deps={human}){
   ]);
   if(!await env.DB.prepare('SELECT 1 FROM support_status_verifications WHERE id=? AND operation_token=?').bind(id,operation).first())throw new HttpError(400,'Incorrect or expired support code.');
   return json({status:'verified',reference:check.ticket_id,expires_in:1800});
+ }
+ if(path==='/api/support/status/reply'){
+  const id=reference(body.reference),text=typeof body.message==='string'?body.message.trim():'';
+  if(!text||text.length>3000)throw new HttpError(400,'Enter a reply of 1 to 3,000 characters.');
+  if(typeof body.request_id!=='string'||!/^[-A-Za-z0-9_]{16,128}$/.test(body.request_id))throw new HttpError(400,'A valid request reference is required. Try again.');
+  const item=await env.DB.prepare(`SELECT r.encrypted_payload,COALESCE(f.folder,'inbox') AS folder FROM legal_requests r JOIN support_ticket_grants g ON g.ticket_id=r.id LEFT JOIN support_ticket_flags f ON f.ticket_id=r.id WHERE r.id=? AND r.kind='support' AND g.session_hash=? AND g.expires>?`).bind(id,current.token_hash,now).first();
+  if(!item)throw new HttpError(403,'Verify your email to reply to this support ticket.');
+  const requestId='customer:'+body.request_id,requestHash=await mac(env,'support-customer-reply:'+JSON.stringify([id,current.token_hash,text]));
+  const recorded=()=>env.DB.prepare('SELECT id,request_hash FROM support_replies WHERE ticket_id=? AND request_id=?').bind(id,requestId).first();
+  let prior=await recorded();if(prior){if(prior.request_hash!==requestHash)throw new HttpError(409,'This request reference was used for a different reply.');return json({status:'ok',duplicate:true,reference:id,message:'Your reply was already sent.'});}
+  if(item.folder==='spam')throw new HttpError(409,'Replies are unavailable for this ticket. Contact support for help.');
+  const email=String(JSON.parse(await decrypt(env,item.encrypted_payload)).email||'').trim().toLowerCase(),emailHash=await mac(env,'support-email:'+email);
+  const blocked=await env.DB.prepare('SELECT expires FROM support_abuse_blocks WHERE session_hash=? AND email_hash=? AND expires>?').bind(current.token_hash,emailHash,now).first();
+  const wait=(seconds,message)=>{const error=new HttpError(429,message);error.retry_after=Math.max(1,Math.ceil(seconds));return error;};
+  if(blocked)throw wait(blocked.expires-now,'Please wait before sending another support message.');
+  const recent=await env.DB.prepare("SELECT created_at FROM support_replies WHERE ticket_id=? AND request_id LIKE 'customer:%' ORDER BY created_at DESC LIMIT 1").bind(id).first();
+  if(recent&&recent.created_at+30>now)throw wait(recent.created_at+30-now,'Wait a moment before sending another reply.');
+  await limit(env.DB,'support-customer-reply-session',current.token_hash,10,3600,now);await limit(env.DB,'support-customer-reply-ticket',id,6,3600,now);await limit(env.DB,'support-customer-reply-ip',ip,20,3600,now);await limit(env.DB,'support-customer-reply-global','all',200,3600,now);
+  await deps.human(request,env,body.turnstile_token,'support-ticket',now);
+  const recipient=String(env.ADMIN_EMAIL||'').trim().toLowerCase();if(recipient.length>254||!emailPattern.test(recipient))throw new HttpError(503,'Support reply delivery is temporarily unavailable. Your draft is kept.');
+  const replyId=randomHex(16),operation=randomHex(16),outboxId='support-customer-reply:'+replyId;
+  await env.DB.batch([
+   env.DB.prepare(`INSERT INTO support_replies(id,ticket_id,request_id,request_hash,operation_token,actor_hash,encrypted_payload,state,outbox_id,created_at)
+    SELECT ?,?,?,?,?,?,?,'new',?,? WHERE EXISTS(SELECT 1 FROM support_ticket_grants g JOIN legal_requests r ON r.id=g.ticket_id WHERE g.ticket_id=? AND g.session_hash=? AND g.expires>? AND r.kind='support') AND NOT EXISTS(SELECT 1 FROM support_ticket_flags WHERE ticket_id=? AND folder='spam') AND NOT EXISTS(SELECT 1 FROM support_replies WHERE ticket_id=? AND request_id LIKE 'customer:%' AND created_at>?) ON CONFLICT(ticket_id,request_id) DO NOTHING`).bind(replyId,id,requestId,requestHash,operation,current.token_hash,await encrypt(env,JSON.stringify({body:text,recipient,author:'customer'})),outboxId,now,id,current.token_hash,now,id,id,now-30),
+   env.DB.prepare(`INSERT INTO mail_outbox(id,recipient,subject,encrypted_payload,due,expires) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM support_replies WHERE id=? AND operation_token=?)`).bind(outboxId,recipient,'Radio Locals customer reply - '+id,await encrypt(env,JSON.stringify({text:'A customer replied to their Radio Locals support ticket.\n\nReference: '+id+'\n\n'+text+'\n\nReview and reply in the administrator support inbox.'})),now,now+86400,replyId,operation),
+   env.DB.prepare("UPDATE legal_requests SET state='new' WHERE id=? AND EXISTS(SELECT 1 FROM support_replies WHERE id=? AND operation_token=?)").bind(id,replyId,operation),
+   env.DB.prepare("INSERT INTO legal_actions(id,request_id,action,notes,created_at) SELECT ?,?,'new','Customer replied in the website.',? WHERE EXISTS(SELECT 1 FROM support_replies WHERE id=? AND operation_token=?)").bind(replyId,id,now,replyId,operation)
+  ]);
+  prior=await recorded();if(!prior){const raced=await env.DB.prepare("SELECT created_at FROM support_replies WHERE ticket_id=? AND request_id LIKE 'customer:%' ORDER BY created_at DESC LIMIT 1").bind(id).first();if(raced&&raced.created_at+30>now)throw wait(raced.created_at+30-now,'Wait a moment before sending another reply.');throw new HttpError(409,'Ticket access changed. Verify your email and try again.');}if(prior.request_hash!==requestHash)throw new HttpError(409,'This request reference was used for a different reply.');
+  return json({status:'ok',duplicate:prior.id!==replyId,reference:id,message:'Reply sent. It is added to this ticket.'});
  }
  if(path==='/api/support/status/logout'){
   const id=reference(body.reference);

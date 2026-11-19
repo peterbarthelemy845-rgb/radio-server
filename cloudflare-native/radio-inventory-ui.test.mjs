@@ -55,3 +55,7 @@ test('metadata failure has a retry cooldown and cannot erase a usable name or tr
  const f=fixture();f.answers.push({stations:[station('13','Saved name')]});await f.loadMetadata(['13']);f.advance(60000);f.answers.push(Error('Network unavailable'));await f.loadMetadata(['13']);await f.loadMetadata(['13']);assert.equal(f.calls.length,2);assert.equal(f.metadata('13').name,'Saved name');
  f.advance(60000);f.answers.push({stations:[station('13','Recovered name','2')]});await f.loadMetadata(['13']);assert.equal(f.calls.length,3);assert.equal(f.metadata('13').name,'Recovered name');
 });
+
+test('successful requests do not make old radio inventory fresh, even when the browser clock differs',async()=>{
+ const f=fixture({catalog:new Map([['13',station('13')]])});f.answers.push({saved_station_codes:['13'],inventory_reported_at:1800000000-86400,server_time:1800000000});const old=await f.load('one');assert.equal(old.known,true);assert.equal(old.stale,true);assert.deepEqual([...old.codes],['13']);f.answers.push({saved_station_codes:['13'],inventory_reported_at:1800000000,server_time:1800000000});const fresh=await f.load('one',true);assert.equal(fresh.stale,undefined);f.advance(120001);assert.equal(f.inventory('one').stale,true);
+});

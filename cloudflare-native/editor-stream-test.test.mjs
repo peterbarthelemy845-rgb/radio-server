@@ -35,6 +35,9 @@ test('owner setup validation runs before a stream check and a mode change cancel
  const blocked=fixture();let prepared=0;blocked.window.prepareOwnerStreamSetup=()=>{prepared++;return false;};await blocked.start();assert.equal(prepared,1);assert.equal(blocked.humanCalls.length,0);assert.equal(blocked.apiCalls.length,0);
  const f=fixture(),bot=deferred();f.human(bot.promise);const pending=f.start();await settle();f.form.dispatch('owner-stream-mode-changed');assert.equal(f.humanCalls[0].signal.aborted,true);bot.resolve('stale-token');await pending;assert.equal(f.apiCalls.length,0);assert.equal(f.nodes.get('ownerStreamTestStatus').textContent,'');
 });
+test('the owner editor respects the shared stream-test cooldown without losing its draft',async()=>{
+ const f=fixture();f.result(Promise.reject(Object.assign(Error('Too many attempts'),{status:429,retry_after:65})));await f.start();assert.equal(f.button.disabled,true);assert.equal(f.button.textContent,'Try again in 1:05');assert.equal(f.nodes.get('ownerStreamTestStatus').textContent,'Try again in 1:05');await f.start();assert.equal(f.apiCalls.length,1);f.advance(65000);assert.equal(f.button.disabled,false);assert.equal(f.button.textContent,'Test stream');assert.equal(f.field.value,'https://stream.example.com/live');assert.equal(f.save.disabled,true);
+});
 
 test('owner stream checking gates Save, uses the protected endpoint once and never plays audio',async()=>{
  const f=fixture(),pending=deferred();f.result(pending.promise);const first=f.start(),duplicate=f.start();await settle();

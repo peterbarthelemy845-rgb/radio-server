@@ -8,7 +8,7 @@ import {handle} from './worker.mjs';
 import {digest,mac} from './security.mjs';
 const radio='a'.repeat(32),secret='b'.repeat(64),origin='https://radiolocals.com',firstId='1'.repeat(32),secondId='2'.repeat(32);
 function deferred(){let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve};}
-async function until(check){for(let i=0;i<40&&!check();i++)await new Promise(setImmediate);assert.ok(check(),'Async checkpoint not reached');}
+async function until(check){const deadline=Date.now()+5000;while(!check()&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,2));assert.ok(check(),'Async checkpoint not reached');}
 async function fixture(){
  const f=await operationsFixture(),hash=f.sqlite.prepare('SELECT token_hash FROM sessions').get().token_hash;
  f.sqlite.prepare('INSERT INTO radios(id,secret_hash,created_at,last_seen) VALUES (?,?,?,?)').run(radio,await digest(secret),f.now,f.now);

@@ -56,7 +56,7 @@ test('directory starts with a bounded page and appends unique stations using its
  const pending=deferred();f.answers.push(pending.promise);const first=f.more(),duplicate=f.more();assert.equal(first,duplicate);assert.equal(f.calls.length,2);assert.equal(f.ids.get('loadMoreStations').disabled,true);
  pending.resolve({stations:[{listener_code:'13',name:'Updated first'},{listener_code:'14',name:'Second'}],has_more:false,next_cursor:null});await first;
  assert.equal(f.calls[1].path,'/api/stations?limit=50&q=&cursor=page-two');assert.deepEqual(Array.from(f.get('stations'),s=>s.listener_code),['13','14']);assert.equal(f.get('stations[0].name'),'Updated first');assert.equal(f.ids.get('loadMoreStations').hidden,true);
- f.advance(31000);await f.refresh();assert.equal(f.calls.length,2,'background polling does not reset an expanded list');
+ f.advance(31000);f.answers.push({stations:[{listener_code:'13',name:'Fresh first'}],has_more:true,next_cursor:'fresh-page'},{stations:[{listener_code:'14',name:'Fresh second'}],has_more:false});await f.refresh();assert.equal(f.calls.length,4,'background refresh reloads enough pages to preserve an expanded list');assert.deepEqual(Array.from(f.get('stations'),station=>station.name),['Fresh first','Fresh second']);assert.equal(f.get('stationDirectoryState.expanded'),true);
 });
 
 test('server searches debounce rapid typing, fold accents and accept a pasted # station code',async()=>{
@@ -118,4 +118,8 @@ test('a failed filtered request never treats the previously loaded unfiltered pa
  const f=fixture();f.answers.push({stations:[{listener_code:'13'}]});await f.refresh();f.answers.push(Promise.reject(Error('Offline')));await f.get('applyStationDirectoryFilters')({category:'music'});
  assert.equal(f.get('stationDirectorySelectionLoaded()'),false);assert.equal(f.get('stationDirectoryState.failed'),true);assert.doesNotMatch(f.ids.get('stationDirectoryMessage').textContent,/Showing the last loaded list/);assert.equal(f.get('getStationDirectoryStation("13").listener_code'),'13','saved station metadata is retained');
  f.answers.push({stations:[{listener_code:'14',category:'music'}]});await f.ids.get('retryStationDirectory').onclick();assert.equal(f.calls.at(-1).path,'/api/stations?limit=50&q=&category=music');assert.equal(f.get('stationDirectorySelectionLoaded()'),true);
+});
+
+test('returning to an older search refreshes results without changing its query',async()=>{
+ const f=fixture();f.search('News');f.answers.push({stations:[{listener_code:'13',name:'Old News'}]});await f.flushSearch();f.advance(3600000);f.answers.push({stations:[{listener_code:'14',name:'New News'}]});await f.refresh();assert.equal(f.calls.length,2);assert.equal(f.calls[1].path,'/api/stations?limit=50&q=news');assert.equal(f.get('stations[0].name'),'New News');assert.equal(f.get('stationDirectoryState.query'),'news');
 });

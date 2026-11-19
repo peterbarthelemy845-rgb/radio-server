@@ -35,6 +35,9 @@ test('an initial session failure still exposes the radio page and completes star
 test('owner startup still resolves its session and editor before announcing readiness',async()=>{
  const directory=deferred(),f=fixture({path:'/add-station',hash:'',session:{owner_station:'13',owner_expires:2800,server_time:1000},directory:directory.promise});await f.start();assert.deepEqual(f.pages,['ownerEntryLoading','editor']);assert.deepEqual(f.order,['editor','community','radio-locals-ready']);directory.resolve([]);
 });
+test('reloading a sign-in URL stays on sign in, while creation URLs stay on creation even after a network failure',async()=>{
+ for(const [path,expected] of [['/station-edit','login'],['/create-station','register']]){const f=fixture({path,hash:'',session:{owner_station:null}});await f.start();assert.equal(f.pages.at(-1),expected);const failed=fixture({path,hash:'',session:Promise.reject(Error('Temporary outage'))});await failed.start();assert.equal(failed.pages.at(-1),expected);}
+});
 
 test('owner routes wait for auth before showing forms, and a signed-in owner never sees sign-in or creation',async()=>{
  const routes=[{path:'/add-station',hash:''},{path:'/',hash:'#add-station'},{path:'/create-station',hash:''},{path:'/station-edit',hash:''}];

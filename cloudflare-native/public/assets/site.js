@@ -81,8 +81,9 @@ async function fileData(file){if(!file?.size)return undefined;if(file.size>3*102
 let verificationGeneration=0,verificationPageGeneration=0,verificationBusy=false,verificationResendDeadline=0,verificationResendTimer,ownerAccessGeneration=0,ownerAccessAttempt=null,registrationRequestFingerprint='',registrationRequestId='',ownerSessionPromise,ownerSessionGeneration=0;
 let ownerPendingVerification=null;
 function renderPendingOwnerVerification(){for(const id of ['continueRegistrationVerification','continueLoginVerification']){const button=$(id);if(button)button.hidden=!ownerPendingVerification||!!state?.owner_station;}}
-function rememberOwnerVerification(result){if(!result?.verification_id)return;ownerPendingVerification={verification_id:result.verification_id,verification_email:result.verification_email,verification_purpose:result.verification_purpose||'edit',expires_in:result.expires_in??900,resend_at:Date.now()+(result.expires_in<=840?0:60000)};renderPendingOwnerVerification();}
+function rememberOwnerVerification(result){if(!result?.verification_id)return;const lifetime=Math.min(900,Math.max(0,Number(result.expires_in??900)||0)),purpose=result.verification_purpose||'edit',stationCode=normalizeOwnerStationCode(result.station_code||(purpose==='edit'?$('loginForm')?.elements?.code?.value:''));ownerPendingVerification={verification_id:result.verification_id,verification_email:result.verification_email,verification_purpose:purpose,station_code:/^[0-9]{2,6}$/.test(stationCode)?stationCode:'',expires_in:lifetime,expires_at:Number.isFinite(result.expires_at)?result.expires_at:Date.now()+lifetime*1000,resend_at:Number.isFinite(result.resend_at)?result.resend_at:Date.now()+(lifetime<=840?0:60000)};renderPendingOwnerVerification();}
 function clearPendingOwnerVerification(){ownerPendingVerification=null;renderPendingOwnerVerification();}
+function normalizeOwnerStationCode(value){return String(value||'').trim().replace(/^#\s*/,'').replace(/\s/g,'');}
 let changeEmailButton,changeEmailForm,changeEmailInput;
 function initializeOwnerFlowUI(){
 for(const [formId,id] of [['registerForm','continueRegistrationVerification'],['loginForm','continueLoginVerification']]){const button=document.createElement('button');button.id=id;button.type='button';button.className='secondary owner-continue-verification';button.textContent='Continue email verification';button.hidden=true;button.onclick=()=>{if(ownerPendingVerification)verify(ownerPendingVerification,true);};$(formId).before(button);}
@@ -92,7 +93,8 @@ changeEmailForm=document.createElement('form');changeEmailForm.id='changeVerific
 const changeEmailLabel=document.createElement('label'),changeEmailCaption=document.createElement('span');changeEmailCaption.id='ownerChangeEmailLabel';changeEmailCaption.textContent='Contact email';changeEmailInput=document.createElement('input');changeEmailInput.name='email';changeEmailInput.type='email';changeEmailInput.autocomplete='email';changeEmailInput.maxLength=254;changeEmailInput.required=true;changeEmailLabel.append(changeEmailCaption,changeEmailInput);
 const changeEmailSubmit=document.createElement('button');changeEmailSubmit.id='sendChangedEmailCode';changeEmailSubmit.type='submit';changeEmailSubmit.textContent='Send new code';const cancelEmailChange=document.createElement('button');cancelEmailChange.id='cancelChangedEmail';cancelEmailChange.type='button';cancelEmailChange.className='secondary';cancelEmailChange.textContent='Cancel';changeEmailForm.append(changeEmailLabel,changeEmailSubmit,cancelEmailChange);changeEmailButton.after(changeEmailForm);
 changeEmailButton.onclick=()=>{if(verificationBusy||ownerPendingVerification?.verification_purpose!=='registration')return;changeEmailForm.hidden=false;changeEmailButton.hidden=true;changeEmailInput.focus();};cancelEmailChange.onclick=()=>{if(verificationBusy)return;changeEmailForm.hidden=true;changeEmailButton.hidden=false;changeEmailButton.focus();};
-changeEmailForm.onsubmit=async event=>{event.preventDefault();if(verificationBusy||!verificationId||ownerPendingVerification?.verification_purpose!=='registration')return;const generation=verificationGeneration,id=verificationId,email=changeEmailInput.value;setVerificationBusy(true);try{const token=await human($('verification'),'verification-resend');if(!currentVerification(generation,id))return;const result=await api('/api/owner/change-email',{verification_id:id,email,turnstile_token:token});if(!currentVerification(generation,id))return;verify(result);$('verifyMessage').textContent='Use the new code sent to your updated email. The previous code no longer works.';}catch(error){if(currentVerification(generation,id))$('verifyMessage').textContent=error.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}};
+changeEmailForm.onsubmit=async event=>{event.preventDefault();if(verificationBusy||!verificationId||ownerPendingVerification?.verification_purpose!=='registration')return;const generation=verificationGeneration,id=verificationId,email=changeEmailInput.value;setVerificationBusy(true);try{const token=await human($('verification'),'verification-resend');if(!currentVerification(generation,id))return;const result=await api('/api/owner/change-email',{verification_id:id,email,turnstile_token:token});if(!currentVerification(generation,id))return;verify(result);$('verifyMessage').textContent=ownerText('owner.emailChanged','Use the new code sent to your updated email. The previous code no longer works.');}catch(error){if(currentVerification(generation,id))$('verifyMessage').textContent=error.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}};
+const stationCodeInput=$('loginForm').elements.code;if(stationCodeInput?.addEventListener){stationCodeInput.maxLength=32;stationCodeInput.addEventListener('input',()=>{stationCodeInput.value=normalizeOwnerStationCode(stationCodeInput.value);});stationCodeInput.addEventListener('paste',event=>{const value=event.clipboardData?.getData('text');if(typeof value==='string'&&/^\s*#?\s*\d(?:\s*\d){1,5}\s*$/.test(value)){event.preventDefault();stationCodeInput.value=normalizeOwnerStationCode(value);stationCodeInput.dispatchEvent(new Event('input',{bubbles:true}));}});}
 const verificationCodeInput=$('verifyForm').elements.code;verificationCodeInput.removeAttribute('maxlength');verificationCodeInput.addEventListener('input',()=>{verificationCodeInput.value=verificationCodeInput.value.replace(/\s/g,'');});verificationCodeInput.addEventListener('paste',event=>{const value=event.clipboardData?.getData('text');if(typeof value==='string'&&/^\s*\d(?:\s*\d){5}\s*$/.test(value)){event.preventDefault();verificationCodeInput.value=value.replace(/\s/g,'');verificationCodeInput.dispatchEvent(new Event('input',{bubbles:true}));}});
 window.addEventListener('owner-session-updated',event=>{const pending=event.detail?.pending_verification;if(pending&&ownerPendingVerification?.verification_id!==pending.verification_id)rememberOwnerVerification(pending);else if(event.detail?.owner_station)clearPendingOwnerVerification();});
 if(state?.pending_verification)rememberOwnerVerification(state.pending_verification);
@@ -107,14 +109,16 @@ function renderVerificationResend(){
  const button=$('resend'),remaining=Math.max(0,Math.ceil((verificationResendDeadline-Date.now())/1000));
  button.disabled=verificationBusy||remaining>0;button.dataset.i18nSkip='1';
  button.textContent=remaining?(window.appI18n?.t('verification.resendCountdown',{seconds:remaining})||'Resend in '+remaining+' seconds'):(window.appI18n?.t('resend')||'Resend email');
- if(remaining&&$('verification').open){const generation=verificationGeneration;verificationResendTimer=setTimeout(()=>{if(generation===verificationGeneration&&$('verification').open)renderVerificationResend();},Math.min(1000,verificationResendDeadline-Date.now()));}
+ const pending=ownerPendingVerification,expires=pending?.expires_at,seconds=Number.isFinite(expires)?Math.max(0,Math.ceil((expires-Date.now())/1000)):null;
+ if(pending&&$('verification').open){const email=String(pending.verification_email||''),fallback=seconds?('Enter the private code emailed to '+email+'. Time left: '+Math.ceil(seconds/60)+' minute'+(Math.ceil(seconds/60)===1?'':'s')+'.'):'This code expired. Resend email for a new code.';let value=ownerText(seconds?'owner.codeTimeLeft':'owner.codeExpired',fallback);for(const [key,text] of Object.entries({email,minutes:Math.ceil((seconds||0)/60)}))value=value.replaceAll('{'+key+'}',String(text));$('verifyText').textContent=value;const submit=$('verifyForm').querySelector?.('button[type="submit"]');if(submit)submit.disabled=verificationBusy||seconds===0;if(seconds===0)$('verifyMessage').textContent=ownerText('owner.codeExpired','This code expired. Resend email for a new code.');}
+ if((remaining||seconds>0)&&$('verification').open){const generation=verificationGeneration;verificationResendTimer=setTimeout(()=>{if(generation===verificationGeneration&&$('verification').open)renderVerificationResend();},1000);}
 }
 function setVerificationBusy(on){verificationBusy=on;busy($('verification'),on,true);renderVerificationResend();}
 function currentVerification(generation,id){return verificationGeneration===generation&&verificationPageGeneration===sitePageGeneration&&verificationId===id&&$('verification').open;}
 function invalidateOwnerVerification(){verificationGeneration++;verificationId=null;verificationResendDeadline=0;setVerificationBusy(false);if($('verification').open)$('verification').close();renderPendingOwnerVerification();}
-function verify(result,resume=false){if(!resume)rememberOwnerVerification(result);verificationGeneration++;verificationPageGeneration=sitePageGeneration;verificationResendDeadline=ownerPendingVerification?.resend_at??Date.now()+60000;setVerificationBusy(false);verificationId=result.verification_id;$('verifyText').textContent='Enter the private code emailed to '+result.verification_email+'. It expires in 15 minutes.';$('verifyMessage').textContent=result.expires_in===0?'This code expired. Resend email for a new code.':'';$('verifyForm').reset();changeEmailForm.reset();changeEmailForm.hidden=true;changeEmailButton.hidden=result.verification_purpose!=='registration';if(!$('verification').open)$('verification').showModal();renderVerificationResend();}
+function verify(result,resume=false){if(!resume)rememberOwnerVerification(result);verificationGeneration++;verificationPageGeneration=sitePageGeneration;verificationResendDeadline=ownerPendingVerification?.resend_at??Date.now()+60000;setVerificationBusy(false);verificationId=result.verification_id;$('verifyMessage').textContent='';$('verifyForm').reset();changeEmailForm.reset();changeEmailForm.hidden=true;changeEmailButton.hidden=result.verification_purpose!=='registration';if(!$('verification').open)$('verification').showModal();renderVerificationResend();}
 window.addEventListener?.('app-language-changed',renderVerificationResend);
-function registrationMessage(text){const target=$('registerMessage');if(!target){message(text);return;}target.textContent=text;let signin=$('duplicateStreamSignin');if(!signin){signin=document.createElement('button');signin.id='duplicateStreamSignin';signin.type='button';signin.className='secondary';signin.textContent='Sign in to your station';signin.onclick=()=>{$('openLogin').onclick();};target.after(signin);}signin.hidden=!text.includes('This stream already has a station.');if(text)target.focus();}
+function registrationMessage(text){const target=$('registerMessage');if(!target){message(text);return;}target.textContent=text;let signin=$('duplicateStreamSignin');if(!signin){signin=document.createElement('button');signin.id='duplicateStreamSignin';signin.type='button';signin.className='secondary';signin.dataset.i18n='owner.signInStation';signin.textContent=ownerText('owner.signInStation','Sign in to your station');signin.onclick=()=>{$('openLogin').onclick();};target.after(signin);}signin.hidden=!text.includes('This stream already has a station.');if(text)target.focus();}
 function loginMessage(text){const target=$('loginMessage');if(!target){message(text);return;}target.textContent=text;if(text)target.focus();}
 function loadOwnerSession(){if(!ownerSessionPromise){const generation=ownerSessionGeneration;ownerSessionPromise=api('/api/session').then(result=>{if(generation===ownerSessionGeneration){state=result;if(result.pending_verification){if(ownerPendingVerification?.verification_id!==result.pending_verification.verification_id)rememberOwnerVerification(result.pending_verification);}else if(result.owner_station)clearPendingOwnerVerification();renderPendingOwnerVerification();window.dispatchEvent(new CustomEvent('owner-session-updated',{detail:result}));}return result;}).finally(()=>{ownerSessionPromise=null;});}return ownerSessionPromise;}
 function clearOwnerSession(){ownerSessionGeneration++;if(state){state.owner_station=null;state.owner_expires=null;}window.dispatchEvent(new CustomEvent('owner-session-updated',{detail:{owner_station:null,owner_expires:null}}));}
@@ -134,7 +138,8 @@ function applyOwnerStation(station,preserveDraft=false,metadataOptions){
 }
 function applyOwnerExpiry(result){if(!Number.isInteger(result.owner_expires))return;if(state){state.owner_expires=result.owner_expires;if(Number.isInteger(result.server_time))state.server_time=result.server_time;}const event=new Event('owner-session-updated');event.detail={...result,...(state?{owner_station:state.owner_station}:{})};window.dispatchEvent(event);}
 async function editor(preserveDraft=false,generation=sitePageGeneration){const ownerGeneration=ownerSessionGeneration;try{const result=await api('/api/owner/station');if(generation!==sitePageGeneration||ownerGeneration!==ownerSessionGeneration)return false;applyOwnerExpiry(result);applyOwnerStation(result.station,preserveDraft,result.metadata_options);return true;}catch(error){if(error.status===401&&generation===sitePageGeneration&&ownerGeneration===ownerSessionGeneration)clearOwnerSession();throw error;}}
-$('openLogin').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;history.replaceState(null,'','/#add-station');try{await window.loadAppFeature?.('owner');if(generation!==sitePageGeneration)return;await loadOwnerSession();if(generation!==sitePageGeneration)return;if(window.ownerAccountNavigation?.active())await editor(true,generation);else page('register');}catch(e){if(generation===sitePageGeneration){if(e.status===401)page('login');else if(window.ownerAccountNavigation?.active())ownerAccountUnavailable();message(e.message);}}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
+function ownerEntryHistory(id,replace=false){const url=id==='register'?'/create-station':'/station-edit',canPush=typeof history.pushState==='function';if(canPush&&!replace&&!history.state?.radioLocalsApp){const current=['login','register','editor','ownerEntryLoading'].find(key=>$(key)&&!$(key).hidden);if(current)history.replaceState({...history.state,radioLocalsApp:{page:current}},'');}const snapshot={...history.state,radioLocalsApp:{page:id}};(replace||history.state?.radioLocalsApp?.page===id||!canPush?history.replaceState:history.pushState).call(history,snapshot,'',url);}
+$('openLogin').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();ownerEntryHistory('login');page('login');$('signInTab').focus({preventScroll:true});};$('openRegister').onclick=()=>{if(window.ownerAccountNavigation?.active())return $('navAdd').onclick();ownerEntryHistory('register');page('register');$('createStationTab').focus({preventScroll:true});};$('navAdd').onclick=async()=>{const generation=++sitePageGeneration;ownerEntryHistory(window.ownerAccountNavigation?.active()?'editor':'register');try{await window.loadAppFeature?.('owner');if(generation!==sitePageGeneration)return;await loadOwnerSession();if(generation!==sitePageGeneration)return;if(window.ownerAccountNavigation?.active()){ownerEntryHistory('editor',true);await editor(true,generation);}else page('register');}catch(e){if(generation===sitePageGeneration){if(e.status===401){ownerEntryHistory('login',true);page('login');}else if(window.ownerAccountNavigation?.active())ownerAccountUnavailable();message(e.message);}}};$('navLibrary').onclick=()=>{page('library');history.replaceState(null,'','/'+location.search+'#radio');};$('closeVerify').onclick=()=>{if(!verificationBusy)$('verification').close();};
 $('verification').addEventListener('cancel',event=>{if(verificationBusy)event.preventDefault();});
 $('verification').addEventListener('close',()=>{if(!$('verification').open)invalidateOwnerVerification();});
 $('registerForm').addEventListener('reset',()=>{registrationRequestFingerprint='';registrationRequestId='';registrationMessage('');});
@@ -143,13 +148,13 @@ $('registerForm').onsubmit=async event=>{
  try{if(window.validateRegistrationLogo&&!await window.validateRegistrationLogo(artworkFile))throw new Error(form.elements.artwork.validationMessage||'Choose a valid station logo.');if(!current())return;await ensureOwnerSession();if(!current())return;data.agreement_version=state.agreement_version;data.artwork=await fileData(artworkFile);if(!current())return;data.request_id=await registrationRequest(data,current);if(!current())return;data.turnstile_token=await human($('registrationHuman'),'station-submit',attempt.controller.signal);if(!current())return;const result=await api('/api/owner/register',data);if(current())verify({...result,verification_purpose:'registration'});}
  catch(e){if(current()){if(e.status===428)window.invalidateRegistrationStreamSaveGate?.();registrationMessage(e.message);}}finally{finishOwnerAccess(attempt);}
 };
-$('loginForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;loginMessage('');const data=Object.fromEntries(new FormData(form)),attempt=beginOwnerAccess(form),current=()=>currentOwnerAccess(attempt);try{await ensureOwnerSession();if(!current())return;data.turnstile_token=await human(form,'station-access',attempt.controller.signal);if(!current())return;const result=await api('/api/owner/login',data);if(current())verify(result);}catch(e){if(current())loginMessage(e.message);}finally{finishOwnerAccess(attempt);}};
+$('loginForm').onsubmit=async event=>{event.preventDefault();const form=event.target;if(formIsBusy(form))return;loginMessage('');const data=Object.fromEntries(new FormData(form));data.code=normalizeOwnerStationCode(data.code);const attempt=beginOwnerAccess(form),current=()=>currentOwnerAccess(attempt);try{await ensureOwnerSession();if(!current())return;data.turnstile_token=await human(form,'station-access',attempt.controller.signal);if(!current())return;const result=await api('/api/owner/login',data);if(current())verify(result);}catch(e){if(current())loginMessage(e.message);}finally{finishOwnerAccess(attempt);}};
 $('verifyForm').onsubmit=async event=>{
- event.preventDefault();if(verificationBusy||!verificationId||!$('verification').open)return;const form=event.target,generation=verificationGeneration,id=verificationId,code=form.elements.code.value;setVerificationBusy(true);
+ event.preventDefault();if(verificationBusy||!verificationId||!$('verification').open)return;if(ownerPendingVerification?.expires_at<=Date.now()){renderVerificationResend();return;}const form=event.target,generation=verificationGeneration,id=verificationId,code=form.elements.code.value;setVerificationBusy(true);
  try{const result=await api('/api/owner/verify',{verification_id:id,code});if(!currentVerification(generation,id))return;const view=sitePageGeneration;setVerificationBusy(false);clearPendingOwnerVerification();$('verification').close();ownerSessionGeneration++;if(state)state.owner_station=result.station_code;applyOwnerExpiry(result);if(result.registration_completed){$('registerForm').reset();delete $('registerForm').dataset.dirty;ownerAccessSuccess(result);if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{if(await editor(!result.registration_completed,view)!==false&&!result.registration_completed)message(result.message);}catch(e){if(view===sitePageGeneration)ownerEditorUnavailable(result,e);}}
- catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}
+ catch(e){if(currentVerification(generation,id)){let recovered=false;if(e.status===undefined||e.status>=500||e.status===400){try{const pending=ownerPendingVerification,snapshot=await api('/api/session');if(!currentVerification(generation,id))return;if(snapshot.owner_station&&(!pending?.station_code||String(snapshot.owner_station)===pending.station_code)&&Number(snapshot.owner_expires)>Number(snapshot.server_time||Date.now()/1000)&&!snapshot.pending_verification){const view=sitePageGeneration;state=snapshot;ownerSessionGeneration++;setVerificationBusy(false);clearPendingOwnerVerification();$('verification').close();window.dispatchEvent(new CustomEvent('owner-session-updated',{detail:snapshot}));if(pending?.verification_purpose==='registration'){$('registerForm').reset();delete $('registerForm').dataset.dirty;if(typeof refreshStationDirectory==='function')void refreshStationDirectory(true);}try{await editor(pending?.verification_purpose!=='registration',view);recovered=true;}catch(error){if(view===sitePageGeneration)ownerEditorUnavailable({station_code:snapshot.owner_station,registration_completed:pending?.verification_purpose==='registration'},error);recovered=true;}}}catch{}}if(!recovered&&currentVerification(generation,id))$('verifyMessage').textContent=e.message;}}finally{if(verificationGeneration===generation)setVerificationBusy(false);}
 };
-$('resend').onclick=async()=>{if(verificationBusy||!verificationId||!$('verification').open||Date.now()<verificationResendDeadline)return;const generation=verificationGeneration,id=verificationId;setVerificationBusy(true);try{const token=await human($('verification'),'verification-resend');if(!currentVerification(generation,id))return;const result=await api('/api/owner/resend',{verification_id:id,turnstile_token:token});if(!currentVerification(generation,id))return;rememberOwnerVerification({...result,verification_purpose:result.verification_purpose||ownerPendingVerification?.verification_purpose});verificationId=result.verification_id;verificationResendDeadline=Date.now()+60000;$('verifyForm').reset();$('verifyMessage').textContent='A new code has been requested. Use only the newest email code.';}catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}};
+$('resend').onclick=async()=>{if(verificationBusy||!verificationId||!$('verification').open||Date.now()<verificationResendDeadline)return;const generation=verificationGeneration,id=verificationId;setVerificationBusy(true);try{const token=await human($('verification'),'verification-resend');if(!currentVerification(generation,id))return;const result=await api('/api/owner/resend',{verification_id:id,turnstile_token:token});if(!currentVerification(generation,id))return;rememberOwnerVerification({...result,verification_purpose:result.verification_purpose||ownerPendingVerification?.verification_purpose});verificationId=result.verification_id;verificationResendDeadline=Date.now()+60000;$('verifyForm').reset();$('verifyMessage').textContent=ownerText('owner.codeResent','A new code has been requested. Use only the newest email code.');}catch(e){if(currentVerification(generation,id))$('verifyMessage').textContent=e.message;}finally{if(verificationGeneration===generation)setVerificationBusy(false);}};
 if($('retryOwnerEditor'))$('retryOwnerEditor').onclick=async()=>{const button=$('retryOwnerEditor');if(button.disabled)return;button.disabled=true;try{await editor(true);$('stationSuccess').close();}catch(e){if($('stationSuccessMessage'))$('stationSuccessMessage').textContent='The station editor could not load. Check your connection and try again.';else message(e.message);}finally{button.disabled=false;}};
 function ownerText(key,fallback){const text=window.appI18n?.t(key);return typeof text==='string'&&text!==key?text:fallback;}
 let ownerLogoutBusy=false;
@@ -160,15 +165,16 @@ function ownerEditFeedback(text='',reauth=false,conflict=false){
 }
 if($('ownerSignInAgain'))$('ownerSignInAgain').onclick=()=>{
  const form=$('editForm');if(ownerLogoutBusy||formIsBusy(form)||$('editor').hidden)return;
- const code=String(form.dataset.stationCode||'');clearOwnerSession();page('login');if(/^[0-9]{2,6}$/.test(code))$('loginForm').elements.code.value=code;
+ const code=String(form.dataset.stationCode||'');clearOwnerSession();ownerEntryHistory('login');page('login');if(/^[0-9]{2,6}$/.test(code))$('loginForm').elements.code.value=code;
  loginMessage(ownerText('owner.signInContinue','Sign in again to keep editing. Your unsaved changes are kept in this tab.'));
 };
 if($('ownerReviewLatest'))$('ownerReviewLatest').onclick=async()=>{
  const form=$('editForm'),button=$('ownerReviewLatest');if(formIsBusy(form)||ownerLogoutBusy||button.disabled||$('editor').hidden)return;const generation=sitePageGeneration;button.disabled=true;busy(form,true,true);
  try{
   const result=await api('/api/owner/station');if(generation!==sitePageGeneration)return;
-  const station=result.station,summary=ownerText('owner.latestName','Latest station name:')+'\n'+String(station.name).toLocaleUpperCase()+'\n\n'+ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
-  if(await listenerActionDialog(ownerText('owner.reviewLatest','Review latest version'),summary,ownerText('owner.useLatest','Use latest version'),true)&&generation===sitePageGeneration)applyOwnerStation(station,false,result.metadata_options);
+  const station=result.station,categoryLabel=result.metadata_options?.categories?.find(option=>option.value===station.category)?.label||station.category||'—',summary=ownerText('owner.latestName','Latest station name:')+'\n'+String(station.name).toLocaleUpperCase()+'\n\n'+ownerText('owner.latestStream','Latest stream URL:')+'\n'+station.stream_url+'\n\n'+ownerText('owner.latestBio','Latest bio:')+'\n'+(station.bio||'—')+'\n\n'+ownerText('owner.latestZip','Latest ZIP code:')+'\n'+(station.zip_code||'—')+'\n\n'+ownerText('owner.latestCategory','Latest category:')+'\n'+ownerText('metadata.category.'+station.category,categoryLabel)+'\n\n'+ownerText('owner.latestLogo','Latest station logo:')+' '+(station.artwork_url?ownerText('owner.logoBelow','Preview below.'):ownerText('owner.noLogo','No logo.'))+'\n\n'+ownerText('owner.replaceDraft','Using this version replaces your unsaved edits and selected cover art.');
+  let preview;const dialog=$('listenerActionDialog');if(station.artwork_url&&dialog?.append){preview=document.createElement('img');preview.src=station.artwork_url;preview.alt=ownerText('owner.latestLogo','Latest station logo:');preview.width=96;preview.height=96;preview.style.cssText='display:block;object-fit:contain;max-width:100%;margin:12px auto';const actions=dialog.querySelector?.('.listener-dialog-actions');if(actions?.before)actions.before(preview);else dialog.append(preview);}
+  try{if(await listenerActionDialog(ownerText('owner.reviewLatest','Review latest version'),summary,ownerText('owner.useLatest','Use latest version'),true)&&generation===sitePageGeneration)applyOwnerStation(station,false,result.metadata_options);}finally{preview?.remove();}
  }catch(error){if(generation===sitePageGeneration)ownerEditFeedback(error.message,false,true);}
  finally{button.disabled=false;busy(form,false);}
 };
@@ -240,7 +246,7 @@ $('logout').onclick=async()=>{
  const view=sitePageGeneration,current=()=>view===sitePageGeneration;
  try{
   if((form.dataset.ownerChanged===undefined?form.dataset.dirty:form.dataset.ownerChanged==='true')||form.elements.artwork.files[0]){if(!await listenerActionDialog(ownerText('owner.discardTitle','Discard unsaved changes?'),ownerText('owner.discardText','Your unsaved station changes will be lost.'),ownerText('owner.discardLogout','Discard and log out'),true)||!current())return;}
-  busy(form,true,true);await api('/api/owner/logout',{});clearPendingOwnerVerification();clearOwnerSession();form.reset();delete form.dataset.dirty;delete form.dataset.stationCode;delete form.dataset.revision;showOwnerCover('');ownerEditFeedback('');ownerRefreshFeedback(false);if(current())page('register');
+  busy(form,true,true);await api('/api/owner/logout',{});clearPendingOwnerVerification();clearOwnerSession();form.reset();delete form.dataset.dirty;delete form.dataset.stationCode;delete form.dataset.revision;showOwnerCover('');ownerEditFeedback('');ownerRefreshFeedback(false);if(current()){ownerEntryHistory('register',true);page('register');}
  }catch(e){if(current()){if($('ownerEntryLoading')&&!$('ownerEntryLoading').hidden)message(e.message);else ownerEditFeedback(e.message);}}
  finally{ownerLogoutBusy=false;button.disabled=false;busy(form,false);}
 };
@@ -265,10 +271,10 @@ function stationDirectoryControls(){
  button.textContent=translated&&translated!==key?translated:fallback;button.setAttribute?.('data-i18n',key);
 }
 function stationDirectoryNotice(text){const host=$('stationDirectoryStatus'),notice=$('stationDirectoryMessage');if(host&&notice){host.hidden=!text;notice.textContent=text;}else if(text)message(text);}
-function requestStationDirectory(append=false){
+function requestStationDirectory(append=false,preserveLoaded=false){
  if(stationDirectoryTimer!==null){clearTimeout(stationDirectoryTimer);stationDirectoryTimer=null;}
  stationDirectoryRequest?.controller.abort();
- const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,zip_code=stationDirectoryState.zip_code,category=stationDirectoryState.category,controller=new AbortController(),previous=stations,moreFocused=append&&document.activeElement===$('loadMoreStations');let receivedCodes=[],catalog=null;
+ const generation=++stationDirectoryGeneration,query=stationDirectoryState.query,zip_code=stationDirectoryState.zip_code,category=stationDirectoryState.category,controller=new AbortController(),previous=stations,wasExpanded=preserveLoaded&&stationDirectoryState.expanded,targetCount=wasExpanded?Math.max(1,previous.length):1,moreFocused=append&&document.activeElement===$('loadMoreStations');let receivedCodes=[],catalog=null;
  stationDirectoryStarted=true;stationDirectoryLastAttempt=Date.now();stationDirectoryState.loading=true;stationDirectoryState.failed=false;stationDirectoryControls();
  if(append||!stationDirectorySelectionLoaded())list();
  const promise=(async()=>{
@@ -276,7 +282,7 @@ function requestStationDirectory(append=false){
    const collected=[],seenCursors=new Set();let cursor=append?stationDirectoryState.cursor:null,hasMore=false;
    // Sparse searches can scan several bounded server pages without asking the
    // visitor to repeatedly press More. Never scan an unbounded directory.
-   for(let page=0;page<5;page++){
+   for(let page=0;page<(wasExpanded?Math.max(5,Math.ceil(targetCount/50)+5):5);page++){
     if(cursor)seenCursors.add(cursor);
     const path='/api/stations?limit=50&q='+encodeURIComponent(query)+(zip_code?'&zip_code='+encodeURIComponent(zip_code):'')+(category?'&category='+encodeURIComponent(category):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),result=await api(path,undefined,{cache:'no-store',signal:controller.signal});
     if(generation!==stationDirectoryGeneration||controller.signal.aborted)return stations;
@@ -284,11 +290,11 @@ function requestStationDirectory(append=false){
     collected.push(...result.stations);hasMore=result.has_more===true;if(result.metadata_options&&result.facets)catalog={metadata_options:result.metadata_options,facets:result.facets,zip_code:result.zip_code,zip_location_known:result.zip_location_known,zip_radius_miles:result.zip_radius_miles};
     const next=hasMore?result.next_cursor:null;
     if(hasMore&&(typeof next!=='string'||!next||next.length>4096||seenCursors.has(next)))throw new Error('Station list unavailable.');
-    cursor=next;if(result.stations.length||!hasMore)break;
+    cursor=next;if(!hasMore||collected.length>=targetCount)break;
    }
    const unique=new Map();for(const station of [...(append?previous:[]),...collected]){const code=String(station.listener_code??station.code??'');if(!code)continue;unique.set(code,station);stationDirectoryMetadata.set(code,station);}
    receivedCodes=collected.map(station=>String(station.listener_code??station.code??'')).filter(code=>!previous.some(station=>String(station.listener_code??station.code??'')===code));
-   stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.loadedZipCode=zip_code;stationDirectoryState.loadedCategory=category;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append;
+   stations=[...unique.values()];stationDirectoryState.loadedQuery=query;stationDirectoryState.loadedZipCode=zip_code;stationDirectoryState.loadedCategory=category;stationDirectoryState.cursor=cursor;stationDirectoryState.hasMore=hasMore;stationDirectoryState.expanded=append||wasExpanded;
    if(catalog){stationDirectoryCatalog=catalog;window.stationDirectoryFilters?.updateCatalog(catalog);}
    stationDirectoryNotice('');return stations;
   }
@@ -300,8 +306,8 @@ function requestStationDirectory(append=false){
 function refreshStationDirectory(force=false){
  if(!force&&stationDirectoryRequest)return stationDirectoryRequest.promise;
  if(!force&&stationDirectoryTimer!==null)return Promise.resolve(stations);
- if(!force&&stationDirectoryStarted&&(Date.now()-stationDirectoryLastAttempt<30000||stationDirectoryState.expanded||stationDirectoryState.query))return Promise.resolve(stations);
- return requestStationDirectory();
+ if(!force&&stationDirectoryStarted&&Date.now()-stationDirectoryLastAttempt<30000)return Promise.resolve(stations);
+ return requestStationDirectory(false,true);
 }
 function searchStationDirectory(value){
  const query=normalizeStationDirectoryQuery(value);if(query===stationDirectoryState.query){list();return;}
@@ -457,10 +463,24 @@ function finishStationDelivery(record,state,message){
  if(state==='added')void Promise.resolve().then(()=>refreshRadioInventory(record.radioId)).catch(()=>{});
  renderStationDeliveryStatus();return {state,message};
 }
+// All pending additions share one paced status lane (at most 24 reads/minute),
+// rather than each radio consuming the session's 40-read allowance independently.
+let stationCommandStatusQueue=Promise.resolve();
+function readStationDeliveryStatus(record){
+ const request=stationCommandStatusQueue.catch(()=>{}).then(async()=>{
+  let throttles=0;
+  for(;;){
+   await delay();
+   try{return await api('/api/phone/command/status',{command_id:record.commandId});}
+   catch(error){if(error?.status!==429||++throttles>3||Date.now()>=record.deadline)throw error;await new Promise(resolve=>setTimeout(resolve,Math.max(1000,Math.min(60000,(error.retry_after||60)*1000))));}
+  }
+ });
+ stationCommandStatusQueue=request.catch(()=>{});return request;
+}
 async function monitorStationDelivery(record){
  record.state='pending';renderStationDeliveryStatus();
  try{
-  do{await delay();const result=await api('/api/phone/command/status',{command_id:record.commandId});
+  do{const result=await readStationDeliveryStatus(record);
    if(result.state==='added')return finishStationDelivery(record,'added','Station added');
    if(['failed','expired'].includes(result.state))return finishStationDelivery(record,'failed','Station could not be added. Check your radio and try again.');
   }while(Date.now()<record.deadline);
@@ -469,12 +489,16 @@ async function monitorStationDelivery(record){
 }
 function requestStationDelivery(radioId,stationCode,name){
  const key=String(radioId)+'|'+String(stationCode),previous=stationDeliveries.get(key);
- if(previous){if(previous.state==='unconfirmed'&&previous.commandId){previous.deadline=Date.now()+300000;previous.promise=monitorStationDelivery(previous);}return previous.promise;}
- const record={key,radioId:String(radioId),stationCode:String(stationCode),name:String(name||'Station').slice(0,120),state:'sending',commandId:'',deadline:0,promise:null};stationDeliveries.set(key,record);renderStationDeliveryStatus();
- record.promise=(async()=>{
-  try{const command=await api('/api/phone/add',{radio_id:radioId,station_code:stationCode});if(!command.command_id)throw Error('Missing command');record.commandId=command.command_id;record.deadline=Date.now()+300000;return await monitorStationDelivery(record);}
+ if(previous){if(previous.state==='unconfirmed'){previous.deadline=Date.now()+300000;previous.promise=previous.commandId?monitorStationDelivery(previous):sendStationDelivery(previous);}return previous.promise;}
+ const record={key,radioId:String(radioId),stationCode:String(stationCode),name:String(name||'Station').slice(0,120),state:'sending',requestId:crypto.randomUUID().replaceAll('-',''),commandId:'',deadline:0,promise:null};stationDeliveries.set(key,record);renderStationDeliveryStatus();
+ record.promise=sendStationDelivery(record);return record.promise;
+}
+function sendStationDelivery(record){
+ record.state='sending';renderStationDeliveryStatus();
+ return (async()=>{
+  try{const command=await api('/api/phone/add',{radio_id:record.radioId,station_code:record.stationCode,request_id:record.requestId});if(!command.command_id)throw Error('Missing command');record.commandId=command.command_id;record.deadline=Date.now()+300000;if(command.state==='added')return finishStationDelivery(record,'added','Station added');if(['failed','expired'].includes(command.state))return finishStationDelivery(record,'failed','Station could not be added. Check your radio and try again.');return await monitorStationDelivery(record);}
   catch(error){const rejected=error.status>=400&&error.status<500;return finishStationDelivery(record,rejected?'failed':'unconfirmed',rejected?error.message:'Your radio has not confirmed yet. Check it before trying again.');}
- })();return record.promise;
+ })();
 }
 window.addEventListener('radio-selection-changed',renderStationDeliveryStatus);
 let sharedOfflineRadios=new Set(),sharedLinkedRadios=[];
@@ -486,16 +510,22 @@ function renderSharedRadioDestination(){
  $('shareSingleRadio').hidden=!single;
  $('shareSingleRadioCode').textContent=single?String(sharedLinkedRadios[0].device_code||'—'):'';
 }
-function invalidateSharedView(){sharedOpenGeneration++;abandonSharedPairing(sharedOpenGeneration);delete $('shared').dataset.adding;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');}
+function invalidateSharedView(){sharedOpenGeneration++;abandonSharedPairing(sharedOpenGeneration);delete $('shared').dataset.adding;delete $('shareForm').dataset.destinationLoading;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');}
 function stopWaitingForSharedStation(){invalidateSharedView();renderStationDeliveryStatus();}
 async function openShared(code,inPopup=false,autoAdd=false,onStationLoaded){
  const generation=++sharedOpenGeneration;
  setSharedAdvertising(null);
+ $('reportStationProblem').hidden=true;
+ // A new station must never inherit an earlier popup's destination while the
+ // current phone grants and inventory are still being checked.
+ $('shareForm').hidden=true;$('otherRadio').hidden=true;$('shareForm').dataset.destinationLoading='1';$('shareSubmit').disabled=true;
+ $('shareForm').elements.radio_id.value='';$('shareForm').elements.radio_id.replaceChildren();sharedLinkedRadios=[];sharedOfflineRadios=new Set();$('shareSingleRadio').hidden=true;$('radioLabel').hidden=true;
  abandonSharedPairing(generation);
  try{
  const station=await api('/api/stations/'+code);if(generation!==sharedOpenGeneration)return;sharedCode=code;
- if(!inPopup)page('shared');$('shared').hidden=false;$('shareForm').hidden=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
+ if(!inPopup)page('shared');$('shared').hidden=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('Checking radio destination…');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
  setSharedAdvertising(station);
+ $('reportStationProblem').hidden=false;
  if(station.logo_url){$('shareArt').src=station.logo_url;$('shareArt').hidden=false;}
  if(typeof onStationLoaded==='function')onStationLoaded(station);
  const result=await api('/api/phone/radios');if(generation!==sharedOpenGeneration)return;
@@ -503,10 +533,12 @@ async function openShared(code,inPopup=false,autoAdd=false,onStationLoaded){
  if(result.radios.length>1){const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a radio';placeholder.disabled=true;select.append(placeholder);}
  for(const radio of result.radios){const option=document.createElement('option');option.value=String(radio.id);option.textContent='Device code '+(radio.device_code||'—')+(radio.online?' · Online':' · Offline');select.append(option);}
  select.value=selected;select.required=!!result.radios.length;$('shareForm').elements.device_code.required=!result.radios.length;$('deviceLabel').hidden=!!result.radios.length;$('otherRadio').hidden=!result.radios.length;renderSharedRadioDestination();
+ $('shareForm').hidden=false;
  // Only an intentional tile tap can start an addition. Restored history and
  // incoming shared URLs must wait for the visitor to press Add station.
  const canAutoAdd=autoAdd&&selected&&!sharedOfflineRadios.has(String(selected));renderSharedRadioAvailability(!!selected&&sharedOfflineRadios.has(String(selected)));
  const alreadySaved=await updateStationConfirmation();if(generation!==sharedOpenGeneration)return;
+ delete $('shareForm').dataset.destinationLoading;$('shareForm').hidden=false;$('shareSubmit').disabled=false;
  if(canAutoAdd&&selected===select.value&&alreadySaved===false&&!sharedOfflineRadios.has(String(selected)))await submitSharedStation($('shareForm'));
  }catch(error){if(generation===sharedOpenGeneration)throw error;}
 }
@@ -519,7 +551,7 @@ window.addEventListener('radio-status-updated',event=>{
 });
 const delay=()=>new Promise(resolve=>setTimeout(resolve,2500));
 async function submitSharedStation(form){
- if(shareRunning)return;const enteringCode=!$('deviceLabel').hidden,deviceCode=enteringCode?window.validateDeviceCodeInput(form.elements.device_code):'';if(enteringCode&&deviceCode===null)return;
+ if(shareRunning||form.dataset.destinationLoading==='1')return;const enteringCode=!$('deviceLabel').hidden,deviceCode=enteringCode?window.validateDeviceCodeInput(form.elements.device_code):'';if(enteringCode&&deviceCode===null)return;
  const attempt=enteringCode?{requestId:crypto.randomUUID().replaceAll('-',''),controller:new AbortController(),dispatched:false,approved:false,cancellationStarted:false}:null;if(attempt)sharedPairingAttempt=attempt;
  shareRunning=true;const stationCode=sharedCode,generation=sharedOpenGeneration,current=()=>generation===sharedOpenGeneration&&!$('shared').hidden;busy(form,true,true);$('shared').dataset.adding='1';$('shareWifiHelp').hidden=true;setSharedStatus('Adding station…');
  try{
@@ -571,8 +603,8 @@ async function initializeSite(){
    if(ownerEntry&&entryGeneration===sitePageGeneration){if(window.ownerAccountNavigation?.active())await editor(true,entryGeneration);else page(location.pathname==='/station-edit'?'login':'register');}
    if(location.pathname==='/admin'){page('admin');try{await adminList();}catch{}}
   }
- }catch(e){if(!ownerEntry||entryGeneration===sitePageGeneration){if(ownerEntry){if(e.status===401)page('login');else if(window.ownerAccountNavigation?.active())ownerAccountUnavailable();else page('register');}message(e.message);}}
- if(ownerEntry&&entryGeneration===sitePageGeneration&&initial[0].status==='rejected'){page('register');message(initial[0].reason.message);}
+ }catch(e){if(!ownerEntry||entryGeneration===sitePageGeneration){if(ownerEntry){if(e.status===401)page('login');else if(window.ownerAccountNavigation?.active())ownerAccountUnavailable();else page(location.pathname==='/station-edit'?'login':'register');}message(e.message);}}
+ if(ownerEntry&&entryGeneration===sitePageGeneration&&initial[0].status==='rejected'){page(location.pathname==='/station-edit'?'login':'register');message(initial[0].reason.message);}
  try{await initCommunity();}catch(e){message(e.message);}
  finally{await siteOrderedScriptsReady;window.dispatchEvent(new Event('radio-locals-ready'));}
 }

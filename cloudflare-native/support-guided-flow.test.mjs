@@ -54,6 +54,16 @@ test('Support hides the retired problem chooser and keeps private ticket lookup 
  assert.equal(f.nodes.get('supportFlowTitle').parentElement.hidden,true);
 });
 
+test('human contact and ticket lookup remain available if the optional assistant fails to install',()=>{
+ const f=fixture(),fallback=f.nodes.get('supportContactFallback');assert.equal(fallback.hidden,false);assert.equal(f.form.hidden,true);fallback.children[0].onclick();assert.equal(f.form.hidden,false);let opened=0;f.window.supportTickets={open(){opened++;}};fallback.children[1].onclick();assert.equal(opened,1);
+ f.window.supportChatReady=true;f.render();assert.equal(fallback.hidden,true);assert.equal(f.form.hidden,false);
+});
+
+test('a manually edited chat clears only its old suggested subject and keeps a subject chosen by the customer',()=>{
+ const f=fixture();f.contact({subject:'No sound or playback problem'});assert.equal(f.form.elements.subject.value,'No sound or playback problem');f.contact({clearSuggestedSubject:true});assert.equal(f.form.elements.subject.value,'');assert.equal(f.form.elements.subject.hidden,false);
+ f.form.elements.subject.value='Station problem';f.form.elements.subject.dispatch('change');f.contact({clearSuggestedSubject:true});assert.equal(f.form.elements.subject.value,'Station problem');
+});
+
 test('Wi-Fi shows relevant existing tutorials, hides unrelated guides, and opens a preselected contact form',()=>{
  const f=fixture(),wifi=f.guide('wifi','Connect to Wi-Fi'),station=f.guide('station','Add a station'),reset=f.guide('reset','Reset the Device Code'),approved=f.remote('Wi-Fi troubleshooting');f.guidesChanged();
  assert.equal(wifi.card.hidden,true);f.choose('wifi');assert.equal(f.nodes.get('supportGuidedFlow').dataset.view,'topic');assert.equal(f.document.activeElement,f.nodes.get('supportTopicTitle'));

@@ -132,8 +132,8 @@ test('reopening the same dispatched station attaches without a second command',a
  const sent=deferred(),ack=deferred(),f=fixture();f.answers.push(sent.promise,ack.promise);const first=f.submit();await until(()=>f.calls.length===1);f.cancel();f.next('10');const reopened=f.submit();assert.equal(f.get('shareRunning'),true);assert.equal(f.calls.length,1);sent.resolve({command_id:'command'});await until(()=>f.calls.length===2);assert.equal(f.calls.filter(c=>c.path==='/api/phone/add').length,1);assert.equal(f.dialogs.length,0);ack.resolve({state:'added'});await Promise.all([first,reopened]);assert.equal(f.calls.filter(c=>c.path==='/api/phone/add').length,1);assert.deepEqual(f.refreshes,['one']);assert.deepEqual(f.dialogs.map(d=>d[0]),['Station added']);
 });
 
-test('an uncertain POST is not sent again and never claims cancellation or success',async()=>{
- const f=fixture();f.answers.push(Error('Connection lost'));await f.submit();assert.match(f.id('shareStatus').textContent,/not confirmed/);assert.equal(f.refreshes.length,0);assert.equal(f.dialogs.length,0);f.cancel();f.next('10');await f.submit();assert.equal(f.calls.length,1);assert.equal(f.id('stationDeliveryStatus').dataset.status,'error');assert.doesNotMatch(f.id('stationDeliveryStatus').textContent,/cancelled|canceled|added$/i);
+test('an uncertain add retries the same request reference and reconciles an already acknowledged command',async()=>{
+ const f=fixture();f.answers.push(Error('Connection lost'));await f.submit();assert.match(f.id('shareStatus').textContent,/not confirmed/);assert.equal(f.refreshes.length,0);assert.equal(f.dialogs.length,0);const reference=f.calls[0].body.request_id;assert.match(reference,/^[a-f0-9]{32}$/);f.cancel();f.next('10');f.answers.push({command_id:'committed',state:'added'});await f.submit();const adds=f.calls.filter(call=>call.path==='/api/phone/add');assert.equal(adds.length,2);assert.equal(adds[1].body.request_id,reference);assert.equal(f.calls.filter(call=>call.path==='/api/phone/command/status').length,0);assert.equal(f.id('stationDeliveryStatus').dataset.status,'success');
 });
 
 test('retrying an uncertain tracked command checks its status without sending another add',async()=>{
@@ -274,4 +274,12 @@ test('shared pairing waits for a pending main Radio cancellation before starting
 
 test('shared pairing rechecks main Radio cleanup immediately before dispatch after a security check',async()=>{
  const mainCleanup=deferred(),bot=deferred(),claim=deferred(),f=fixture({useDeviceCode:true,human:()=>bot.promise});f.answers.push(claim.promise);const adding=f.submit();await until(()=>f.humanSignals.length===1);f.ctx.radioPairingCancellation=mainCleanup.promise;bot.resolve('checked');await new Promise(setImmediate);assert.equal(f.calls.length,0);mainCleanup.resolve();await until(()=>f.calls.some(call=>call.path==='/api/phone/claim'));f.cancel();claim.resolve({claim_id:'late',confirmation_code:'1111'});await adding;assert.equal(f.cancellations.length,1);
+});
+
+test('a newly opened station clears the previous destination and cannot submit while current grants are loading',async()=>{
+ const pending=deferred(),f=fixture({selectedId:'two'});f.answers.push({name:'Fresh station',listener_code:'14'},pending.promise);const opening=f.open('14',true);await until(()=>f.calls.length===2);assert.equal(f.form.hidden,true);assert.equal(f.form.elements.radio_id.value,'');assert.equal(f.id('shareSubmit').disabled,true);await f.submit();assert.equal(f.calls.length,2);pending.resolve({radios:[{id:'one',online:true},{id:'two',online:true}]});await opening;assert.equal(f.form.hidden,false);assert.equal(f.form.elements.radio_id.value,'two');assert.equal(f.id('shareSubmit').disabled,false);
+});
+
+test('station reporting becomes available with public metadata even when the private radio lookup fails',async()=>{
+ const f=fixture(),station=deferred();f.answers.push(station.promise,Error('Radio status unavailable'));const opening=f.open('13',true);assert.equal(f.id('reportStationProblem').hidden,true);station.resolve({name:'Public station',listener_code:'13'});await assert.rejects(opening,/Radio status unavailable/);assert.equal(f.id('reportStationProblem').hidden,false);assert.equal(f.form.hidden,true);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);
 });

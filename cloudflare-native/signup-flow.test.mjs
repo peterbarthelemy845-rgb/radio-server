@@ -18,7 +18,7 @@ function fixture(){
    querySelectorAll(selector){const tags=selector.split(',').map(tag=>tag.toUpperCase());return this.children.flatMap(child=>[...(tags.includes(child.tagName)?[child]:[]),...child.querySelectorAll(selector)]);},
    reset(){this.dispatchEvent(new UiEvent('reset'));this.resetCalled=true;for(const field of Object.values(this.elements)){field.value=field.defaultValue;field.checked=false;field.files=[];}},
    showModal(){this.open=true;this.shown=true;},close(){this.open=false;this.closed=true;this.dispatchEvent(new UiEvent('close'));}
-  };Object.defineProperty(element,'id',{get(){return this._id;},set(value){this._id=value;nodes.set(value,this);}});element.id=id;return element;
+  };element.style={};element.remove=()=>{if(element.parent)element.parent.children=element.parent.children.filter(child=>child!==element);element.parent=null;};Object.defineProperty(element,'id',{get(){return this._id;},set(value){this._id=value;nodes.set(value,this);}});element.id=id;return element;
  }
  const document={activeElement:null,hidden:false,addEventListener(){},createElement(tag){return node('generated-'+nodes.size,tag.toUpperCase());},getElementById(id){return nodes.get(id)||node(id);},querySelector(selector){if(selector==='dialog[open]')return [...nodes.values()].find(item=>item.tagName==='DIALOG'&&item.open)||null;return null;}};
  function append(parent,child){parent.children.push(child);child.parent=parent;return child;}
@@ -186,7 +186,7 @@ test('a failed station save keeps its draft and chosen cover available for retry
 
 test('email resend countdown blocks repeated requests, starts again for a new code and clears on close',async()=>{
  const f=fixture();f.verify();const button=f.nodes.get('resend');assert.equal(button.disabled,true);assert.equal(button.textContent,'Resend in 60 seconds');await button.onclick();assert.equal(f.humans.length,0);assert.equal(f.calls.length,0);
- f.advance(1000);assert.equal(button.textContent,'Resend in 59 seconds');f.advance(59000);assert.equal(button.disabled,false);assert.equal(button.textContent,'Resend email');assert.equal(f.timers.size,0);
+ f.advance(1000);assert.equal(button.textContent,'Resend in 59 seconds');f.advance(59000);assert.equal(button.disabled,false);assert.equal(button.textContent,'Resend email');assert.equal(f.timers.size,1,'the expiry notice keeps updating after the resend cooldown ends');
  f.answers.push({verification_id:'challenge-new'});await button.onclick();assert.equal(f.id(),'challenge-new');assert.equal(f.calls[0].path,'/api/owner/resend');assert.equal(button.disabled,true);assert.equal(button.textContent,'Resend in 60 seconds');assert.match(f.nodes.get('verifyMessage').textContent,/newest email code/);assert.equal(f.verifyForm.elements.code.value,'');
  f.nodes.get('closeVerify').onclick();assert.equal(f.timers.size,0);assert.equal(button.textContent,'Resend email');f.advance(60000);assert.equal(f.timers.size,0);assert.equal(f.nodes.get('verification').open,false);
 });
@@ -348,4 +348,28 @@ test('editor baseline hooks receive the server revision and whether the existing
 test('an accepted Save marks its captured baseline clean before a failed follow-up read',async()=>{
  const f=fixture(),form=f.nodes.get('editForm'),received=[];vm.runInContext("page('editor')",f.context);form.dataset.stationCode='13';form.dataset.revision='revision-one';form.dataset.dirty='1';form.elements.bio.value='Committed bio';form.elements.stream_url.value='https://saved.example/live';f.context.window.ownerEditorSaved=(captured,result)=>received.push({captured,result});f.answers.push({message:'Changes saved successfully.',stream_check_required:false});f.editor(Error('Follow-up read unavailable'));
  await f.submit(form);assert.equal(received.length,1);assert.equal(received[0].captured.code,'13');assert.equal(received[0].captured.bio,'Committed bio');assert.equal(received[0].captured.revision,'revision-one');assert.equal(received[0].result.stream_check_required,false);assert.equal(form.dataset.dirty,undefined);assert.equal(f.nodes.get('ownerSaveSuccess').open,true);assert.equal(f.nodes.get('ownerSaveRefreshRetry').hidden,false);
+});
+
+test('an uncertain owner verification reconciles the current authenticated session without replaying its code',async()=>{
+ for(const verification_purpose of ['edit','registration']){
+  const f=fixture();f.verify({verification_purpose,expires_in:900});f.verifyForm.elements.code.value='123456';
+  f.answers.push(Error('Connection dropped'),{owner_station:'13',owner_expires:1700001800,server_time:1700000000,pending_verification:null});
+  await f.submit(f.verifyForm);assert.deepEqual(f.calls.map(call=>call.path),['/api/owner/verify','/api/session']);assert.equal(f.nodes.get('verification').open,false);assert.equal(f.editorCalls(),1);assert.equal(vm.runInContext('state.owner_station',f.context),'13');assert.equal(f.calls.filter(call=>call.path==='/api/owner/verify').length,1);
+ }
+});
+test('an expired resumed email code shows accurate remaining time and directs its owner to resend',()=>{
+ const f=fixture();f.verify({expires_in:60});assert.match(f.nodes.get('verifyText').textContent,/Time left: 1 minute/);assert.doesNotMatch(f.nodes.get('verifyText').textContent,/15 minutes/);f.nodes.get('verification').close();f.advance(65000);f.nodes.get('continueLoginVerification').onclick();assert.match(f.nodes.get('verifyText').textContent,/expired/);assert.match(f.nodes.get('verifyMessage').textContent,/new code/);assert.equal(f.nodes.get('resend').disabled,false);
+});
+test('station code paste accepts a hash and spaces before validating its exact digits',()=>{
+ const f=fixture(),input=f.login.elements.code,event=f.event('paste');event.clipboardData={getData:()=> ' # 123 456 '};input.dispatchEvent(event);assert.equal(event.defaultPrevented,true);assert.equal(input.value,'123456');assert.equal(input.maxLength,32);input.value='  #12 34 ';input.dispatchEvent(f.event('input'));assert.equal(input.value,'1234');input.value='1234567';input.dispatchEvent(f.event('input'));assert.equal(input.value,'1234567','overlong codes remain invalid, never silently truncated to another station');
+});
+test('the latest-version confirmation includes location category and its actual logo before replacing a draft',async()=>{
+ const f=fixture(),form=f.nodes.get('editForm');form.dataset.stationCode='13';form.elements.bio.value='Keep my draft';form.elements.artwork.files=[{name:'new.png'}];f.document.getElementById('editor').hidden=false;
+ const latest={code:'13',name:'Latest',status:'published',revision:'new',stream_url:'https://stream.example.com/live',bio:'Saved bio',zip_code:'10960',category:'christian',artwork_url:'/latest-cover.png'};
+ let preview;f.context.listenerActionDialog=async(_title,summary)=>{assert.match(summary,/Latest ZIP code:\n10960/);assert.match(summary,/Latest category:\nReligion/);preview=f.nodes.get('listenerActionDialog').children.find(node=>node.tagName==='IMG');assert.equal(preview.src,'/latest-cover.png');return false;};f.answers.push({station:latest,metadata_options:{categories:[{value:'christian',label:'Religion'}]}});await f.nodes.get('ownerReviewLatest').onclick();assert.equal(form.elements.bio.value,'Keep my draft');assert.equal(form.elements.artwork.files[0].name,'new.png');assert.equal(f.nodes.get('listenerActionDialog').children.includes(preview),false);
+});
+
+
+test('verification recovery cannot replace a failed challenge with a different station account',async()=>{
+ const f=fixture();f.verify({verification_purpose:'edit',expires_in:900});f.verifyForm.elements.code.value='123456';f.answers.push(Object.assign(Error('Incorrect code'),{status:400}),{owner_station:'14',owner_expires:1700001800,server_time:1700000000,pending_verification:null});await f.submit(f.verifyForm);assert.equal(f.nodes.get('verification').open,true);assert.equal(f.editorCalls(),0);assert.equal(f.nodes.get('verifyMessage').textContent,'Incorrect code');
 });

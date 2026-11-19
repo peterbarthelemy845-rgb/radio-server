@@ -38,7 +38,7 @@ function renderSupportTicket(thread,view,draft='',notice=''){
  for(const message of thread.messages){
   const item=document.createElement('article');item.className='support-reply';
   const delivery={pending:'Queued for email',sending:'Email delivery in progress',sent:'Email accepted by the mail service',failed:'Email delivery failed',unavailable:'Email delivery status unavailable'}[message.delivery.state]||'Email delivery status unavailable';
-  item.append(supportText('p',supportTime(message.created_at)+' · '+delivery,'support-meta'),supportText('p','To: '+message.recipient,'support-meta'),supportText('p',message.body,'support-message'));box.append(item);
+  item.append(supportText('p',supportTime(message.created_at)+' · '+(message.author==='customer'?'Customer reply · ':'' )+delivery,'support-meta'),supportText('p',message.author==='customer'?'From: '+record.payload.email:'To: '+message.recipient,'support-meta'),supportText('p',message.body,'support-message'));box.append(item);
  }
  const form=document.createElement('form');form.className='support-compose';
  const statusLabel=supportText('label','Ticket status'),select=document.createElement('select');select.name='state';
