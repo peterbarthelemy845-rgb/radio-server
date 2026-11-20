@@ -1,0 +1,13 @@
+/* Keep station actions compact, with optional tasks behind one disclosure. */
+#shared #shareConnectRadio{width:100%;min-height:48px;margin:12px 0}
+#shared #shareMoreActions{margin-top:12px;border-top:1px solid #e2eaf6}
+#shared #shareMoreActions>summary{color:#34577e;font-size:.9375rem;font-weight:600;min-height:44px;padding:12px 2px;box-sizing:border-box}
+#shared #shareMoreActions>:is(button,a){box-sizing:border-box;width:100%;min-height:44px;margin:6px 0;padding:10px 12px;font-size:.9375rem;line-height:1.4;text-align:center}
+#shared #shareMoreActions .station-advertise-link{background:#eef4fc;border:1px solid #d6e4f7;color:#24517d}
+#shared #shareMoreActions [hidden],#shared #shareConnectRadio[hidden],#shared #shareSubmit[hidden]{display:none}
+#shared[data-adding="1"] #shareMoreActions{display:none}
+#shared[data-removing="1"] #shareMoreActions{display:none}
+#shareForm:has(#deviceLabel[hidden]) .radio-code-help{display:none}
+#shared:has(#shareConnectRadio:not([hidden])) #reportStationProblem{display:block}
+#shared #shareMoreActions .station-share-feedback{margin:8px 0;font-size:.875rem}
+#shared #shareMoreActions .station-share-feedback input{width:100%;box-sizing:border-box}

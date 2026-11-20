@@ -15,11 +15,19 @@ export async function inventoryStatements(env,id,body,now){
   const rows=codes.length?(await env.DB.prepare(`SELECT CAST(code AS TEXT) AS code FROM stations
     WHERE status='published' AND code IN (${codes.map(()=>'?').join(',')}) ORDER BY stations.code`)
     .bind(...codes).all()).results:[];
-  return [env.DB.prepare(`INSERT INTO radio_station_inventory(radio_id,station_codes_json,reported_at)
-    VALUES (?,?,?) ON CONFLICT(radio_id) DO UPDATE SET
-    station_codes_json=excluded.station_codes_json,reported_at=excluded.reported_at
+  return [env.DB.prepare(`INSERT INTO radio_station_inventory(radio_id,station_codes_json,reported_at,all_station_codes_json)
+    VALUES (?,?,?,?) ON CONFLICT(radio_id) DO UPDATE SET
+    station_codes_json=excluded.station_codes_json,reported_at=excluded.reported_at,all_station_codes_json=excluded.all_station_codes_json
     WHERE excluded.reported_at>=radio_station_inventory.reported_at`)
-    .bind(id,JSON.stringify(rows.map(row=>row.code)),now)];
+    .bind(id,JSON.stringify(rows.map(row=>row.code)),now,JSON.stringify(codes.sort((a,b)=>a-b).map(String)))];
+}
+
+// Only a linked browser's private endpoint calls this helper. Do not expose
+// unpublished station metadata; numeric saved codes are enough for removal.
+export async function removableInventory(env,id){
+  const row=await env.DB.prepare(`SELECT COALESCE(i.all_station_codes_json,i.station_codes_json) AS codes FROM radio_station_inventory i
+    JOIN radio_telemetry t ON t.radio_id=i.radio_id WHERE i.radio_id=? AND t.station_removal_version=1`).bind(id).first();
+  return row?{removable_station_codes:JSON.parse(row.codes)}:{};
 }
 
 export async function savedInventory(env,id){

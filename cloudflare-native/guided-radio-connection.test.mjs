@@ -26,7 +26,7 @@ function fixture({dialog=async()=>true}={}){
  const document={hidden:false,activeElement:null,createElement:node,getElementById:get,addEventListener(type,handler){documentEvents.set(type,handler);}};
  const navigator={onLine:true};
  class Clock extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
- const context={document,navigator,Date:Clock,URLSearchParams,AbortController,crypto:{randomUUID},location:{hash:'#radio',search:''},history:{replaceState(){}},
+ const context={document,navigator,Date:Clock,URLSearchParams,AbortController,Event:class{constructor(type){this.type=type;}},crypto:{randomUUID},location:{hash:'#radio',search:''},history:{replaceState(){}},
   CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},
   MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},
   window:{addEventListener(type,handler){events.set(type,handler);},dispatchEvent(){},openGuidedRadioWifi(){wifiOpens++;},validateDeviceCodeInput:input=>input.value},
@@ -45,6 +45,11 @@ function fixture({dialog=async()=>true}={}){
   submit:()=>form.onsubmit({preventDefault(){},target:form})};
 }
 const radio={id:'one',device_code:'3961',online:true,current_station:'Community Radio'};
+async function approveInBackground(f){
+ const decision=deferred();f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';
+ f.answers.push({claim_id:'claim',confirmation_code:'5831'},decision.promise);const pairing=f.submit();await until(()=>f.calls.some(call=>call.path==='/api/phone/claim/status'));
+ f.document.hidden=true;f.documentEvents.get('visibilitychange')();f.answers.push({radios:[radio]});decision.resolve({state:'approved',radio_id:'one'});await pairing;
+}
 
 test('first visit has one Connect action and keeps code entry and setup choices out of the way',async()=>{
  const f=fixture();f.answers.push({radios:[]});await f.load();
@@ -68,6 +73,15 @@ test('Back preserves the typed code without submitting or reopening pairing',asy
  const f=fixture();f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='0012';
  await f.click('radioCodeBack');assert.equal(f.form.hidden,true);assert.equal(f.get('radioConnectionChoices').hidden,false);assert.equal(f.form.elements.device_code.value,'0012');
  await f.click('radioAlreadyOnline');assert.equal(f.form.elements.device_code.value,'0012');assert.equal(f.calls.length,1);
+});
+
+test('restarting code setup clears old inline validation without erasing the draft or validating again',async()=>{
+ const f=fixture();let checks=0,clears=0;const field=f.form.elements.device_code;
+ f.context.window.validateDeviceCodeInput=()=>{checks++;field.oldError=true;return null;};
+ f.context.window.clearDeviceCodeInputError=input=>{assert.equal(input,field);clears++;input.oldError=false;};
+ f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');field.value='123';await f.submit();assert.equal(field.oldError,true);assert.equal(checks,1);
+ await f.click('radioCodeBack');assert.equal(field.oldError,false);await f.click('setupRadioWifi');field.oldError=true;f.showCode();
+ assert.equal(field.oldError,false);assert.equal(field.value,'123');assert.equal(checks,1);assert.ok(clears>=4);assert.equal(f.calls.length,1);
 });
 
 test('automatic empty status refreshes preserve the current setup step and input',async()=>{
@@ -135,15 +149,102 @@ for(const result of ['empty','known','unauthorized'])test('a slow initial '+resu
  f.answers.push({state:'cancelled'});decision.resolve({state:'denied'});await pairing;await f.flush();assert.match(f.get('radioConnectStatus').textContent,/not approved/);assert.equal(f.form.elements.device_code.value,'3961');
 });
 
-test('approval queues a fresh status request when the old initial request is held, even while success feedback is open',async()=>{
+test('approval queues a fresh status request when the old initial request is held and releases pairing before success feedback',async()=>{
  const success=deferred(),f=fixture({dialog:()=>success.promise}),initial=deferred(),decision=deferred();f.answers.push(initial.promise);const initialLoad=f.load();
  await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';f.answers.push({claim_id:'claim',confirmation_code:'5831'},decision.promise);const pairing=f.submit();
  await until(()=>f.calls.some(call=>call.path==='/api/phone/claim/status'));decision.resolve({state:'approved',radio_id:'one'});
- await until(()=>runInNewContext('radioReloadRequested',f.context));assert.equal(f.form.button.disabled,true);assert.equal(f.calls.filter(call=>call.path==='/api/phone/radios').length,1);
+ await until(()=>runInNewContext('radioReloadRequested',f.context));await until(()=>!f.form.button.disabled);assert.equal(f.calls.filter(call=>call.path==='/api/phone/radios').length,1);
  f.answers.push({radios:[radio]});initial.resolve({radios:[]});await initialLoad;
  await until(()=>f.get('linkedRadios').children.length===1);assert.equal(f.calls.filter(call=>call.path==='/api/phone/radios').length,2);
  assert.equal(f.get('linkedRadios').children[0].children[0].children[1].textContent,'Online');assert.equal(f.form.hidden,true);assert.equal(f.get('connectRadio').hidden,false);assert.equal(f.calls.some(call=>call.path==='/api/phone/claim/cancel'),false);
  success.resolve(true);await pairing;assert.equal(f.form.button.disabled,false);
+});
+
+test('approved linking resumes the selected station after pairing cleanup and suppresses extra connection feedback',async()=>{
+ const dialogs=[],resumed=[],f=fixture({dialog:async(...args)=>{dialogs.push(args);return true;}});
+ f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';
+ f.context.window.resumePendingStationConnection=async radioId=>{
+  resumed.push(radioId);assert.equal(runInNewContext('radioPairingBusy',f.context),false);assert.equal(runInNewContext('radioPairingAttempt',f.context),null);assert.equal(f.form.button.disabled,false);assert.equal(f.form.elements.device_code.disabled,false);assert.equal(f.get('cancelRadioConnection').hidden,true);assert.equal(f.context.readSelectedRadio(),'one');
+  f.get('myRadio').hidden=true;return true;
+ };
+ f.answers.push({claim_id:'claim',confirmation_code:'5831'},{state:'approved',radio_id:'one'},{radios:[radio]});await f.submit();
+ assert.deepEqual(resumed,['one'],f.get('radioConnectStatus').textContent);assert.deepEqual(dialogs,[]);assert.equal(f.calls.some(call=>call.path==='/api/phone/add'),false);assert.equal(f.calls.some(call=>call.path==='/api/phone/claim/cancel'),false);
+});
+
+test('a pairing without a pending station retains its normal connection confirmation',async()=>{
+ const dialogs=[],f=fixture({dialog:async(...args)=>{dialogs.push(args);return true;}});let resumed=0;
+ f.context.window.resumePendingStationConnection=async()=>{resumed++;return false;};
+ f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';
+ f.answers.push({claim_id:'claim',confirmation_code:'5831'},{state:'approved',radio_id:'one'},{radios:[radio]});await f.submit();
+ assert.equal(resumed,1,f.get('radioConnectStatus').textContent);assert.deepEqual(dialogs,[['Radio connected','']]);assert.equal(f.get('linkedRadios').children.length,1);
+});
+
+test('explicit connection Close and Cancel clear station intent while Back and Wi-Fi retain it',async()=>{
+ const f=fixture();let cancellations=0;f.context.window.cancelPendingStationConnection=()=>{cancellations++;};
+ f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');await f.click('radioCodeBack');await f.click('setupRadioWifi');assert.equal(cancellations,0);
+ await f.click('radioConnectionExit');assert.equal(cancellations,1);await f.click('connectRadio');await f.click('radioAlreadyOnline');await f.click('cancelRadioConnection');assert.equal(cancellations,2);assert.equal(f.calls.length,1);
+});
+
+test('denied linking never resumes a selected station or shows success',async()=>{
+ const dialogs=[],f=fixture({dialog:async(...args)=>{dialogs.push(args);return true;}});let resumed=0;f.context.window.resumePendingStationConnection=async()=>{resumed++;return true;};
+ f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';
+ f.answers.push({claim_id:'claim',confirmation_code:'5831'},{state:'denied'},{state:'cancelled'});await f.submit();await f.flush();
+ assert.equal(resumed,0);assert.deepEqual(dialogs,[]);assert.match(f.get('radioConnectStatus').textContent,/not approved/);assert.equal(f.form.button.disabled,false);
+});
+
+test('a failed station continuation keeps the approved link and offers retry without creating another claim',async()=>{
+ const dialogs=[],f=fixture({dialog:async(...args)=>{dialogs.push(args);return true;}});f.context.window.resumePendingStationConnection=async()=>{throw Error('Adding failed');};
+ f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';
+ f.answers.push({claim_id:'claim',confirmation_code:'5831'},{state:'approved',radio_id:'one'},{radios:[radio]});await f.submit();
+ assert.equal(f.get('linkedRadios').children.length,1);assert.equal(f.context.readSelectedRadio(),'one');assert.equal(f.form.button.disabled,false);assert.match(f.get('radioConnectStatus').textContent,/Radio connected.*Choose your station/);assert.deepEqual(dialogs,[]);
+ assert.equal(f.calls.filter(call=>call.path==='/api/phone/claim').length,1);assert.equal(f.calls.some(call=>call.path==='/api/phone/claim/cancel'),false);
+});
+
+test('a late station-continuation failure cannot replace feedback after leaving Radio',async()=>{
+ const continuation=deferred(),f=fixture();let resumed=false;f.context.window.resumePendingStationConnection=()=>{resumed=true;return continuation.promise;};
+ f.answers.push({radios:[]});await f.load();await f.click('connectRadio');await f.click('radioAlreadyOnline');f.form.elements.device_code.value='3961';
+ f.answers.push({claim_id:'claim',confirmation_code:'5831'},{state:'approved',radio_id:'one'},{radios:[radio]});const pairing=f.submit();await until(()=>resumed);
+ f.get('myRadio').hidden=true;f.get('radioConnectStatus').textContent='Another page owns feedback';continuation.reject(Error('Late error'));await pairing;
+ assert.equal(f.get('radioConnectStatus').textContent,'Another page owns feedback');assert.equal(f.form.button.disabled,false);
+});
+
+test('background approval resumes its selected station only after a fresh visible response confirms that radio',async()=>{
+ const dialogs=[],resumed=[],fresh=deferred(),f=fixture({dialog:async(...args)=>{dialogs.push(args);return true;}});
+ f.context.window.resumePendingStationConnection=async id=>{resumed.push(id);assert.equal(f.form.button.disabled,false);assert.equal(runInNewContext('radioPairingBusy||radioLoading',f.context),false);return true;};
+ await approveInBackground(f);assert.deepEqual(resumed,[]);assert.deepEqual(dialogs,[]);assert.equal(runInNewContext('deferredStationConnection.radioId',f.context),'one');
+ f.answers.push(fresh.promise);f.document.hidden=false;f.documentEvents.get('visibilitychange')();await until(()=>f.calls.filter(call=>call.path==='/api/phone/radios').length===3);assert.deepEqual(resumed,[]);
+ fresh.resolve({radios:[radio]});await until(()=>resumed.length===1);assert.deepEqual(resumed,['one']);assert.equal(runInNewContext('deferredStationConnection',f.context),null);assert.deepEqual(dialogs,[]);
+ f.answers.push({radios:[radio]});await f.load(true);assert.deepEqual(resumed,['one']);
+});
+
+test('background approval cannot resume against a different linked radio or a later reappearing radio',async()=>{
+ const f=fixture();let resumed=0;f.context.window.resumePendingStationConnection=async()=>{resumed++;return true;};await approveInBackground(f);
+ f.document.hidden=false;f.answers.push({radios:[{...radio,id:'two',device_code:'8821'}]});await f.load(true);assert.equal(resumed,0);assert.equal(runInNewContext('deferredStationConnection',f.context),null);
+ f.answers.push({radios:[radio]});await f.load(true);assert.equal(resumed,0);
+});
+
+test('a failed visible status check retains background intent without adding until a successful retry',async()=>{
+ const f=fixture(),resumed=[];f.context.window.resumePendingStationConnection=async id=>{resumed.push(id);return true;};await approveInBackground(f);
+ f.document.hidden=false;f.answers.push(Error('Temporary connection problem'));await f.load(true);assert.deepEqual(resumed,[]);assert.equal(runInNewContext('deferredStationConnection.radioId',f.context),'one');
+ f.answers.push({radios:[radio]});await f.load(true);assert.deepEqual(resumed,['one']);
+});
+
+test('explicit cancellation while a fresh status check is pending prevents deferred station continuation',async()=>{
+ const f=fixture(),fresh=deferred();let resumed=0,cancelled=0;f.context.window.resumePendingStationConnection=async()=>{resumed++;return true;};f.context.window.cancelPendingStationConnection=()=>cancelled++;await approveInBackground(f);
+ f.document.hidden=false;f.answers.push(fresh.promise);const loading=f.load(true);await until(()=>f.calls.filter(call=>call.path==='/api/phone/radios').length===3);await f.click('cancelRadioConnection');
+ fresh.resolve({radios:[radio]});await loading;assert.equal(resumed,0);assert.equal(cancelled,1);assert.equal(runInNewContext('deferredStationConnection',f.context),null);
+});
+
+test('leaving Radio after a background approval discards deferred station continuation',async()=>{
+ const f=fixture();let resumed=0;f.context.window.resumePendingStationConnection=async()=>{resumed++;return true;};await approveInBackground(f);
+ f.get('myRadio').hidden=true;runInNewContext('radioVisibilityChanged()',f.context);assert.equal(runInNewContext('deferredStationConnection',f.context),null);
+ f.document.hidden=false;f.get('myRadio').hidden=false;f.answers.push({radios:[radio]});await f.load(true);assert.equal(resumed,0);
+});
+
+test('beginning another pairing discards a previous background approval continuation',async()=>{
+ const f=fixture();let resumed=0;f.context.window.resumePendingStationConnection=async()=>{resumed++;return true;};await approveInBackground(f);
+ f.document.hidden=false;await f.click('connectRadio');await f.click('radioAlreadyOnline');assert.equal(runInNewContext('deferredStationConnection',f.context),null);
+ f.form.elements.device_code.value='8821';f.answers.push({claim_id:'next',confirmation_code:'1152'},{state:'denied'},{state:'cancelled'});await f.submit();await f.flush();f.answers.push({radios:[radio]});await f.load(true);assert.equal(resumed,0);
 });
 
 test('Connect another radio opens an independent pairing flow without adding a station or losing the existing radio',async()=>{

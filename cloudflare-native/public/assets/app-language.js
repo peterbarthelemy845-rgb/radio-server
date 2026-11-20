@@ -213,6 +213,28 @@ Object.assign(appCreole,{
  'registration.retryStreamIn':'Eseye ankò nan {time}','registration.testLimit':'Ou rive nan limit tès difizyon yo. Eseye ankò lè kontè a fini.',
  'pairing.connectAnother':'Konekte yon lòt radyo','station.previouslyReported':'Dènye lis ki te rapòte','pairing.checkingDestination':'N ap verifye radyo pou ajoute estasyon an…'
 });
+Object.assign(appEnglish,{
+ 'station.onRadio':'On your radio','station.more':'More','station.addAgain':'Add again','station.connectToAdd':'Connect radio to add station','station.connectOnce':'Connect your radio once to add this station.','station.addedNotice':'✓ Station added','station.allSaved':'All matching stations are already on your radio.',
+ 'station2':'If your phone is not linked, tap Connect radio to add station. Choose the online or Wi-Fi setup option, then enter the Device Code.',
+ 'station6':'Wait for ✓ Station added. The station list returns automatically. Linked phones skip the connection steps.',
+ 'management.saved':'On your radio','management.remove':'Remove from this radio','management.confirmTitle':'Remove from this radio?','management.confirm':'Remove station','management.confirmText':'{name} will be removed from Device Code {code}. You can add it again later.',
+ 'management.updateNeeded':'Update your radio software to remove stations here.','management.download':'Download radio software','management.offline':'Keep the radio on and connected to Wi-Fi to remove a station.','management.stale':'Refresh the saved list before removing a station.',
+ 'management.permission':'The radio will ask you to approve phone controls once.','management.waitApproval':'Match {number} and tap Allow on your radio to approve phone controls.','management.cancelled':'Removal cancelled. Nothing was removed.',
+ 'management.removing':'Removing station…','management.checking':'Checking removal…','management.check':'Check removal','management.unconfirmed':'Removal has not been confirmed. Check its status before trying again.','management.failed':'The station could not be removed. Check your radio and try again.',
+ 'management.confirmed':'The radio confirmed removal. Refresh the saved list to continue.','management.refresh':'Refresh saved list','management.removed':'✓ Removed from Device Code {code}','management.changed':'The selected radio or station changed. Start again.',
+ 'management.savedAgain':'This station is on the radio’s latest saved list. Check the radio before removing it again.','management.checkFailed':'Removal could not be checked. Refresh the saved list before starting again.','station.unlisted':'This station is no longer available.','station.reconnectDestination':'That radio is no longer connected. Connect it again to add this station.'
+});
+Object.assign(appCreole,{
+ 'station.onRadio':'Sou radyo ou','station.more':'Plis','station.addAgain':'Ajoute ankò','station.connectToAdd':'Konekte radyo pou ajoute estasyon','station.connectOnce':'Konekte radyo ou yon sèl fwa pou ajoute estasyon sa a.','station.addedNotice':'✓ Estasyon an ajoute','station.allSaved':'Tout estasyon ki koresponn yo deja sou radyo ou.',
+ 'station2':'Si telefòn ou poko konekte, tape Konekte radyo pou ajoute estasyon. Chwazi opsyon radyo ki deja sou entènèt oswa konfigirasyon Wi-Fi, epi antre kòd aparèy la.',
+ 'station6':'Tann ✓ Estasyon an ajoute. Lis estasyon an retounen otomatikman. Telefòn ki deja konekte yo sote etap koneksyon yo.',
+ 'management.saved':'Sou radyo ou','management.remove':'Retire nan radyo sa a','management.confirmTitle':'Retire nan radyo sa a?','management.confirm':'Retire estasyon','management.confirmText':'Y ap retire {name} nan radyo ki gen kòd aparèy {code}. Ou ka ajoute li ankò pita.',
+ 'management.updateNeeded':'Mete lojisyèl radyo ou ajou pou retire estasyon isit la.','management.download':'Telechaje lojisyèl radyo','management.offline':'Kite radyo a limen epi konekte ak Wi-Fi pou retire yon estasyon.','management.stale':'Rafrechi lis estasyon ki sove yo anvan ou retire yon estasyon.',
+ 'management.permission':'Radyo a ap mande ou apwouve kontwòl telefòn yon sèl fwa.','management.waitApproval':'Verifye nimewo {number} epi tape Allow sou radyo a pou apwouve kontwòl telefòn.','management.cancelled':'Ou anile retrè a. Pa gen anyen ki retire.',
+ 'management.removing':'N ap retire estasyon an…','management.checking':'N ap verifye retrè a…','management.check':'Verifye retrè a','management.unconfirmed':'Retrè a poko konfime. Verifye estati li anvan ou eseye ankò.','management.failed':'Nou pa t ka retire estasyon an. Tcheke radyo ou epi eseye ankò.',
+ 'management.confirmed':'Radyo a konfime retrè a. Rafrechi lis estasyon ki sove yo pou kontinye.','management.refresh':'Rafrechi lis estasyon ki sove yo','management.removed':'✓ Retire nan radyo ki gen kòd aparèy {code}','management.changed':'Radyo oswa estasyon ou chwazi a chanje. Kòmanse ankò.',
+ 'management.savedAgain':'Estasyon sa a nan dènye lis radyo a voye a. Tcheke radyo a anvan ou retire li ankò.','management.checkFailed':'Nou pa t ka verifye retrè a. Rafrechi lis estasyon ki sove yo anvan ou kòmanse ankò.','station.unlisted':'Estasyon sa a pa disponib ankò.','station.reconnectDestination':'Radyo sa a pa konekte ankò. Konekte li ankò pou ajoute estasyon sa a.'
+});
 const appPhraseKeys=new Map(Object.entries(appEnglish).map(([key,value])=>[value,key])),appCreoleKeys=new Map(Object.entries(appCreole).map(([key,value])=>[value,key])),appOriginalText=new WeakMap(),appOriginalLabels=new WeakMap();
 let appLanguage='en';try{appLanguage=localStorage.getItem('radioLocalsLanguage')||((navigator.language||'').toLowerCase().startsWith('ht')?'ht':'en');}catch{}
 if(!['en','ht'].includes(appLanguage))appLanguage='en';

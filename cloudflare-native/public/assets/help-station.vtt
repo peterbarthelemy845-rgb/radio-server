@@ -6,7 +6,7 @@ Keep your radio on and connected to Wi-Fi. Open Radio and tap a station.
 
 2
 00:00:05.500 --> 00:00:11.000
-If your phone is not linked, enter the Device Code and tap Add station.
+If your phone is not linked, choose Connect radio to add station and follow setup.
 
 3
 00:00:11.000 --> 00:00:16.500
@@ -22,4 +22,4 @@ The station is added automatically. No extra confirmation is needed.
 
 6
 00:00:27.500 --> 00:00:33.000
-Wait for Station added, then tap Done. Linked phones skip the linking steps.
+Wait for ✓ Station added. The list returns automatically. Linked phones skip setup.

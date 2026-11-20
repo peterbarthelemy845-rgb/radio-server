@@ -1,6 +1,7 @@
 'use strict';
 let radioLoading=false,radioViewSnapshot='',radioReloadRequested=false,radioViewGeneration=0,radioLastChecked=0,radioPairingBusy=false,radioPairingGeneration=0,radioSessionExpired=false,radioRefreshFailures=0;
 let radioPairingAttempt=null;
+let deferredStationConnection=null;
 function phoneApprovalMessage(state){return ({denied:'Connection not approved: denied on your radio. Start again and tap Allow only for your own request.',expired:'Connection expired. Enter the current Device Code and start again.',cancelled:'Connection cancelled. Start again when you are ready.'})[state]||'Connection could not be checked. Start again when you are ready.';}
 async function pollPhoneApproval(claimId,{current,deadline,signal}={}){
  let failures=0;
@@ -36,11 +37,14 @@ function syncRadioConnectionControls(){
 }
 function showRadioConnectionChoices(){
  if(radioPairingBusy||$('myRadio').hidden||document.hidden)return false;
+ deferredStationConnection=null;
+ window.clearDeviceCodeInputError?.($('connectRadioForm').elements.device_code);
  radioConnectingAnother=radioCardViews.size>0;radioConnectionStep='choose';syncRadioConnectionControls();
  $('radioConnectStatus').textContent='';$('setupRadioWifi').focus({preventScroll:true});return true;
 }
 function showRadioCodeEntry(){
  if(radioPairingBusy||$('myRadio').hidden||document.hidden)return false;
+ window.clearDeviceCodeInputError?.($('connectRadioForm').elements.device_code);
  radioConnectingAnother=radioCardViews.size>0;radioConnectionStep='code';syncRadioConnectionControls();
  $('radioConnectStatus').textContent='';$('connectRadioForm').elements.device_code.focus({preventScroll:true});return true;
 }
@@ -57,13 +61,19 @@ function cancelRadioPairingRequest(attempt,showStatus,generation){
  }))]).then(()=>undefined);
 }
 function cancelRadioPairing(showStatus=false){
- const attempt=radioPairingAttempt;radioPairingGeneration++;radioPairingAttempt=null;attempt?.controller.abort();
+ const attempt=radioPairingAttempt;radioPairingGeneration++;radioPairingAttempt=null;deferredStationConnection=null;attempt?.controller.abort();
  if(radioPairingBusy){radioPairingBusy=false;busy($('connectRadioForm'),false);}
  $('cancelRadioConnection').hidden=true;
  if(showStatus){$('radioConnectStatus').textContent='Connection cancelled.';$('connectRadioForm').elements.device_code.focus({preventScroll:true});}
  cancelRadioPairingRequest(attempt,showStatus,radioPairingGeneration);
 }
 function currentRadioPairing(generation){return generation===radioPairingGeneration&&!$('myRadio').hidden;}
+async function resumeDeferredStationConnection(continuation){
+ if(!continuation||continuation!==deferredStationConnection||!currentRadioPairing(continuation.generation)||radioPairingBusy||radioLoading||document.hidden)return;
+ deferredStationConnection=null;
+ try{await window.resumePendingStationConnection?.(continuation.radioId);}
+ catch{if(currentRadioPairing(continuation.generation)&&!document.hidden)$('radioConnectStatus').textContent='Radio connected. Choose your station below to try adding it again.';}
+}
 async function unlinkMyRadio(radioId,deviceLabel,unlink){
  const generation=radioViewGeneration,current=()=>generation===radioViewGeneration&&!$('myRadio').hidden&&!document.hidden;
  if(!current()||radioUnlinkPending.has(radioId)||radioCardViews.get(radioId)?.unlink!==unlink)return;
@@ -132,7 +142,7 @@ async function loadMyRadios(silent=false){
  if(radioLastChecked&&(!silent||Date.now()-radioLastChecked>30000)&&!$('myRadio').hidden&&!document.hidden&&navigator.onLine)markRadioStatusUpdating();
  if(radioLoading){if(!silent)radioReloadRequested=true;return;}radioLoading=true;
  if(!silent&&$('myRadio').hidden)page('myRadio');
- const generation=radioViewGeneration;
+ const generation=radioViewGeneration;let stationContinuation=null;
  $('linkedRadios').setAttribute('aria-busy','true');
  if(!silent){$('refreshRadios').hidden=true;if(!radioViewSnapshot){radioFreshness.hidden=false;radioFreshness.textContent='Checking radio status…';}$('radioConnectStatus').textContent=navigator.onLine?'':'No internet. Check your connection and try again.';}
  try{
@@ -140,6 +150,10 @@ async function loadMyRadios(silent=false){
   if($('myRadio').hidden||document.hidden||generation!==radioViewGeneration)return;
   if(!navigator.onLine)throw Error('No internet.');
   radioSessionExpired=false;radioRefreshFailures=0;
+  // A background approval must wait for a new successful status response in
+  // this visible page. Existing links alone never create station-add intent.
+  const deferred=deferredStationConnection;
+  if(deferred&&deferred.generation===radioPairingGeneration){if(result.radios.some(r=>String(r.id)===deferred.radioId))stationContinuation=deferred;else deferredStationConnection=null;}
   const selected=reconcileSelectedRadio(result.radios);
   if(selected)loadRadioInventory(selected,true);
   const selectionHint=result.radios.length>1&&!selected?'Choose a Device code for station additions.':'';
@@ -161,21 +175,21 @@ async function loadMyRadios(silent=false){
   }
   syncRadioConnectionControls();updateRadioCardStatus(true);publishRadioStatus(result.radios);
  }catch(e){if(!$('myRadio').hidden&&!document.hidden&&generation===radioViewGeneration){radioRefreshFailures=Math.min(4,radioRefreshFailures+1);if(e.status===401)showRadioReconnect();else markRadioStatusUnavailable(navigator.onLine?e.message+' Tap Try again.':'No internet. Check your connection and tap Try again.');}}
- finally{$('linkedRadios').setAttribute('aria-busy','false');radioLoading=false;if(radioReloadRequested||generation!==radioViewGeneration){radioReloadRequested=false;if(!$('myRadio').hidden&&!document.hidden)loadMyRadios(true);}}
+ finally{$('linkedRadios').setAttribute('aria-busy','false');radioLoading=false;if(radioReloadRequested||generation!==radioViewGeneration){radioReloadRequested=false;if(!$('myRadio').hidden&&!document.hidden)loadMyRadios(true);}else if(stationContinuation)await resumeDeferredStationConnection(stationContinuation);}
 }
 $('navRadio').onclick=()=>{history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();};$('refreshRadios').onclick=()=>loadMyRadios().finally(scheduleRadioRefresh);
 $('connectRadio').onclick=showRadioConnectionChoices;
 $('radioAlreadyOnline').onclick=showRadioCodeEntry;
 $('setupRadioWifi').onclick=()=>{if(!radioPairingBusy)window.openGuidedRadioWifi?.();};
 $('radioCodeBack').onclick=()=>{cancelRadioPairing();showRadioConnectionChoices();};
-$('radioConnectionExit').onclick=()=>{closeRadioConnectionFlow();$('connectRadio').focus({preventScroll:true});};
-$('cancelRadioConnection').onclick=()=>cancelRadioPairing(true);
+$('radioConnectionExit').onclick=()=>{deferredStationConnection=null;window.cancelPendingStationConnection?.();closeRadioConnectionFlow();$('connectRadio').focus({preventScroll:true});};
+$('cancelRadioConnection').onclick=()=>{window.cancelPendingStationConnection?.();cancelRadioPairing(true);};
 $('connectRadioForm').onsubmit=async event=>{
  event.preventDefault();const form=event.target;if(radioPairingBusy)return;const deviceCode=window.validateDeviceCodeInput(form.elements.device_code);if(deviceCode===null)return;
  // An older status read must not erase the approval number, hide the form or
  // expire the session after this explicit linking attempt has started.
  ++radioViewGeneration;
- const generation=++radioPairingGeneration,attempt={generation,controller:new AbortController(),requestId:crypto.randomUUID().replaceAll('-',''),dispatched:false};radioPairingAttempt=attempt;radioPairingBusy=true;busy(form,true,true);$('cancelRadioConnection').hidden=false;$('radioConnectStatus').textContent='';
+ const generation=++radioPairingGeneration,attempt={generation,controller:new AbortController(),requestId:crypto.randomUUID().replaceAll('-',''),dispatched:false};let connectedRadioId=null;deferredStationConnection=null;radioPairingAttempt=attempt;radioPairingBusy=true;busy(form,true,true);$('cancelRadioConnection').hidden=false;$('radioConnectStatus').textContent='';
  try{
   // Expired browser sessions need a fresh CSRF token before a new physical
   // approval request. Refresh only on an explicit reconnect attempt.
@@ -185,9 +199,19 @@ $('connectRadioForm').onsubmit=async event=>{
   attempt.dispatched=true;const claim=await api('/api/phone/claim',{device_code:deviceCode,turnstile_token,request_id:attempt.requestId});if(!currentRadioPairing(generation))return;
   showRadioApproval($('radioConnectStatus'),claim.confirmation_code);const result=await pollPhoneApproval(claim.claim_id,{current:()=>currentRadioPairing(generation),deadline:Date.now()+180000,signal:attempt.controller.signal});if(!result||!currentRadioPairing(generation))return;
   if(result.state!=='approved')throw Error(phoneApprovalMessage(result.state));attempt.approved=true;if(result.radio_id)rememberSelectedRadio(result.radio_id);
-  $('cancelRadioConnection').hidden=true;form.reset();form.hidden=true;radioConnectionStep='idle';await loadMyRadios();if(!currentRadioPairing(generation))return;$('radioConnectStatus').textContent='';if(!document.hidden)await listenerActionDialog('Radio connected','');
+  $('cancelRadioConnection').hidden=true;form.reset();form.hidden=true;radioConnectionStep='idle';await loadMyRadios();if(!currentRadioPairing(generation))return;$('radioConnectStatus').textContent='';connectedRadioId=String(result.radio_id||readSelectedRadio()||'');
  }catch(e){if(currentRadioPairing(generation))$('radioConnectStatus').textContent=e.message;}
  finally{cancelRadioPairingRequest(attempt,false,generation);if(generation===radioPairingGeneration){radioPairingBusy=false;radioPairingAttempt=null;attempt.controller.abort();$('cancelRadioConnection').hidden=true;busy(form,false);}}
+ // A selected station resumes only after pairing has released the form and
+ // its request controller. Its addition owns its own pending/error feedback.
+ if(connectedRadioId===null||!currentRadioPairing(generation))return;
+ if(document.hidden){if(connectedRadioId)deferredStationConnection={radioId:connectedRadioId,generation};return;}
+ try{
+  const resumed=await window.resumePendingStationConnection?.(connectedRadioId);
+  if(!resumed&&currentRadioPairing(generation)&&!document.hidden)await listenerActionDialog('Radio connected','');
+ }catch{
+  if(currentRadioPairing(generation)&&!document.hidden)$('radioConnectStatus').textContent='Radio connected. Choose your station below to try adding it again.';
+ }
 };
 window.addEventListener('radio-locals-ready',()=>{if(!$('myRadio').hidden){if(location.hash==='#library')history.replaceState(null,'','/'+location.search+'#radio');loadMyRadios();scheduleRadioRefresh();}});
 

@@ -3,6 +3,7 @@ import {publicStreamUrl} from './public-stream-url.mjs';
 import {stationName} from './station-edits.mjs';
 import {stationMetadata} from './station-metadata.mjs';
 import {STREAM_CHECK_LIFETIME} from './stream-verification.mjs';
+import {MAX_SAVED_STATIONS} from './saved-inventory.mjs';
 export const BACKUP_TABLES=['stations','station_edits','station_stream_checks','radios','radio_pairs','radio_station_inventory','monthly_activity','agreement_acceptances','local_ads','ad_policy','ad_update_preferences','ad_impressions','listening_daily','share_events','help_videos','legal_requests','legal_actions','support_replies','support_ticket_flags','support_folder_actions','share_event_states'];
 const MAX_RECORDS=50000,MAX_MEDIA=250,MAX_MANIFEST_BYTES=8*1024*1024,MAX_MEDIA_BYTES=50*1024*1024;
 // AES-GCM adds a 16-byte tag; the existing envelope hex-encodes ciphertext
@@ -131,12 +132,17 @@ export async function restoreBackup(env,id,now,actor=null){
   // Snapshots made before migration 0009 cannot recover a display code from its
   // HMAC. Only this newly added nullable column may be absent in older rows.
   if(table==='radio_pairs'&&row&&typeof row==='object'&&!Array.isArray(row)&&columns.includes('code_encrypted')&&!Object.hasOwn(row,'code_encrypted'))row={...row,code_encrypted:null};
+  if(table==='radio_station_inventory'&&row&&typeof row==='object'&&!Array.isArray(row)&&columns.includes('all_station_codes_json')&&!Object.hasOwn(row,'all_station_codes_json'))row={...row,all_station_codes_json:null};
+  if(table==='radio_station_inventory'&&row?.all_station_codes_json!==null){
+   let codes;try{codes=JSON.parse(row.all_station_codes_json);}catch{throw new HttpError(400,'Invalid complete radio inventory in backup.');}
+   if(!Array.isArray(codes)||codes.length>MAX_SAVED_STATIONS||codes.some(code=>typeof code!=='string'||!/^[0-9]{2,6}$/.test(code)||Number(code)<10))throw new HttpError(400,'Invalid complete radio inventory in backup.');
+  }
   if(count>MAX_RECORDS||!row||Object.keys(row).length!==columns.length||Object.keys(row).some(c=>!columns.includes(c))||Object.values(row).some(v=>v!==null&&!['string','number'].includes(typeof v)||typeof v==='number'&&!Number.isFinite(v)))throw new HttpError(400,'Invalid backup row.');statements.push(env.DB.prepare(sql).bind(...columns.map(c=>row[c])));}}
  const edits=snapshot.tables.station_edits||[];validateStationEditSnapshot(snapshot.tables.stations,edits,new Set(snapshot.media));
  validateStationStreamChecks(snapshot.tables.stations,edits,snapshot.tables.station_stream_checks||[],snapshot.created_at);
  validateListenerSupportSnapshot(snapshot.tables,snapshot.created_at);
  const advertisements=new Map(snapshot.tables.local_ads.map(ad=>[ad.id,ad]));for(const preference of snapshot.tables.ad_update_preferences||[]){const ad=advertisements.get(preference.ad_id);if(!ad||typeof ad.contact_email!=='string'||preference.email_hash!==await mac(env,'ad-email:'+ad.contact_email.trim().toLowerCase())||!Number.isSafeInteger(preference.verified_at)||preference.verified_at<ad.created_at||preference.verified_at>snapshot.created_at)throw new HttpError(400,'Invalid advertiser email preference in backup.');}
- statements.push(env.DB.prepare('DELETE FROM phone_station_requests'),env.DB.prepare('DELETE FROM ad_requests'),env.DB.prepare('DELETE FROM ad_status_grants'),env.DB.prepare('DELETE FROM ad_status_verifications'));
+ statements.push(env.DB.prepare('DELETE FROM phone_station_requests'),env.DB.prepare('DELETE FROM radio_control_requests'),env.DB.prepare('DELETE FROM ad_requests'),env.DB.prepare('DELETE FROM ad_status_grants'),env.DB.prepare('DELETE FROM ad_status_verifications'));
  // The approved station row and its proposals are one snapshot. In particular,
  // a legacy snapshot must not leave a newer proposal attached to restored data.
  statements.unshift(env.DB.prepare('DELETE FROM station_edits WHERE station_code IN (SELECT value FROM json_each(?))').bind(JSON.stringify(snapshot.tables.stations.map(row=>row.code))));

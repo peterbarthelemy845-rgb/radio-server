@@ -1,5 +1,32 @@
 # Cloudflare advertising, reports and recovery
 
+## Compact station flow — 2026-11-19, release 2026.11.19.2
+
+Apply `0037_station_removal.sql` once, as one atomic migration/batch, before
+deploying this release. It preserves existing control commands while extending
+their allowed actions, and adds capability, complete private inventory and
+temporary authorization receipt fields. Record a D1 recovery bookmark first.
+
+Station taps use the common Radio connection flow and retain their selected
+station only in this document. A continuation is pinned to the radio that was
+physically approved; losing that radio never redirects an addition to another.
+After acknowledgement, additions return to the list with a short success notice.
+Optional Share, Advertise, Report and Add again actions live under More.
+
+Saved-station removal requires radio firmware `2026.11.19.1`, a fresh complete
+inventory and the existing one-time physical phone-controls approval. Older
+radios retain addition support and show an update explanation for removal.
+An applied acknowledgement must include a complete inventory without the code;
+the browser independently checks the saved list before displaying success.
+Request receipts reconcile uncertain replies without creating another removal.
+This never deletes the public directory listing. Private raw codes allow removal
+of obsolete/unpublished presets without exposing unpublished station metadata.
+
+The firmware ZIP excludes private provisioning and requires a verified matching
+Arduino compile. Upload by USB without erasing flash. Website deployment does
+not update installed radios; physical touch/playback/add/remove verification is
+still required when a radio is available.
+
 ## Reliability and support release — 2026-11-19
 
 Apply `0034_phone_station_requests.sql` and `0036_advertiser_updates.sql` before

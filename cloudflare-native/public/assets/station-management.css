@@ -1,0 +1,6 @@
+.station-management{display:grid;gap:.5rem;margin:.5rem 0}
+.station-management[hidden],.station-management [hidden]{display:none!important}
+.station-management .station-remove{width:100%;border:1px solid #e1c9ce;color:#923449;background:#fff8f9}
+.station-management .station-remove:disabled{color:#68788c;background:#f0f3f8;border-color:#dce3ed;opacity:1}
+.station-removal-help{margin:0;line-height:1.4}
+.station-removal-download{font-size:.875rem;font-weight:650;justify-self:start}

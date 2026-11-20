@@ -12,6 +12,7 @@ export function sessionCleanupStatements(env,now){
   db.prepare('DELETE FROM support_ticket_requests WHERE rowid IN (SELECT rowid FROM support_ticket_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM phone_pair_requests WHERE rowid IN (SELECT rowid FROM phone_pair_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare('DELETE FROM phone_station_requests WHERE rowid IN (SELECT rowid FROM phone_station_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
+  db.prepare('DELETE FROM radio_control_requests WHERE rowid IN (SELECT rowid FROM radio_control_requests WHERE expires<=? ORDER BY expires LIMIT 200)').bind(now),
   db.prepare(`DELETE FROM phone_pair_grant_sources WHERE rowid IN (SELECT s.rowid FROM phone_pair_grant_sources s WHERE s.expires<=?
    OR NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.session_hash=s.session_hash AND p.radio_id=s.radio_id AND p.expires>?) ORDER BY s.expires LIMIT 200)`).bind(now,now),
   db.prepare('DELETE FROM support_status_verifications WHERE id IN (SELECT id FROM support_status_verifications WHERE expires<=? ORDER BY expires LIMIT 200)').bind(cutoff),
@@ -46,6 +47,7 @@ export function sessionCleanupStatements(env,now){
    AND NOT EXISTS(SELECT 1 FROM pair_claims c WHERE c.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM phone_pair_requests r WHERE r.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM phone_station_requests r WHERE r.session_hash=s.token_hash)
+   AND NOT EXISTS(SELECT 1 FROM radio_control_requests r WHERE r.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM phone_pair_grant_sources g WHERE g.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM phone_radios p WHERE p.session_hash=s.token_hash)
    AND NOT EXISTS(SELECT 1 FROM radio_commands c WHERE c.session_hash=s.token_hash)

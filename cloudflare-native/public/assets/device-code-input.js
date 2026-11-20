@@ -41,6 +41,9 @@
   const described=new Set((input.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));described.add(state.error.id);input.setAttribute('aria-describedby',[...described].join(' '));input.focus();return null;
  }
  window.validateDeviceCodeInput=validate;
+ // Opening or restarting setup is not a validation attempt. Keep the draft
+ // code while removing only feedback owned by this helper.
+ window.clearDeviceCodeInputError=input=>{const state=fields.get(input);if(state)clear(state);};
  for(const id of ['connectRadioForm','shareForm']){const input=document.getElementById(id)?.elements.device_code;if(input)bind(input);}
  window.addEventListener('app-language-changed',()=>{for(const state of fields.values())if(state.invalid)state.error.textContent=message();});
 })();

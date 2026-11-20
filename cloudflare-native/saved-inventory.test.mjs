@@ -128,16 +128,16 @@ function confirmationFixture(){
 }
 function pendingInventory(){let resolve;const promise=new Promise(yes=>{resolve=yes;});return {promise,resolve};}
 
-test('station confirmation identifies a saved station and restores an explicit Add again action',async()=>{
+test('station confirmation identifies a saved station and keeps Add again as a secondary action',async()=>{
   const f=confirmationFixture(),pending=pendingInventory();f.answers.push(pending.promise);
   const checked=f.check();assert.equal(f.$('shareSubmit').disabled,true);assert.equal(f.$('shareSubmit').textContent,'Checking…');
   pending.resolve({known:true,codes:new Set(['10'])});assert.equal(await checked,true);
-  assert.equal(f.$('shareSavedNotice').hidden,false);assert.equal(f.$('shareSubmit').textContent,'Add again');assert.equal(f.$('shareSubmit').disabled,false);assert.equal(f.$('shareSubmit').hidden,false);assert.equal(f.$('shareWifiHelp').hidden,true);assert.equal(f.statuses.at(-1).text,'');
+  assert.equal(f.$('shareSavedNotice').hidden,false);assert.equal(f.$('shareSubmit').textContent,'Add again');assert.equal(f.$('shareSubmit').disabled,false);assert.equal(f.$('shareSubmit').hidden,true);assert.equal(f.$('shareAddAgain').hidden,false);assert.equal(f.$('shareWifiHelp').hidden,true);assert.equal(f.statuses.at(-1).text,'');
 });
 
 test('an unchecked retained snapshot prevents automatic re-addition and labels its saved notice honestly',async()=>{
  const f=confirmationFixture();f.answers.push({known:true,codes:new Set(['10']),stale:true,unavailable:true});assert.equal(await f.check(),undefined,'Unchecked inventory must not authorize an automatic addition');assert.equal(f.$('shareSavedNotice').hidden,false);assert.equal(f.$('shareSavedNotice').textContent,'Previously on your radio');assert.equal(f.$('shareSavedNotice').dataset.i18n,'station.previouslySaved');assert.match(f.statuses.at(-1).text,/not checked.*last known list/);
- f.answers.push({known:true,codes:new Set(['10'])});assert.equal(await f.check(),true);assert.equal(f.$('shareSavedNotice').textContent,'Already on your radio');assert.equal(f.$('shareSavedNotice').dataset.i18n,'station.alreadySaved');assert.equal(f.statuses.at(-1).text,'');
+ f.answers.push({known:true,codes:new Set(['10'])});assert.equal(await f.check(),true);assert.equal(f.$('shareSavedNotice').textContent,'On your radio');assert.equal(f.$('shareSavedNotice').dataset.i18n,'management.saved');assert.equal(f.statuses.at(-1).text,'');
 });
 
 test('an unchecked empty snapshot also requires an explicit Add instead of automatically assuming the station is missing',async()=>{

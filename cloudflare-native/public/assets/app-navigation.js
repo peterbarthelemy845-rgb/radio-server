@@ -132,6 +132,18 @@ function appOpenStationWifiHelp(){
  if(stationPopup.open){appPanelOrigin=null;stationPopup.close();}
  appShowPage('wifiSetup',{replace:panel,push:!panel,focus:$('listenerAppTitle')});
 }
+// Connecting from a station uses the same onboarding as the main Radio page.
+// The selected station stays only in memory; panel history never stores codes
+// used for pairing and returning here cannot replay a station addition.
+window.openStationConnectionFlow=function(){
+ if(shareRunning||window.stationManagementBusy||(typeof radioPairingBusy!=='undefined'&&radioPairingBusy))return false;
+ appClearGuidedRadioWifi();
+ const panel=history.state?.radioLocalsApp?.panel==='station';
+ if(stationPopup.open){appPanelOrigin=null;stationPopup.close();}
+ appShowPage('myRadio',{replace:panel,push:!panel,focus:$('listenerAppTitle')});
+ window.showRadioConnectionChoices?.();return true;
+};
+window.returnAfterStationAdded=function(){appShowPage('myRadio',{replace:true});};
 $('shareWifiHelp').onclick=appOpenStationWifiHelp;
 // Station reports stay in the existing Help form. Context is submitted as a
 // separate field so an existing message draft is never replaced or shortened.

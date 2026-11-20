@@ -29,18 +29,18 @@ const guides=[
  ]}},
  {id:'add-station',title:'Add a station from the website',steps:[
   'Keep your radio on and connected to Wi-Fi. Open Radio and tap a station.',
-  'If your phone is not linked, enter the Device Code shown on your radio and tap Add station.',
+  'If your phone is not linked, tap Connect radio to add station. Choose the online or Wi-Fi setup option, then enter the Device Code shown on your radio.',
   'For a new phone, match the confirmation numbers on the phone and radio.',
   'Tap Allow on the physical radio. Deny requests you did not start.',
   'The station is added automatically. No extra confirmation is needed.',
-  'Wait for Station added, then tap Done. Linked phones skip the linking steps.'
+  'Wait for ✓ Station added. The station list returns automatically. Linked phones skip the connection steps.'
  ],ht:{title:'Ajoute yon estasyon sou sit la',steps:[
   'Kite radyo a limen epi konekte ak Wi-Fi. Louvri Radyo epi tape yon estasyon.',
-  'Si telefòn ou poko konekte, antre kòd aparèy ki sou radyo a epi tape Ajoute estasyon.',
+  'Si telefòn ou poko konekte, tape Konekte radyo pou ajoute estasyon. Chwazi opsyon radyo ki deja sou entènèt oswa konfigirasyon Wi-Fi, epi antre kòd aparèy ki sou radyo a.',
   'Pou yon nouvo telefòn, verifye nimewo konfimasyon sou telefòn nan ak radyo a menm.',
   'Tape Allow sou radyo a. Chwazi Deny pou demann ou pa t fè.',
   'Estasyon an ajoute otomatikman. Ou pa bezwen konfime ankò.',
-  'Tann Estasyon ajoute, epi tape Fini. Telefòn ki deja konekte yo sote etap koneksyon yo.'
+  'Tann ✓ Estasyon an ajoute. Lis estasyon an retounen otomatikman. Telefòn ki deja konekte yo sote etap koneksyon yo.'
  ]}},
  {id:'device-code-reset',title:'Reset the Device Code',steps:[
   'Resetting the Device Code unlinks every phone. Start on the physical radio.',

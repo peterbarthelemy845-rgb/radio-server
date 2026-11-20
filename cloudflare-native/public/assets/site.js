@@ -1,6 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);let state,verificationId,stations=[],humanLoading,sitePageGeneration=0;
-function page(id){sitePageGeneration++;if(typeof cancelOwnerAccess==='function')cancelOwnerAccess();if(id==='library')id='myRadio';if(['login','register'].includes(id)&&window.ownerAccountNavigation?.active())id='editor';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','ownerEntryLoading','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
+function page(id){sitePageGeneration++;if(!['myRadio','library','wifiSetup','shared'].includes(id))window.cancelPendingStationConnection?.();if(typeof cancelOwnerAccess==='function')cancelOwnerAccess();if(id==='library')id='myRadio';if(['login','register'].includes(id)&&window.ownerAccountNavigation?.active())id='editor';if(id!=='editor'&&$('deleteVerification')?.open)invalidateStationDeletion();if(!['login','register'].includes(id)&&($('verification')?.open||verificationId))invalidateOwnerVerification();if(id!=='shared'&&typeof invalidateSharedView==='function')invalidateSharedView();for(const name of ['myRadio','library','wifiSetup','register','login','editor','ownerEntryLoading','shared','admin','support','legal','advertise','adReview','reports','backups']){if($(name))$(name).hidden=name!==id&&!(name==='library'&&id==='myRadio');}$('message').textContent='';if(id==='myRadio'&&typeof refreshStationDirectory==='function')void refreshStationDirectory();}
 function message(text){$('message').textContent=text;}
 async function api(path,body,options={}){
  const failure=(text,status,reference,details)=>{const safeReference=typeof reference==='string'&&/^[a-f0-9]{16,32}$/.test(reference)?reference:'';const error=new Error(text+(safeReference?' Reference: '+safeReference+'.':''));if(status!==undefined)error.status=status;if(safeReference)error.errorReference=safeReference;if(Number.isInteger(details?.retry_after)&&details.retry_after>0&&details.retry_after<=86400)error.retry_after=details.retry_after;if(typeof details?.field==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,49}$/.test(details.field))error.field=details.field;if(typeof details?.code==='string'&&/^[a-z][a-z_]{1,39}$/.test(details.code))error.code=details.code;return error;};
@@ -437,9 +437,13 @@ function cancelSharedPairingRequest(attempt,generation){
 }
 function abandonSharedPairing(generation){const attempt=sharedPairingAttempt;sharedPairingAttempt=null;attempt?.controller.abort();cancelSharedPairingRequest(attempt,generation);}
 function waitForSharedPairingCleanup(){return Promise.all([sharedPairingCancellation,typeof radioPairingCancellation==='undefined'?Promise.resolve():radioPairingCancellation]);}
-function setSharedSavedState(saved){$('shareSavedNotice').hidden=!saved;$('shareSubmit').textContent=saved?'Add again':'Add station';}
+function setSharedSavedState(saved){
+ $('shareForm').dataset.saved=saved?'1':'';$('shareSavedNotice').hidden=!saved;$('shareSubmit').textContent=saved?'Add again':'Add station';
+ const again=$('shareAddAgain');if(again)again.hidden=!saved||$('shareForm').dataset.unlisted==='1';
+ $('shareSubmit').hidden=!!saved||$('shareForm').dataset.radioOffline==='1'||$('shareForm').dataset.unlisted==='1';window.updateStationManagement?.(saved);
+}
 function renderSharedRadioAvailability(offline){
- $('shareForm').dataset.radioOffline=offline?'1':'';$('shareSubmit').hidden=offline;$('shareWifiHelp').hidden=!offline;
+ $('shareForm').dataset.radioOffline=offline?'1':'';$('shareSubmit').hidden=offline||$('shareForm').dataset.saved==='1'||$('shareForm').dataset.unlisted==='1';$('shareWifiHelp').hidden=!offline;window.updateStationManagement?.($('shareForm').dataset.saved==='1');
  if(offline)setSharedStatus('Radio offline. Check power and Wi-Fi.','error');return offline;
 }
 function renderSharedWaitButton(){const close=$('stationAddPopup')?.querySelector?.('.station-popup-close');if(close)close.textContent=shareRunning?'Stop waiting':'Close';}
@@ -457,7 +461,7 @@ function renderStationDeliveryStatus(){
 function finishStationDelivery(record,state,message){
  record.state=state;record.message=message;
  if(state!=='unconfirmed'){
-  stationDeliveries.delete(record.key);const notice={radioId:record.radioId,name:record.name,message,kind:state==='added'?'success':'error',expires:Date.now()+8000};stationDeliveryNotices.set(record.radioId,notice);
+  stationDeliveries.delete(record.key);const notice={radioId:record.radioId,name:record.name,message:state==='added'?'✓ Station added':message,kind:state==='added'?'success':'error',expires:Date.now()+8000};stationDeliveryNotices.set(record.radioId,notice);
   setTimeout(()=>{if(stationDeliveryNotices.get(record.radioId)===notice&&Date.now()>=notice.expires){stationDeliveryNotices.delete(record.radioId);renderStationDeliveryStatus();}},8000);
  }
  if(state==='added')void Promise.resolve().then(()=>refreshRadioInventory(record.radioId)).catch(()=>{});
@@ -502,7 +506,24 @@ function sendStationDelivery(record){
 }
 window.addEventListener('radio-selection-changed',renderStationDeliveryStatus);
 let sharedOfflineRadios=new Set(),sharedLinkedRadios=[];
-function setSharedAdvertising(station){const link=$('shareAdvertise');if(!link)return;const code=String(station?.listener_code||''),valid=/^[1-9][0-9]{1,5}$/.test(code);link.hidden=!valid;if(valid)link.setAttribute('href','/advertise/'+code);else link.removeAttribute('href');}
+let pendingStationConnection=null;
+window.cancelPendingStationConnection=()=>{pendingStationConnection=null;};
+function connectForSharedStation(){
+ if(shareRunning||$('shared').hidden)return false;
+ pendingStationConnection={code:String(sharedCode),name:$('shareName').textContent,startedAt:Date.now()};
+ if(typeof window.openStationConnectionFlow==='function')return window.openStationConnectionFlow();
+ if(typeof stationPopup!=='undefined'&&stationPopup.open)stationPopup.close();page('myRadio');window.showRadioConnectionChoices?.();return true;
+}
+window.resumePendingStationConnection=async radioId=>{
+ const pending=pendingStationConnection;if(!pending)return false;pendingStationConnection=null;
+ // Only the setup the visitor is still viewing owns this continuation. Intent
+ // stays in this document and expires rather than surviving a later visit.
+ if(!radioId||Date.now()-pending.startedAt>900000||document.hidden||$('myRadio').hidden||!navigator.onLine||typeof stationPopup==='undefined'||stationPopup.open)return false;
+ rememberSelectedRadio(radioId);await openStationPopup(pending.code,{autoAdd:true,expectedRadioId:String(radioId)});return true;
+};
+if($('shareConnectRadio'))$('shareConnectRadio').onclick=connectForSharedStation;
+if($('shareAddAgain'))$('shareAddAgain').onclick=()=>{if(!shareRunning&&$('shareForm').dataset.saved==='1')return submitSharedStation($('shareForm'));};
+function setSharedAdvertising(station){const link=$('shareAdvertise');if(!link)return;const code=String(station?.listener_code||''),valid=!station?.unlisted&&/^[1-9][0-9]{1,5}$/.test(code);link.hidden=!valid;if(valid)link.setAttribute('href','/advertise/'+code);else link.removeAttribute('href');}
 if($('shareAdvertise'))$('shareAdvertise').onclick=event=>{if(shareRunning||$('shared').dataset.adding==='1'||$('shared').hidden||$('shareAdvertise').hidden)event.preventDefault();};
 function renderSharedRadioDestination(){
  const enteringCode=!$('deviceLabel').hidden,single=!enteringCode&&sharedLinkedRadios.length===1;
@@ -510,11 +531,13 @@ function renderSharedRadioDestination(){
  $('shareSingleRadio').hidden=!single;
  $('shareSingleRadioCode').textContent=single?String(sharedLinkedRadios[0].device_code||'—'):'';
 }
-function invalidateSharedView(){sharedOpenGeneration++;abandonSharedPairing(sharedOpenGeneration);delete $('shared').dataset.adding;delete $('shareForm').dataset.destinationLoading;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}$('shareSubmit').disabled=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');}
+function invalidateSharedView(){sharedOpenGeneration++;window.cancelStationRemovalAuthorization?.();abandonSharedPairing(sharedOpenGeneration);delete $('shared').dataset.adding;delete $('shareForm').dataset.destinationLoading;if(shareRunning){shareRunning=false;busy($('shareForm'),false);}$('shareSubmit').disabled=false;if($('shareConnectRadio'))$('shareConnectRadio').hidden=true;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('');}
 function stopWaitingForSharedStation(){invalidateSharedView();renderStationDeliveryStatus();}
-async function openShared(code,inPopup=false,autoAdd=false,onStationLoaded){
+async function openShared(code,inPopup=false,autoAdd=false,onStationLoaded,expectedRadioId=''){
  const generation=++sharedOpenGeneration;
  setSharedAdvertising(null);
+ delete $('shareForm').dataset.unlisted;
+ if($('shareMoreActions'))$('shareMoreActions').open=false;if($('shareConnectRadio'))$('shareConnectRadio').hidden=true;
  $('reportStationProblem').hidden=true;
  // A new station must never inherit an earlier popup's destination while the
  // current phone grants and inventory are still being checked.
@@ -522,27 +545,48 @@ async function openShared(code,inPopup=false,autoAdd=false,onStationLoaded){
  $('shareForm').elements.radio_id.value='';$('shareForm').elements.radio_id.replaceChildren();sharedLinkedRadios=[];sharedOfflineRadios=new Set();$('shareSingleRadio').hidden=true;$('radioLabel').hidden=true;
  abandonSharedPairing(generation);
  try{
- const station=await api('/api/stations/'+code);if(generation!==sharedOpenGeneration)return;sharedCode=code;
+ let station;
+ try{station=await api('/api/stations/'+code);}
+ catch(error){
+  // A station removed from the public directory can still live on this
+  // visitor's radio. Only its own fresh reported inventory enables managing it.
+  const selected=typeof readSelectedRadio==='function'?readSelectedRadio():'',inventory=typeof readRadioInventory==='function'?readRadioInventory(selected):null;
+  if(error.status!==404||!inventory?.known||inventory.stale||!inventory.codes.has(String(code)))throw error;
+  const cached=typeof getSavedStationMetadata==='function'?getSavedStationMetadata(code):null;station={...cached,listener_code:String(code),name:cached?.name||'Station '+code,unlisted:true};
+ }
+ if(generation!==sharedOpenGeneration)return;sharedCode=code;$('shareForm').dataset.unlisted=station.unlisted?'1':'';
  if(!inPopup)page('shared');$('shared').hidden=false;renderSharedRadioAvailability(false);setSharedSavedState(false);setSharedStatus('Checking radio destination…');$('shareArt').hidden=true;$('shareName').textContent=station.name;$('shareStationCode').textContent='Station code #'+station.listener_code;$('shareStationBio').textContent=(station.bio||'').slice(0,250);$('shareStationBio').hidden=!station.bio;
  setSharedAdvertising(station);
  $('reportStationProblem').hidden=false;
  if(station.logo_url){$('shareArt').src=station.logo_url;$('shareArt').hidden=false;}
  if(typeof onStationLoaded==='function')onStationLoaded(station);
  const result=await api('/api/phone/radios');if(generation!==sharedOpenGeneration)return;
- const select=$('shareForm').elements.radio_id,selected=reconcileSelectedRadio(result.radios);sharedLinkedRadios=result.radios;sharedOfflineRadios=new Set(result.radios.filter(r=>r.online===false).map(r=>String(r.id)));select.replaceChildren();
+ // Approval belongs to one radio. If that grant disappears during the next
+ // destination lookup, never let the sole remaining radio inherit auto-add.
+ if(expectedRadioId&&!result.radios.some(r=>String(r.id)===String(expectedRadioId))){
+  delete $('shareForm').dataset.destinationLoading;$('shareForm').hidden=true;$('shareSubmit').disabled=false;
+  if($('shareConnectRadio'))$('shareConnectRadio').hidden=false;setSharedStatus('That radio is no longer connected. Connect it again to add this station.','error');return;
+ }
+ const select=$('shareForm').elements.radio_id,selected=expectedRadioId?String(expectedRadioId):reconcileSelectedRadio(result.radios);if(expectedRadioId)rememberSelectedRadio(selected);sharedLinkedRadios=result.radios;sharedOfflineRadios=new Set(result.radios.filter(r=>r.online===false).map(r=>String(r.id)));select.replaceChildren();
  if(result.radios.length>1){const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Choose a radio';placeholder.disabled=true;select.append(placeholder);}
  for(const radio of result.radios){const option=document.createElement('option');option.value=String(radio.id);option.textContent='Device code '+(radio.device_code||'—')+(radio.online?' · Online':' · Offline');select.append(option);}
- select.value=selected;select.required=!!result.radios.length;$('shareForm').elements.device_code.required=!result.radios.length;$('deviceLabel').hidden=!!result.radios.length;$('otherRadio').hidden=!result.radios.length;renderSharedRadioDestination();
+ select.value=selected;select.required=!!result.radios.length;$('shareForm').elements.device_code.required=false;$('deviceLabel').hidden=true;$('otherRadio').hidden=!result.radios.length;renderSharedRadioDestination();
+ if(!result.radios.length){
+  delete $('shareForm').dataset.destinationLoading;$('shareForm').hidden=true;$('shareSubmit').disabled=false;
+  if($('shareConnectRadio'))$('shareConnectRadio').hidden=false;setSharedStatus('Connect your radio once to add this station.');return;
+ }
  $('shareForm').hidden=false;
  // Only an intentional tile tap can start an addition. Restored history and
  // incoming shared URLs must wait for the visitor to press Add station.
- const canAutoAdd=autoAdd&&selected&&!sharedOfflineRadios.has(String(selected));renderSharedRadioAvailability(!!selected&&sharedOfflineRadios.has(String(selected)));
+ const canAutoAdd=autoAdd&&!station.unlisted&&selected&&!sharedOfflineRadios.has(String(selected));renderSharedRadioAvailability(!!selected&&sharedOfflineRadios.has(String(selected)));
  const alreadySaved=await updateStationConfirmation();if(generation!==sharedOpenGeneration)return;
  delete $('shareForm').dataset.destinationLoading;$('shareForm').hidden=false;$('shareSubmit').disabled=false;
+ window.updateStationManagement?.(alreadySaved===true);
+ if(station.unlisted&&alreadySaved!==true){$('shareForm').hidden=true;setSharedStatus('This station is no longer available.');return;}
  if(canAutoAdd&&selected===select.value&&alreadySaved===false&&!sharedOfflineRadios.has(String(selected)))await submitSharedStation($('shareForm'));
  }catch(error){if(generation===sharedOpenGeneration)throw error;}
 }
-$('otherRadio').onclick=()=>{invalidateSharedView();$('deviceLabel').hidden=false;renderSharedRadioDestination();$('otherRadio').hidden=true;$('shareForm').elements.radio_id.required=false;$('shareForm').elements.device_code.required=true;$('shareForm').elements.device_code.focus();};
+$('otherRadio').onclick=connectForSharedStation;
 window.addEventListener('radio-status-updated',event=>{
  if($('shared').hidden||$('shareForm').hidden||shareRunning||!$('deviceLabel').hidden||!Array.isArray(event.detail?.radios))return;
  const id=String($('shareForm').elements.radio_id.value),radio=event.detail.radios.find(item=>String(item.id)===id);if(!radio)return;
@@ -551,7 +595,7 @@ window.addEventListener('radio-status-updated',event=>{
 });
 const delay=()=>new Promise(resolve=>setTimeout(resolve,2500));
 async function submitSharedStation(form){
- if(shareRunning||form.dataset.destinationLoading==='1')return;const enteringCode=!$('deviceLabel').hidden,deviceCode=enteringCode?window.validateDeviceCodeInput(form.elements.device_code):'';if(enteringCode&&deviceCode===null)return;
+ if(shareRunning||form.dataset.destinationLoading==='1'||form.dataset.unlisted==='1'||window.stationRemovalPending?.(form.elements.radio_id.value,sharedCode))return;const enteringCode=!$('deviceLabel').hidden,deviceCode=enteringCode?window.validateDeviceCodeInput(form.elements.device_code):'';if(enteringCode&&deviceCode===null)return;
  const attempt=enteringCode?{requestId:crypto.randomUUID().replaceAll('-',''),controller:new AbortController(),dispatched:false,approved:false,cancellationStarted:false}:null;if(attempt)sharedPairingAttempt=attempt;
  shareRunning=true;const stationCode=sharedCode,generation=sharedOpenGeneration,current=()=>generation===sharedOpenGeneration&&!$('shared').hidden;busy(form,true,true);$('shared').dataset.adding='1';$('shareWifiHelp').hidden=true;setSharedStatus('Adding station…');
  try{
@@ -573,10 +617,10 @@ async function submitSharedStation(form){
   // Reopening the same station attaches to its existing request instead of sending twice.
   const delivery=await requestStationDelivery(radioId,stationCode,$('shareName').textContent);if(!current())return;
   if(delivery.state!=='added')throw Error(delivery.message);
-  form.hidden=true;$('otherRadio').hidden=true;setSharedStatus('Station added','success');
+  form.hidden=true;$('otherRadio').hidden=true;setSharedStatus('✓ Station added','success');
   if(!document.hidden&&(!document.querySelector?.('dialog[open]')||$('stationAddPopup')?.open)){
-   await listenerActionDialog('Station added','');
    if(current()&&typeof stationPopup!=='undefined'&&stationPopup.open)stationPopup.close();
+   else if(current()&&typeof window.returnAfterStationAdded==='function')window.returnAfterStationAdded();
   }
  }catch(e){if(current())setSharedStatus(e.message,'error');}
  finally{if(attempt){if(sharedPairingAttempt===attempt)sharedPairingAttempt=null;attempt.controller.abort();cancelSharedPairingRequest(attempt,generation);}if(generation===sharedOpenGeneration){shareRunning=false;delete $('shared').dataset.adding;busy(form,false);renderSharedWaitButton();}}

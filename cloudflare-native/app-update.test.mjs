@@ -65,3 +65,15 @@ test('website refresh waits for a dismissed pairing request to finish its cancel
  const f=fixture();await f.check();const refresh=f.banner.children[2].children[0];f.context.pairingCleanupPending=1;f.events['pairing-cleanup-changed']();assert.equal(refresh.disabled,true);await refresh.onclick();assert.equal(f.reloads(),0);
  f.context.pairingCleanupPending=0;f.events['pairing-cleanup-changed']();assert.equal(refresh.disabled,false);await refresh.onclick();assert.equal(f.reloads(),1);
 });
+
+test('website updates wait for station removal approval and background delivery',async()=>{
+ const f=fixture();await f.check();const refresh=f.banner.children[2].children[0];
+ f.window.stationManagementBusy=true;f.events['station-removal-changed']();assert.equal(refresh.disabled,true);await refresh.onclick();assert.equal(f.reloads(),0);
+ f.window.stationManagementBusy=false;f.context.stationRemovalRequests=new Map([['radio|15',{state:'pending'}]]);f.events['station-removal-changed']();assert.equal(refresh.disabled,true);await refresh.onclick();assert.equal(f.reloads(),0);
+ f.context.stationRemovalRequests.clear();f.events['station-removal-changed']();assert.equal(refresh.disabled,false);
+});
+
+test('an uncertain station removal receives the same explicit update caution as an uncertain addition',async()=>{
+ const f=fixture({dialog:async()=>false});await f.check();f.context.stationRemovalRequests=new Map([['radio|15',{state:'unconfirmed'}]]);f.events['station-removal-changed']();
+ const refresh=f.banner.children[2].children[0];assert.equal(refresh.disabled,false);assert.match(f.banner.children[1].textContent,/unconfirmed/);await refresh.onclick();assert.equal(f.dialogs.length,1);assert.equal(f.reloads(),0);assert.equal(f.storage.size,0);
+});

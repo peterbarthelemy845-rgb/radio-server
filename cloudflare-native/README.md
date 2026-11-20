@@ -5,6 +5,9 @@ the existing `radio-server` entry Worker. The migration narrative below records
 earlier staging work; its cutover warnings are historical. Keep both Workers.
 Use `OPERATIONS.md` for current release requirements. Apply migrations 0034 and
 0036 before deploying the November 19 reliability and support release.
+The subsequent compact station flow release `2026.11.19.2` also requires atomic
+migration `0037_station_removal.sql`. Removal needs updated radio software and
+physical approval; website deployment alone does not update installed radios.
 
 This directory has **no Render dependency**. It is an isolated test backend, not
 yet a replacement for the live website. Do not point radiolocals.com at it yet.

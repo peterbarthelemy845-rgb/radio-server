@@ -39,6 +39,16 @@ test('editing clears only this helper error and preserves existing and newly add
  f.shared.value='bad';f.validate(f.shared);assert.equal(f.main.error.hidden,true);assert.equal(f.shared.error.hidden,false);
 });
 
+test('restarting setup explicitly clears only its own error and retains the code draft',()=>{
+ const f=fixture({description:'codeHelp',invalid:'false'});f.main.value='12_34';f.validate(f.main);f.shared.value='bad';f.validate(f.shared);
+ f.main.setAttribute('aria-describedby',f.main.getAttribute('aria-describedby')+' serverDescription');const focused=f.focused();
+ f.window.clearDeviceCodeInputError(f.main);
+ assert.equal(f.main.value,'12_34');assert.equal(f.main.error.hidden,true);assert.equal(f.main.error.textContent,'');assert.equal(f.main.getAttribute('aria-invalid'),'false');assert.equal(f.main.getAttribute('aria-describedby'),'codeHelp serverDescription');
+ assert.equal(f.shared.error.hidden,false);assert.equal(f.focused(),focused);assert.deepEqual(f.calls(),[0,0]);
+ assert.doesNotThrow(()=>f.window.clearDeviceCodeInputError(null));assert.doesNotThrow(()=>f.window.clearDeviceCodeInputError({}));
+ f.language('ht');assert.equal(f.main.error.hidden,true);assert.equal(f.main.error.textContent,'');
+});
+
 test('valid retries and form reset remove helper attributes without erasing another validator state',()=>{
  const f=fixture();f.main.value='bad';f.validate(f.main);f.main.value='0123';assert.equal(f.validate(f.main),'0123');assert.equal(f.main.getAttribute('aria-invalid'),null);assert.equal(f.main.getAttribute('aria-describedby'),null);
  f.main.value='no';f.validate(f.main);f.main.setAttribute('aria-invalid','grammar');f.nodes.get('connectRadioForm').dispatch('reset');assert.equal(f.main.getAttribute('aria-invalid'),'grammar');assert.equal(f.main.error.hidden,true);assert.equal(f.main.getAttribute('aria-describedby'),null);

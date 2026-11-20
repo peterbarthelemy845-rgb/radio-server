@@ -36,8 +36,13 @@ function loadRadioInventory(id,force=false){
  if(!force&&radioInventories.has(id))return Promise.resolve(readRadioInventory(id));
  const request=api('/api/phone/stations?radio_id='+encodeURIComponent(id)).then(result=>{
   const known=Array.isArray(result.saved_station_codes)&&result.inventory_reported_at!=null;
+  // A private, capability-gated raw inventory also includes a saved station
+  // whose public listing was removed. Retain its code so the owner can remove
+  // that saved item without republishing or exposing private station details.
+  const validCodes=values=>Array.isArray(values)?values.filter(code=>typeof code==='string'&&/^[1-9][0-9]{1,5}$/.test(code)).slice(0,100):[];
+  const codes=known?new Set([...new Set([...validCodes(result.saved_station_codes),...validCodes(result.removable_station_codes)])].slice(0,100)):new Set();
   const serverNow=Number.isFinite(result.server_time)?result.server_time:Date.now()/1000,age=known?Math.max(0,serverNow-Number(result.inventory_reported_at)):Infinity;
-  const inventory={known,codes:new Set(known?result.saved_station_codes.map(String):[]),reportedAt:known?result.inventory_reported_at:null,freshUntil:known?Date.now()+Math.max(0,120-age)*1000:0,...(known&&age>=120?{stale:true}:{})};
+  const inventory={known,codes,reportedAt:known?result.inventory_reported_at:null,freshUntil:known?Date.now()+Math.max(0,120-age)*1000:0,...(known&&age>=120?{stale:true}:{})};
   const previous=radioInventories.get(id),changed=!previous||previous.known!==known||previous.unavailable||!!previous.stale!==!!inventory.stale||[...previous.codes].sort().join(',')!==[...inventory.codes].sort().join(',');radioInventories.set(id,inventory);if(changed)window.dispatchEvent(new CustomEvent('radio-inventory-changed',{detail:{radioId:id}}));if(known)void loadSavedStationMetadata(inventory.codes);return inventory;
  }).catch(error=>{const previous=radioInventories.get(id),retain=previous?.known&&error?.status!==401&&error?.status!==403,inventory=retain?{...previous,codes:new Set(previous.codes),unavailable:true,stale:true}:{known:false,codes:new Set(),reportedAt:null,unavailable:true};radioInventories.set(id,inventory);window.dispatchEvent(new CustomEvent('radio-inventory-changed',{detail:{radioId:id}}));return inventory;}).finally(()=>radioInventoryRequests.delete(id));
  radioInventoryRequests.set(id,request);return request;
@@ -54,6 +59,9 @@ for(const id of ['connectRadioForm','shareForm']){
 let sharedConfirmationGeneration=0;
 async function updateStationConfirmation(){
  const select=$('shareForm').elements.radio_id,id=select.value,code=String(sharedCode),generation=sharedOpenGeneration,check=++sharedConfirmationGeneration,submit=$('shareSubmit');
+ // A saved-station removal owns its confirmation and receipt until the radio
+ // answers. Background inventory reads must not restore Add again meanwhile.
+ if(window.stationRemovalPending?.(id,code)){window.updateStationManagement?.(true);return true;}
  setSharedSavedState(false);
  if(!id){renderSharedRadioAvailability(false);setSharedStatus(!$('deviceLabel').hidden?'':'Choose a radio to add this station.');return false;}
  submit.disabled=true;const checking=window.appI18n?.t('busy.checking');submit.textContent=checking&&checking!=='busy.checking'?checking:'Checking…';
@@ -61,12 +69,12 @@ async function updateStationConfirmation(){
   rememberSelectedRadio(id);const inventory=await loadRadioInventory(id);
   if(select.value!==id||String(sharedCode)!==code||generation!==sharedOpenGeneration||check!==sharedConfirmationGeneration||shareRunning||!$('deviceLabel').hidden)return;
   const retained=!!(inventory?.known&&inventory.codes.has(code)),previouslySaved=retained&&!!inventory?.stale,saved=retained&&!inventory?.stale;setSharedSavedState(saved);
-  const notice=$('shareSavedNotice'),noticeKey=previouslySaved?'station.previouslySaved':'station.alreadySaved',translated=window.appI18n?.t(noticeKey);notice.dataset.i18n=noticeKey;notice.textContent=translated&&translated!==noticeKey?translated:previouslySaved?'Previously on your radio':'Already on your radio';if(previouslySaved){notice.hidden=false;submit.textContent='Add again';}
+  const notice=$('shareSavedNotice'),noticeKey=previouslySaved?'station.previouslySaved':'management.saved',translated=window.appI18n?.t(noticeKey);notice.dataset.i18n=noticeKey;notice.textContent=translated&&translated!==noticeKey?translated:previouslySaved?'Previously on your radio':'On your radio';if(previouslySaved){notice.hidden=false;submit.textContent='Add again';}
   // An unchecked snapshot is useful history, never a fresh yes/no decision.
   // Returning unknown also prevents a tile tap from automatically dispatching.
   if(renderSharedRadioAvailability(sharedOfflineRadios.has(String(id))))return inventory?.stale?undefined:saved;
   setSharedStatus(inventory?.stale?'Saved stations not checked. Showing the last known list.':saved?'':inventory?.known?'':inventory?.unavailable?'Saved stations could not be checked. You can still add this station.':'Check your radio for its saved stations. The saved list updates after a radio software update.');return inventory?.stale?undefined:saved;
- }finally{if(generation===sharedOpenGeneration&&check===sharedConfirmationGeneration&&!shareRunning)submit.disabled=false;}
+ }finally{if(generation===sharedOpenGeneration&&check===sharedConfirmationGeneration&&!shareRunning)submit.disabled=!!window.stationRemovalPending?.(id,code);}
 }
 $('shareForm').elements.radio_id.addEventListener('change',updateStationConfirmation);
 

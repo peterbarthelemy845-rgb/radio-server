@@ -59,3 +59,12 @@ test('metadata failure has a retry cooldown and cannot erase a usable name or tr
 test('successful requests do not make old radio inventory fresh, even when the browser clock differs',async()=>{
  const f=fixture({catalog:new Map([['13',station('13')]])});f.answers.push({saved_station_codes:['13'],inventory_reported_at:1800000000-86400,server_time:1800000000});const old=await f.load('one');assert.equal(old.known,true);assert.equal(old.stale,true);assert.deepEqual([...old.codes],['13']);f.answers.push({saved_station_codes:['13'],inventory_reported_at:1800000000,server_time:1800000000});const fresh=await f.load('one',true);assert.equal(fresh.stale,undefined);f.advance(120001);assert.equal(f.inventory('one').stale,true);
 });
+
+test('capable private inventory retains unlisted removable codes without inventing public station metadata',async()=>{
+ const f=fixture({catalog:new Map([['13',station('13','PUBLIC STATION')]])});f.answers.push({saved_station_codes:['13'],removable_station_codes:['13','999999',12,'1','000013','14\n',null,'not-a-code'],inventory_reported_at:10},{stations:[]});const inventory=await f.load('one');await f.loadMetadata(inventory.codes);assert.equal(inventory.known,true);assert.deepEqual([...inventory.codes],['13','999999']);assert.equal(f.metadata('999999'),undefined);assert.equal(f.metadata('13').name,'PUBLIC STATION');
+ const unknown=fixture();unknown.answers.push({saved_station_codes:null,removable_station_codes:['999999'],inventory_reported_at:null});assert.equal((await unknown.load('one')).known,false);assert.deepEqual([...unknown.inventory('one').codes],[],'raw codes cannot fabricate a complete reported snapshot');
+});
+
+test('published overlap is deduplicated before bounding the complete private inventory',async()=>{
+ const complete=Array.from({length:100},(_,index)=>String(index+10)),published=complete.slice(0,60),catalog=new Map(published.map(code=>[code,station(code)])),f=fixture({catalog});f.answers.push({saved_station_codes:published,removable_station_codes:complete,inventory_reported_at:10},{stations:[]});const inventory=await f.load('one');await f.loadMetadata(inventory.codes);assert.equal(inventory.codes.size,100);assert.deepEqual([...inventory.codes],complete);assert.ok(inventory.codes.has('109'),'the last unlisted code remains available for removal');assert.equal(f.metadata('109'),undefined,'a removable code does not invent public metadata');
+});

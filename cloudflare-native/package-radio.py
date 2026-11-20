@@ -9,7 +9,7 @@ import zipfile
 HERE = Path(__file__).resolve().parent
 WORKSPACE = HERE.parents[3]
 SOURCE = WORKSPACE / "outputs/cloudflare-arduino/waveshare_radio"
-VERSION = "2026.11.08.1"
+VERSION = "2026.11.19.1"
 PUBLIC = HERE / "public/assets/waveshare-radio.zip"
 DOWNLOAD = WORKSPACE / "outputs/waveshare_radio-auto-station-updates.zip"
 

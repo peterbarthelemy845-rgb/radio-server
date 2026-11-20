@@ -124,15 +124,16 @@ test('changing filters hides stale available results while keeping saved items a
 });
 
 function popupShareFixture({load=async()=>{},afterMetadata=async()=>{}}={}){
- const ids=new Map(),shares=[],opened=[],statuses=[],popup={children:[],open:false,append(node){this.children.push(node);},querySelector(selector){return this.children.find(node=>selector==='.station-popup-share'&&node.className?.includes('station-popup-share'))||null;},showModal(){this.open=true;}};
+ const more={children:[],append(node){this.children.push(node);node.parent=this;}},ids=new Map([['shareMoreActions',more]]),shares=[],opened=[],statuses=[],popup={children:[],open:false,append(node){this.children.push(node);},querySelector(selector){return [...this.children,...more.children].find(node=>selector==='.station-popup-share'&&node.className?.includes('station-popup-share'))||null;},showModal(){this.open=true;}};
  const $=id=>{if(!ids.has(id))ids.set(id,{dataset:{},hidden:false,textContent:''});return ids.get(id);};
- const context={shareRunning:false,stationPopup:popup,$,stations:[],location:{origin:'https://radiolocals.com'},shareButton:(...args)=>{shares.push(args);const button={remove(){popup.children.splice(popup.children.indexOf(button),1);}};return button;},setSharedStatus:(...args)=>statuses.push(args),openShared:async(...args)=>{opened.push(args.slice(0,3));await load(...args);const station={name:'Saved Local Radio '+args[0],listener_code:args[0]};$('shareName').textContent=station.name;args[3]?.(station);await afterMetadata(...args);}};
+ const context={window:{},shareRunning:false,stationPopup:popup,$,stations:[],location:{origin:'https://radiolocals.com'},shareButton:(...args)=>{shares.push(args);const button={remove(){const children=this.parent?.children||popup.children;children.splice(children.indexOf(button),1);}};return button;},setSharedStatus:(...args)=>statuses.push(args),openShared:async(...args)=>{opened.push(args.slice(0,3));await load(...args);const station={name:'Saved Local Radio '+args[0],listener_code:args[0]};$('shareName').textContent=station.name;args[3]?.(station);await afterMetadata(...args);}};
  const open=runInNewContext('let stationPopupGeneration=0;'+source.slice(source.indexOf('async function openStationPopup('))+';openStationPopup;',context);
- return {open,$,popup,shares,opened,statuses,shareButtons:()=>popup.children.filter(node=>node.className?.includes('station-popup-share'))};
+ return {open,$,popup,more,shares,opened,statuses,shareButtons:()=>more.children.filter(node=>node.className?.includes('station-popup-share'))};
 }
 
 test('a valid station receives one popup Share action even without any loaded catalog or saved metadata',async()=>{
  const f=popupShareFixture();await f.open('13');assert.equal(f.popup.open,true);assert.equal(f.shares.length,1);assert.equal(f.shares[0][1],'Saved Local Radio 13');assert.equal(f.shares[0][2],'https://radiolocals.com/station/13');assert.deepEqual(f.opened,[['13',true,false]]);assert.equal(f.shareButtons().length,1);assert.equal(f.shareButtons()[0].textContent,'Share station');
+ assert.ok(f.more.children.includes(f.shareButtons()[0]));assert.ok(!f.popup.children.includes(f.shareButtons()[0]),'Sharing is secondary inside More');
  await f.open('14');assert.equal(f.shareButtons().length,1,'Opening another station replaces the previous popup Share');assert.equal(f.shares[1][2],'https://radiolocals.com/station/14');
 });
 
